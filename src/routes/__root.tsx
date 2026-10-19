@@ -11,25 +11,26 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 import { TaskProvider } from "@/context/TaskContext";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
+      <div className="max-w-md text-center p-8 rounded-2xl border bg-card shadow-card">
+        <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-5">
+          <span className="text-2xl font-bold">404</span>
+        </div>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Page Not Found</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+          The page or task you are looking for doesn't exist or has been moved to another location.
         </p>
-        <div className="mt-6">
+        <div className="mt-6 flex justify-center gap-3">
           <Link
-            to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            to="/dashboard"
+            className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm shadow-primary/25 transition-all hover:bg-primary/90"
           >
-            Go home
+            Return to Dashboard
           </Link>
         </div>
       </div>
@@ -40,9 +41,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -82,12 +80,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "TaskFlow" },
       { name: "description", content: "TaskFlow task management" },
-      { name: "author", content: "Lovable" },
+      { name: "author", content: "TaskFlow" },
       { property: "og:title", content: "TaskFlow" },
       { property: "og:description", content: "TaskFlow task management" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:site", content: "@TaskFlow" },
     ],
     links: [
       {
