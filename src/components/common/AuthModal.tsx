@@ -1,0 +1,205 @@
+import { useState } from "react";
+import { Sparkles, Lock, User, Mail, KeyRound, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/context/AuthContext";
+import { toast } from "sonner";
+
+export function AuthModal() {
+  const { login, register } = useAuth();
+  const [isRegister, setIsRegister] = useState(false);
+
+  // Login form state
+  const [username, setUsername] = useState("omthakkar");
+  const [password, setPassword] = useState("thakkar2912");
+
+  // Register form state
+  const [regFullName, setRegFullName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regUsername, setRegUsername] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const success = login(username, password);
+    if (success) {
+      toast.success("Welcome back to TaskFlow!");
+    } else {
+      toast.error("Invalid ID or Password. Please try again.");
+    }
+  };
+
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regFullName.trim() || !regEmail.trim() || !regUsername.trim() || !regPassword.trim()) {
+      toast.error("Please fill in all fields.");
+      return;
+    }
+    const success = register(regFullName, regEmail, regUsername, regPassword);
+    if (success) {
+      toast.success("Account created successfully! Welcome to TaskFlow.");
+    } else {
+      toast.error("That username is already taken. Please choose another.");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4">
+      <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-xl">
+        <div className="text-center mb-6">
+          <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md shadow-primary/25">
+            <Sparkles className="size-6" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {isRegister ? "Create TaskFlow Account" : "Welcome to TaskFlow"}
+          </h1>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {isRegister
+              ? "Sign up with your name and email to access your workspace"
+              : "Sign in with your workspace ID and password"}
+          </p>
+        </div>
+
+        {!isRegister ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="rounded-lg border bg-muted/40 p-3 text-xs space-y-1">
+              <span className="font-semibold text-primary">Demo Credentials:</span>
+              <p className="text-muted-foreground">
+                ID: <code className="font-mono text-foreground font-bold">omthakkar</code>
+              </p>
+              <p className="text-muted-foreground">
+                Pass: <code className="font-mono text-foreground font-bold">thakkar2912</code>
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="login-id">User ID</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  id="login-id"
+                  placeholder="Enter User ID (e.g. omthakkar)"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="pl-9 h-10"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="login-pass">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  id="login-pass"
+                  type="password"
+                  placeholder="Enter Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pl-9 h-10"
+                  required
+                />
+              </div>
+            </div>
+
+            <Button type="submit" className="w-full h-10 font-semibold shadow-sm shadow-primary/25">
+              Sign In <ArrowRight className="size-4 ml-1.5" />
+            </Button>
+
+            <div className="pt-2 text-center text-xs text-muted-foreground">
+              Not registered yet?{" "}
+              <button
+                type="button"
+                onClick={() => setIsRegister(true)}
+                className="font-semibold text-primary hover:underline"
+              >
+                Create an account
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-name">Full Name</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  id="reg-name"
+                  placeholder="e.g. Om Thakkar"
+                  value={regFullName}
+                  onChange={(e) => setRegFullName(e.target.value)}
+                  className="pl-9 h-10"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-email">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  id="reg-email"
+                  type="email"
+                  placeholder="e.g. omthakkar@example.com"
+                  value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)}
+                  className="pl-9 h-10"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-id">Desired User ID</Label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  id="reg-id"
+                  placeholder="e.g. omthakkar"
+                  value={regUsername}
+                  onChange={(e) => setRegUsername(e.target.value)}
+                  className="pl-9 h-10"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-pass">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  id="reg-pass"
+                  type="password"
+                  placeholder="Choose a password"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  className="pl-9 h-10"
+                  required
+                />
+              </div>
+            </div>
+
+            <Button type="submit" className="w-full h-10 font-semibold shadow-sm shadow-primary/25">
+              Complete Registration <ArrowRight className="size-4 ml-1.5" />
+            </Button>
+
+            <div className="pt-2 text-center text-xs text-muted-foreground">
+              Already have an ID?{" "}
+              <button
+                type="button"
+                onClick={() => setIsRegister(false)}
+                className="font-semibold text-primary hover:underline"
+              >
+                Sign in with existing ID
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}

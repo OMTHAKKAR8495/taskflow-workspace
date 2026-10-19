@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useTasks } from "@/context/TaskContext";
+import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { fmtRelative } from "@/lib/format";
 
@@ -47,20 +48,22 @@ interface AppLayoutProps {
 
 export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
   const { profile, activity, tasks } = useTasks();
+  const { user, logout } = useAuth();
   const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
 
-  const initials = profile?.fullName
-    ? profile.fullName
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : "TF";
+  const displayName = user?.fullName || profile?.fullName || "Om Thakkar";
+  const displayEmail = user?.email || profile?.email || "omthakkar@example.com";
+
+  const initials = displayName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -158,8 +161,8 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-foreground">{profile?.fullName || "Guest User"}</p>
-              <p className="truncate text-xs text-muted-foreground">{profile?.email || "user@taskflow.dev"}</p>
+              <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
+              <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
             </div>
           </Link>
         </div>
@@ -350,8 +353,8 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
-                  <p className="text-sm font-medium">{profile?.fullName}</p>
-                  <p className="text-xs text-muted-foreground truncate">{profile?.email}</p>
+                  <p className="text-sm font-medium">{displayName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{displayEmail}</p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
@@ -367,11 +370,11 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => {
-                    alert("This is a demo frontend application. Sign out is simulated.");
+                    logout();
                   }}
                   className="text-destructive flex items-center gap-2 cursor-pointer"
                 >
-                  <span>Sign Out (Demo)</span>
+                  <span>Sign Out</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

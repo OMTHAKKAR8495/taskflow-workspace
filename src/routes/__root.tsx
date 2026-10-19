@@ -116,6 +116,18 @@ function RootShell({ children }: { children: ReactNode }) {
 }
 
 import { ThemeProvider } from "@/context/ThemeContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { AuthModal } from "@/components/common/AuthModal";
+
+function AuthGate({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  return (
+    <>
+      {!isAuthenticated && <AuthModal />}
+      {children}
+    </>
+  );
+}
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
@@ -124,10 +136,14 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <ThemeProvider>
-        <TaskProvider>
-          <Outlet />
-          <Toaster richColors position="top-right" />
-        </TaskProvider>
+        <AuthProvider>
+          <AuthGate>
+            <TaskProvider>
+              <Outlet />
+              <Toaster richColors position="top-right" />
+            </TaskProvider>
+          </AuthGate>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
