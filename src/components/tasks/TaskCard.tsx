@@ -1,5 +1,5 @@
-import { Link } from "@tanstack/react-router";
-import { Bookmark, CalendarDays, Clock, MessageSquare } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Bookmark, CalendarDays, Edit, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtRelative } from "@/lib/format";
 import { isOverdue } from "@/lib/task-utils";
@@ -7,9 +7,11 @@ import { useTasks } from "@/context/TaskContext";
 import { toast } from "sonner";
 import type { Task } from "@/types";
 import { PriorityBadge, TaskStatusBadge } from "./badges";
+import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 
 export function TaskCard({ task }: { task: Task }) {
-  const { toggleBookmark } = useTasks();
+  const navigate = useNavigate();
+  const { toggleBookmark, deleteTask } = useTasks();
   const overdue = isOverdue(task);
 
   const handleBookmark = async (e: React.MouseEvent) => {
@@ -56,10 +58,32 @@ export function TaskCard({ task }: { task: Task }) {
           {overdue ? "Overdue · " : ""}
           {fmtDate(task.dueDate)}
         </span>
-        <span className="inline-flex items-center gap-1">
-          <Clock className="size-3.5" aria-hidden />
-          {fmtRelative(task.updatedAt)}
-        </span>
+        <div className="flex items-center gap-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/tasks/$id/edit", params: { id: task.id } })}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Edit task"
+          >
+            <Edit className="size-3.5" />
+          </button>
+          <DeleteConfirmationDialog
+            taskTitle={task.title}
+            onConfirm={async () => {
+              await deleteTask(task.id);
+              toast.success("Task deleted");
+            }}
+            trigger={
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+                aria-label="Delete task"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            }
+          />
+        </div>
       </div>
     </Link>
   );

@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Bookmark } from "lucide-react";
+import { Bookmark, Edit, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtRelative } from "@/lib/format";
 import { isOverdue } from "@/lib/task-utils";
@@ -9,10 +10,11 @@ import { toast } from "sonner";
 import type { Task } from "@/types";
 import { PriorityBadge, TaskStatusBadge } from "./badges";
 import { TaskCard } from "./TaskCard";
+import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 
 export function TaskTable({ tasks }: { tasks: Task[] }) {
   const navigate = useNavigate();
-  const { toggleBookmark } = useTasks();
+  const { toggleBookmark, deleteTask } = useTasks();
   const open = (id: string) => navigate({ to: "/tasks/$id", params: { id } });
 
   const handleBookmark = async (e: React.MouseEvent, id: string, wasBookmarked?: boolean) => {
@@ -38,11 +40,12 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className="w-10"></TableHead>
-              <TableHead className="w-[42%]">Task</TableHead>
+              <TableHead className="w-[38%]">Task</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Priority</TableHead>
               <TableHead>Due date</TableHead>
-              <TableHead className="text-right">Updated</TableHead>
+              <TableHead>Updated</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -78,7 +81,37 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
                 <TableCell className={cn("whitespace-nowrap text-sm", isOverdue(t) ? "font-medium text-destructive" : "text-muted-foreground")}>
                   {fmtDate(t.dueDate, "—")}
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-right text-sm text-muted-foreground">{fmtRelative(t.updatedAt)}</TableCell>
+                <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{fmtRelative(t.updatedAt)}</TableCell>
+                <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => navigate({ to: "/tasks/$id/edit", params: { id: t.id } })}
+                      aria-label="Edit task"
+                    >
+                      <Edit className="size-3.5" />
+                    </Button>
+                    <DeleteConfirmationDialog
+                      taskTitle={t.title}
+                      onConfirm={async () => {
+                        await deleteTask(t.id);
+                        toast.success("Task deleted");
+                      }}
+                      trigger={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-muted-foreground hover:text-destructive"
+                          aria-label="Delete task"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      }
+                    />
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
