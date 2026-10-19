@@ -2,7 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
-import { CalendarIcon, Loader2, X } from "lucide-react";
+import { CalendarIcon, Loader2, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Task, TaskInput } from "@/types";
+import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 
 export const TITLE_MAX = 100;
 export const DESCRIPTION_MAX = 1000;
@@ -30,11 +31,13 @@ export function TaskForm({
   submitLabel,
   onSubmit,
   onCancel,
+  onDelete,
 }: {
   initial?: Task;
   submitLabel: string;
   onSubmit: (data: TaskInput) => Promise<void>;
   onCancel: () => void;
+  onDelete?: () => Promise<void>;
 }) {
   const form = useForm<FormValues>({
     resolver: zodResolver(taskSchema),
@@ -137,12 +140,27 @@ export function TaskForm({
             </FormItem>
           )} />
         </div>
-        <div className="flex flex-col-reverse gap-2 border-t pt-5 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>Cancel</Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting && <Loader2 className="size-4 animate-spin" />}
-            {submitting ? "Saving…" : submitLabel}
-          </Button>
+        <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            {onDelete && initial && (
+              <DeleteConfirmationDialog
+                taskTitle={initial.title}
+                onConfirm={onDelete}
+                trigger={
+                  <Button type="button" variant="outline" className="w-full text-destructive hover:bg-danger-soft sm:w-auto">
+                    <Trash2 className="size-4" /> Delete Task
+                  </Button>
+                }
+              />
+            )}
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>Cancel</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting && <Loader2 className="size-4 animate-spin" />}
+              {submitting ? "Saving…" : submitLabel}
+            </Button>
+          </div>
         </div>
       </form>
     </Form>

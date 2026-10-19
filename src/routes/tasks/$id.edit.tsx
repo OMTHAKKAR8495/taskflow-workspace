@@ -22,7 +22,7 @@ export const Route = createFileRoute("/tasks/$id/edit")({
 
 function EditTaskPage() {
   const { id } = Route.useParams();
-  const { tasks, state, reload, updateTask } = useTasks();
+  const { tasks, state, reload, updateTask, deleteTask } = useTasks();
   const navigate = useNavigate();
 
   if (state === "loading") {
@@ -85,6 +85,11 @@ function EditTaskPage() {
           submitLabel="Save Changes"
           onSubmit={handleSubmit}
           onCancel={() => navigate({ to: "/tasks/$id", params: { id: task.id } })}
+          onDelete={async () => {
+            await deleteTask(task.id);
+            toast.success("Task deleted successfully");
+            navigate({ to: "/tasks" });
+          }}
         />
       </div>
     </AppLayout>
