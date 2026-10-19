@@ -5,7 +5,7 @@ import type { TaskService } from "./taskService.types";
  * Not used yet — switch to it in src/services/index.ts once the API exists.
  * Set VITE_API_URL (e.g. http://localhost:4000/api).
  */
-const BASE = import.meta.env.VITE_API_URL ?? "/api";
+const BASE = import.meta.env['VITE_API_URL'] ?? "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
