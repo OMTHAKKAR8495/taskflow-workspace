@@ -20,8 +20,11 @@ export function AuthModal() {
   const [regUsername, setRegUsername] = useState("");
   const [regPassword, setRegPassword] = useState("");
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const success = login(username, password);
     if (success) {
       toast.success("Welcome back to TaskFlow!");
@@ -30,8 +33,11 @@ export function AuthModal() {
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRegister = (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (!regFullName.trim() || !regEmail.trim() || !regUsername.trim() || !regPassword.trim()) {
       toast.error("Please fill in all fields.");
       return;

@@ -8,10 +8,13 @@ import {
   Scripts,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { TaskProvider } from "@/context/TaskContext";
+import { ThemeProvider } from "@/context/ThemeContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { AuthModal } from "@/components/common/AuthModal";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -115,12 +118,14 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-import { ThemeProvider } from "@/context/ThemeContext";
-import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { AuthModal } from "@/components/common/AuthModal";
-
 function AuthGate({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isInitialized } = useAuth();
+
+  // If not initialized yet on the client, render children with modal hidden or render nothing to avoid flash
+  if (!isInitialized) {
+    return <>{children}</>;
+  }
+
   return (
     <>
       {!isAuthenticated && <AuthModal />}
@@ -134,7 +139,6 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <ThemeProvider>
         <AuthProvider>
           <AuthGate>

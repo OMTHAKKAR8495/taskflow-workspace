@@ -10,6 +10,7 @@ export interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  isInitialized: boolean;
   login: (username: string, pass: string) => boolean;
   register: (fullName: string, email: string, username: string, pass: string) => boolean;
   logout: () => void;
@@ -39,15 +40,21 @@ const DEFAULT_ACCOUNTS: StoredAccount[] = [
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (raw) return JSON.parse(raw);
-      } catch {}
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (raw) {
+        setUser(JSON.parse(raw));
+      }
+    } catch (e) {
+      console.error("Failed to parse stored auth user", e);
+    } finally {
+      setIsInitialized(true);
     }
-    return null;
-  });
+  }, []);
 
   const getAccounts = (): StoredAccount[] => {
     if (typeof window === "undefined") return DEFAULT_ACCOUNTS;
@@ -131,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isAuthenticated: !!user,
+        isInitialized,
         login,
         register,
         logout,
