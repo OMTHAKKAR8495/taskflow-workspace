@@ -10,29 +10,60 @@ import type { TaskService } from "./taskService.types";
 const STORAGE_KEY = "taskflow:v1";
 const LATENCY_MS = 250;
 
-interface Store {
-  tasks: Task[];
-  profile: Profile;
-  activity: Activity[];
+let memoryStore: Store | null = null;
+
+function isBrowser(): boolean {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
 function load(): Store {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw) {
+  if (isBrowser()) {
     try {
-      return JSON.parse(raw) as Store;
-    } catch {
-      /* fall through to reseed */
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Store;
+        if (parsed && Array.isArray(parsed.tasks)) {
+          memoryStore = parsed;
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not read from localStorage, using memory/seed:", e);
     }
   }
+
+  if (memoryStore) {
+    return memoryStore;
+  }
+
   const tasks = buildSeedTasks();
-  const store = { tasks, profile: buildSeedProfile(), activity: buildSeedActivity(tasks) };
-  save(store);
-  return store;
+  const initialStore: Store = {
+    tasks,
+    profile: buildSeedProfile(),
+    activity: buildSeedActivity(tasks),
+  };
+  memoryStore = initialStore;
+
+  if (isBrowser()) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(initialStore));
+    } catch (e) {
+      console.warn("Could not write to localStorage:", e);
+    }
+  }
+
+  return initialStore;
 }
 
 function save(store: Store) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  memoryStore = store;
+  if (isBrowser()) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    } catch (e) {
+      console.error("Failed to persist tasks to localStorage:", e);
+    }
+  }
 }
 
 const wait = () => new Promise((r) => setTimeout(r, LATENCY_MS));
@@ -84,6 +115,40 @@ export const mockTaskService: TaskService = {
     store.tasks = store.tasks.filter((t) => t.id !== id);
     log(store, "deleted", existing);
     save(store);
+  },
+  async toggleBookmark(id) {
+    await wait();
+    const store = load();
+    const existing = store.tasks.find((t) => t.id === id);
+    if (!existing) throw new Error("Task not found");
+    const updated: Task = {
+      ...existing,
+      isBookmarked: !existing.isBookmarked,
+      updatedAt: new Date().toISOString(),
+    };
+    store.tasks = store.tasks.map((t) => (t.id === id ? updated : t));
+    save(store);
+    return updated;
+  },
+  async addComment(id, content, author = "Alex Morgan") {
+    await wait();
+    const store = load();
+    const existing = store.tasks.find((t) => t.id === id);
+    if (!existing) throw new Error("Task not found");
+    const newComment = {
+      id: uid("comment"),
+      author,
+      content,
+      createdAt: new Date().toISOString(),
+    };
+    const updated: Task = {
+      ...existing,
+      comments: [...(existing.comments || []), newComment],
+      updatedAt: new Date().toISOString(),
+    };
+    store.tasks = store.tasks.map((t) => (t.id === id ? updated : t));
+    save(store);
+    return updated;
   },
   async getDashboardStats() {
     await wait();

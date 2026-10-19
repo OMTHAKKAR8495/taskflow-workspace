@@ -29,6 +29,9 @@ export const apiTaskService: TaskService = {
   createTask: (data) => request("/tasks", { method: "POST", body: JSON.stringify(data) }),
   updateTask: (id, data) => request(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteTask: (id) => request(`/tasks/${id}`, { method: "DELETE" }),
+  toggleBookmark: (id) => request(`/tasks/${id}/bookmark`, { method: "POST" }),
+  addComment: (id, content, author) =>
+    request(`/tasks/${id}/comments`, { method: "POST", body: JSON.stringify({ content, author }) }),
   getDashboardStats: () => request("/tasks/stats"),
   getProfile: () => request("/profile"),
   updateProfile: (data) => request("/profile", { method: "PUT", body: JSON.stringify(data) }),

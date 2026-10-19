@@ -1,6 +1,13 @@
 export type TaskStatus = "pending" | "in_progress" | "completed";
 export type TaskPriority = "low" | "medium" | "high";
 
+export interface TaskComment {
+  id: string;
+  author: string;
+  content: string;
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   userId: string;
@@ -9,6 +16,8 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   dueDate: string | null;
+  isBookmarked?: boolean;
+  comments?: TaskComment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -58,4 +67,5 @@ export interface TaskFilterState {
   status: TaskStatus | "all";
   priority: TaskPriority | "all";
   sort: SortKey;
+  bookmarkedOnly?: boolean;
 }

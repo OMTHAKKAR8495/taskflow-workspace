@@ -45,6 +45,7 @@ export function startOfDay(d: Date) {
 export function filterAndSortTasks(tasks: Task[], f: TaskFilterState): Task[] {
   const q = f.search.trim().toLowerCase();
   const out = tasks.filter((t) => {
+    if (f.bookmarkedOnly && !t.isBookmarked) return false;
     if (f.status !== "all" && t.status !== f.status) return false;
     if (f.priority !== "all" && t.priority !== f.priority) return false;
     if (q && !t.title.toLowerCase().includes(q) && !t.description.toLowerCase().includes(q))
