@@ -12,9 +12,13 @@ import {
   Sparkles,
   Search,
   ExternalLink,
+  Sun,
+  Moon,
+  Laptop,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "@/context/ThemeContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +47,7 @@ interface AppLayoutProps {
 
 export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
   const { profile, activity, tasks } = useTasks();
+  const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const routerState = useRouterState();
@@ -122,6 +127,16 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
             Preferences
           </div>
           <button
+            onClick={toggleTheme}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+          >
+            <div className="flex items-center gap-3">
+              {resolvedTheme === "dark" ? <Moon className="size-4 text-primary" /> : <Sun className="size-4 text-amber-500" />}
+              <span>Theme</span>
+            </div>
+            <span className="text-xs uppercase font-semibold text-muted-foreground">{resolvedTheme}</span>
+          </button>
+          <button
             onClick={() => setSettingsOpen(true)}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
           >
@@ -197,6 +212,18 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
             })}
             <button
               onClick={() => {
+                toggleTheme();
+              }}
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+            >
+              <div className="flex items-center gap-3">
+                {resolvedTheme === "dark" ? <Moon className="size-4 text-primary" /> : <Sun className="size-4 text-amber-500" />}
+                <span>Toggle Theme</span>
+              </div>
+              <span className="text-xs uppercase font-semibold text-muted-foreground">{resolvedTheme}</span>
+            </button>
+            <button
+              onClick={() => {
                 setMobileOpen(false);
                 setSettingsOpen(true);
               }}
@@ -246,6 +273,38 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Theme Toggle Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-9 text-muted-foreground hover:text-foreground" aria-label="Toggle theme">
+                  {resolvedTheme === "dark" ? (
+                    <Moon className="size-4 text-primary" />
+                  ) : (
+                    <Sun className="size-4 text-amber-500" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-36">
+                <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">Theme</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setTheme("light")} className="flex items-center gap-2 cursor-pointer">
+                  <Sun className="size-4" />
+                  <span>Light</span>
+                  {theme === "light" && <span className="ml-auto text-xs text-primary font-bold">✓</span>}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTheme("dark")} className="flex items-center gap-2 cursor-pointer">
+                  <Moon className="size-4" />
+                  <span>Dark</span>
+                  {theme === "dark" && <span className="ml-auto text-xs text-primary font-bold">✓</span>}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTheme("system")} className="flex items-center gap-2 cursor-pointer">
+                  <Laptop className="size-4" />
+                  <span>System</span>
+                  {theme === "system" && <span className="ml-auto text-xs text-primary font-bold">✓</span>}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             {/* Notifications Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

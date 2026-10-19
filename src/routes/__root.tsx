@@ -115,16 +115,20 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+import { ThemeProvider } from "@/context/ThemeContext";
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <TaskProvider>
-        <Outlet />
-        <Toaster richColors position="top-right" />
-      </TaskProvider>
+      <ThemeProvider>
+        <TaskProvider>
+          <Outlet />
+          <Toaster richColors position="top-right" />
+        </TaskProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
