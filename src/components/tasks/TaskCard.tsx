@@ -1,22 +1,50 @@
 import { Link } from "@tanstack/react-router";
-import { CalendarDays, Clock } from "lucide-react";
+import { Bookmark, CalendarDays, Clock, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtRelative } from "@/lib/format";
 import { isOverdue } from "@/lib/task-utils";
+import { useTasks } from "@/context/TaskContext";
+import { toast } from "sonner";
 import type { Task } from "@/types";
 import { PriorityBadge, TaskStatusBadge } from "./badges";
 
 export function TaskCard({ task }: { task: Task }) {
+  const { toggleBookmark } = useTasks();
   const overdue = isOverdue(task);
+
+  const handleBookmark = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await toggleBookmark(task.id);
+      toast.success(task.isBookmarked ? "Removed from bookmarks" : "Added to bookmarks");
+    } catch {
+      toast.error("Failed to update bookmark");
+    }
+  };
+
   return (
     <Link
       to="/tasks/$id"
       params={{ id: task.id }}
       className="group flex h-full flex-col rounded-xl border bg-card p-4 shadow-card transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <div className="flex flex-wrap items-center gap-1.5">
-        <TaskStatusBadge status={task.status} />
-        <PriorityBadge priority={task.priority} />
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <TaskStatusBadge status={task.status} />
+          <PriorityBadge priority={task.priority} />
+        </div>
+        <button
+          type="button"
+          onClick={handleBookmark}
+          aria-label={task.isBookmarked ? "Remove bookmark" : "Bookmark task"}
+          className={cn(
+            "rounded-md p-1 transition-colors hover:bg-muted",
+            task.isBookmarked ? "text-amber-500 fill-amber-500" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Bookmark className={cn("size-4", task.isBookmarked && "fill-amber-500")} />
+        </button>
       </div>
       <h3 className={cn("mt-3 font-semibold leading-snug group-hover:text-primary", task.status === "completed" && "text-muted-foreground line-through")}>
         {task.title}

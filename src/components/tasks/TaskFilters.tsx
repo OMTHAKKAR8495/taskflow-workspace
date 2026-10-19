@@ -67,6 +67,15 @@ export function TaskFilters({
             <SelectItem value="createdAt">Sort: Newest</SelectItem>
           </SelectContent>
         </Select>
+        <Button
+          type="button"
+          variant={filters.bookmarkedOnly ? "default" : "outline"}
+          size="sm"
+          onClick={() => onChange({ ...filters, bookmarkedOnly: !filters.bookmarkedOnly })}
+          className="h-10 text-xs font-medium"
+        >
+          ★ Bookmarked
+        </Button>
         <div className="flex items-center gap-2">
           <ToggleGroup type="single" value={view} onValueChange={(v) => v && onViewChange(v as ViewMode)} className="rounded-md border bg-card p-0.5">
             <ToggleGroupItem value="list" aria-label="List view" className="size-8"><List className="size-4" /></ToggleGroupItem>
