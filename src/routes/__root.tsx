@@ -15,6 +15,7 @@ import { TaskProvider } from "@/context/TaskContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AuthModal } from "@/components/common/AuthModal";
+import { FirstTaskModal } from "@/components/tasks/FirstTaskModal";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -149,6 +150,7 @@ function RootComponent() {
           <AuthGate>
             <TaskProviderWrapper>
               <Outlet />
+              <FirstTaskModal />
               <Toaster richColors position="top-right" />
             </TaskProviderWrapper>
           </AuthGate>

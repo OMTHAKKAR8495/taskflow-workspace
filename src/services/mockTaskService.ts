@@ -54,6 +54,20 @@ function load(): Store {
       if (raw) {
         const parsed = JSON.parse(raw) as Store;
         if (parsed && Array.isArray(parsed.tasks)) {
+          // If this is a new / non-default user, ensure any leftover mock starter tasks are purged
+          if (!isDefaultUser && parsed.tasks.length > 0) {
+            const isStarterSet = parsed.tasks.every((t) =>
+              t.title.includes("Welcome to TaskFlow! Complete your first task") ||
+              t.title.includes("Customize your profile and preferences") ||
+              t.title.includes("Create your first project task")
+            );
+            if (isStarterSet) {
+              parsed.tasks = [];
+              parsed.activity = [];
+              window.localStorage.setItem(key, JSON.stringify(parsed));
+            }
+          }
+
           // If profile still has old default name "Alex Morgan", update to active user
           if (activeUser && parsed.profile) {
             if (!parsed.profile.fullName || parsed.profile.fullName === "Alex Morgan") {

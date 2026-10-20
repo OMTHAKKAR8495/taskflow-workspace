@@ -104,6 +104,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (typeof window !== "undefined") {
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(activeUser));
         localStorage.setItem(LAST_USER_KEY, activeUser.username);
+        if (activeUser.id !== "user-om" && activeUser.username !== "omthakkar") {
+          sessionStorage.setItem("taskflow:new_login_trigger", activeUser.id);
+          localStorage.setItem(`taskflow:show_first_task_modal:${activeUser.id}`, "true");
+        }
       }
       return true;
     }
@@ -141,6 +145,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(activeUser));
       localStorage.setItem(LAST_USER_KEY, activeUser.username);
+      sessionStorage.setItem("taskflow:new_login_trigger", activeUser.id);
+      localStorage.setItem(`taskflow:show_first_task_modal:${activeUser.id}`, "true");
     }
     return true;
   };

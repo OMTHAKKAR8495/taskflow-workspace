@@ -36,42 +36,8 @@ export function buildSeedTasks(userId = "user-om"): Task[] {
   }));
 }
 
-export function buildNewUserTasks(userId: string): Task[] {
-  return [
-    {
-      id: `task-${Date.now()}-1`,
-      userId,
-      title: "Welcome to TaskFlow! Complete your first task",
-      description: "Explore the TaskFlow workspace. Mark this task as completed to see the dashboard progress bar update in real time.",
-      status: "in_progress",
-      priority: "high",
-      dueDate: iso(1),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: `task-${Date.now()}-2`,
-      userId,
-      title: "Customize your profile and preferences",
-      description: "Head to the Profile page to update your account details, and toggle between light and dark themes using the top header icon.",
-      status: "pending",
-      priority: "medium",
-      dueDate: iso(3),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: `task-${Date.now()}-3`,
-      userId,
-      title: "Create your first project task",
-      description: "Click '+ Quick Add Task' on the Dashboard or 'Add Task' in All Tasks to organize your assignments.",
-      status: "pending",
-      priority: "low",
-      dueDate: iso(5),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
+export function buildNewUserTasks(_userId?: string): Task[] {
+  return [];
 }
 
 export function buildSeedProfile(fullName = "Om Thakkar", email = "omthakkar@example.com", id = "user-om"): Profile {

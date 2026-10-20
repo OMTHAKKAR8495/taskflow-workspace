@@ -67,4 +67,9 @@ describe("Task business logic", () => {
 
     expect(highPriorityTasks.every((t) => t.priority === "high")).toBe(true);
   });
+
+  it("ensures new user ID tasks are empty", async () => {
+    const { buildNewUserTasks } = await import("@/services/mockData");
+    expect(buildNewUserTasks("user-new-123")).toEqual([]);
+  });
 });
