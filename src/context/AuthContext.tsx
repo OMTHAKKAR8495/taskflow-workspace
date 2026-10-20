@@ -30,7 +30,15 @@ export interface StoredAccount {
   passwordHash: string;
 }
 
-const DEFAULT_ACCOUNTS: StoredAccount[] = [];
+const DEFAULT_ACCOUNTS: StoredAccount[] = [
+  {
+    id: "user-om",
+    username: "omthakkar",
+    fullName: "Om Thakkar",
+    email: "omthakkar@example.com",
+    passwordHash: "thakkar2912",
+  },
+];
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -40,6 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
+      // Ensure registered accounts are loaded / seeded in localStorage
+      getAccounts();
+
       const raw = localStorage.getItem(AUTH_STORAGE_KEY);
       if (raw) {
         setUser(JSON.parse(raw));
@@ -57,18 +68,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem(REGISTERED_USERS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          // Filter out legacy hardcoded default credentials
-          const cleaned = parsed.filter(
-            (a) => !(a.username === "omthakkar" && a.passwordHash === "thakkar2912")
-          );
-          if (cleaned.length !== parsed.length) {
-            localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(cleaned));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // If default user is missing from storage, keep it in the list
+          const hasOm = parsed.some((a) => a.username.toLowerCase() === "omthakkar");
+          if (!hasOm) {
+            const merged = [...DEFAULT_ACCOUNTS, ...parsed];
+            localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(merged));
+            return merged;
           }
-          return cleaned;
+          return parsed;
         }
       }
-    } catch {}
+    } catch (e) {
+      console.error("Failed to read accounts from localStorage", e);
+    }
+    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(DEFAULT_ACCOUNTS));
     return DEFAULT_ACCOUNTS;
   };
 

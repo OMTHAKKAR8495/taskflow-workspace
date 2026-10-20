@@ -12,7 +12,12 @@ export function AuthModal() {
   const [isRegister, setIsRegister] = useState(() => registeredAccounts.length === 0);
 
   // Login form state
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("taskflow:last_username") || "omthakkar";
+    }
+    return "omthakkar";
+  });
   const [password, setPassword] = useState("");
 
   // Register form state
@@ -108,6 +113,20 @@ export function AuthModal() {
             <Button type="submit" className="w-full h-10 font-semibold shadow-sm shadow-primary/25">
               Sign In <ArrowRight className="size-4 ml-1.5" />
             </Button>
+
+            <div className="rounded-lg bg-muted/60 p-2.5 text-center text-xs text-muted-foreground border">
+              Default access: <span className="font-medium text-foreground">omthakkar</span> / <span className="font-medium text-foreground">thakkar2912</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername("omthakkar");
+                  setPassword("thakkar2912");
+                }}
+                className="ml-2 underline text-primary cursor-pointer hover:text-primary/80"
+              >
+                Auto-fill
+              </button>
+            </div>
 
             <div className="pt-2 text-center text-xs text-muted-foreground">
               Not registered yet?{" "}
