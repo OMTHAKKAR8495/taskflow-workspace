@@ -13,13 +13,16 @@ interface AuthContextType {
   isInitialized: boolean;
   login: (username: string, pass: string) => boolean;
   register: (fullName: string, email: string, username: string, pass: string) => boolean;
+  updateCurrentUser: (updates: { fullName?: string; email?: string }) => void;
+  getRegisteredAccounts: () => StoredAccount[];
   logout: () => void;
 }
 
 const AUTH_STORAGE_KEY = "taskflow:auth_user";
 const REGISTERED_USERS_KEY = "taskflow:users_db";
+const LAST_USER_KEY = "taskflow:last_username";
 
-interface StoredAccount {
+export interface StoredAccount {
   id: string;
   username: string;
   fullName: string;
@@ -27,15 +30,7 @@ interface StoredAccount {
   passwordHash: string;
 }
 
-const DEFAULT_ACCOUNTS: StoredAccount[] = [
-  {
-    id: "user-om",
-    username: "omthakkar",
-    fullName: "Om Thakkar",
-    email: "omthakkar@example.com",
-    passwordHash: "thakkar2912",
-  },
-];
+const DEFAULT_ACCOUNTS: StoredAccount[] = [];
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -62,10 +57,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem(REGISTERED_USERS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // Filter out legacy hardcoded default credentials
+          const cleaned = parsed.filter(
+            (a) => !(a.username === "omthakkar" && a.passwordHash === "thakkar2912")
+          );
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(cleaned));
+          }
+          return cleaned;
+        }
       }
     } catch {}
-    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(DEFAULT_ACCOUNTS));
     return DEFAULT_ACCOUNTS;
   };
 
@@ -86,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(activeUser);
       if (typeof window !== "undefined") {
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(activeUser));
+        localStorage.setItem(LAST_USER_KEY, activeUser.username);
       }
       return true;
     }
@@ -122,8 +126,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(activeUser);
     if (typeof window !== "undefined") {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(activeUser));
+      localStorage.setItem(LAST_USER_KEY, activeUser.username);
     }
     return true;
+  };
+
+  const updateCurrentUser = (updates: { fullName?: string; email?: string }) => {
+    if (!user) return;
+    const nextFullName = updates.fullName?.trim() || user.fullName;
+    const nextEmail = updates.email?.trim() || user.email;
+
+    const updatedUser: AuthUser = {
+      ...user,
+      fullName: nextFullName,
+      email: nextEmail,
+    };
+    setUser(updatedUser);
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+      const accounts = getAccounts();
+      const updatedAccounts = accounts.map((a) =>
+        a.id === user.id
+          ? {
+              ...a,
+              fullName: nextFullName,
+              email: nextEmail,
+            }
+          : a
+      );
+      localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(updatedAccounts));
+    }
   };
 
   const logout = () => {
@@ -141,6 +174,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isInitialized,
         login,
         register,
+        updateCurrentUser,
+        getRegisteredAccounts: getAccounts,
         logout,
       }}
     >

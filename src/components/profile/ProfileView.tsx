@@ -61,7 +61,7 @@ export function ProfileView() {
         .join("")
         .toUpperCase()
         .slice(0, 2)
-    : "AM";
+    : "OT";
 
   const onSubmit = async (values: ProfileFormValues) => {
     setIsSaving(true);
@@ -93,7 +93,7 @@ export function ProfileView() {
         <div className="flex-1 space-y-1">
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold tracking-tight text-foreground">{profile.fullName}</h2>
-            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-600">
+            <span className="rounded-full bg-success-soft border border-success/20 px-2 py-0.5 text-xs font-semibold text-success">
               Active Member
             </span>
           </div>

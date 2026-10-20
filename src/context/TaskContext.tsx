@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { taskService } from "@/services";
 import { computeStats } from "@/lib/task-utils";
+import { useAuth } from "@/context/AuthContext";
 import type { Activity, DashboardStats, Profile, ProfileInput, Task, TaskInput } from "@/types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -23,48 +24,11 @@ interface TaskContextValue {
 const TaskContext = createContext<TaskContextValue | null>(null);
 
 export function TaskProvider({ children }: { children: ReactNode }) {
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem("taskflow:v1");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && Array.isArray(parsed.tasks)) return parsed.tasks;
-        }
-      } catch {}
-    }
-    return [];
-  });
-  const [profile, setProfile] = useState<Profile | null>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem("taskflow:v1");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && parsed.profile) return parsed.profile;
-        }
-      } catch {}
-    }
-    return null;
-  });
-  const [activity, setActivity] = useState<Activity[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem("taskflow:v1");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && Array.isArray(parsed.activity)) return parsed.activity;
-        }
-      } catch {}
-    }
-    return [];
-  });
-  const [state, setState] = useState<LoadState>(() => {
-    if (typeof window !== "undefined" && window.localStorage.getItem("taskflow:v1")) {
-      return "ready";
-    }
-    return "loading";
-  });
+  const { user, updateCurrentUser } = useAuth();
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [activity, setActivity] = useState<Activity[]>([]);
+  const [state, setState] = useState<LoadState>("loading");
 
   const reload = useCallback(async () => {
     setState("loading");
@@ -85,7 +49,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void reload();
-  }, [reload]);
+  }, [reload, user?.id]);
 
   const refreshActivity = useCallback(async () => setActivity(await taskService.getActivity()), []);
 
@@ -127,10 +91,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       updateProfile: async (data) => {
         const p = await taskService.updateProfile(data);
         setProfile(p);
+        updateCurrentUser({ fullName: p.fullName, email: p.email });
         return p;
       },
     }),
-    [tasks, profile, activity, state, reload, refreshActivity],
+    [tasks, profile, activity, state, reload, refreshActivity, updateCurrentUser],
   );
 
   return <TaskContext.Provider value={value}>{children}</TaskContext.Provider>;

@@ -134,6 +134,11 @@ function AuthGate({ children }: { children: ReactNode }) {
   );
 }
 
+function TaskProviderWrapper({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  return <TaskProvider key={user?.id || "guest"}>{children}</TaskProvider>;
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
@@ -142,10 +147,10 @@ function RootComponent() {
       <ThemeProvider>
         <AuthProvider>
           <AuthGate>
-            <TaskProvider>
+            <TaskProviderWrapper>
               <Outlet />
               <Toaster richColors position="top-right" />
-            </TaskProvider>
+            </TaskProviderWrapper>
           </AuthGate>
         </AuthProvider>
       </ThemeProvider>

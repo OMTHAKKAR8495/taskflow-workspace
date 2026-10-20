@@ -7,12 +7,13 @@ import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 export function AuthModal() {
-  const { login, register } = useAuth();
-  const [isRegister, setIsRegister] = useState(false);
+  const { login, register, getRegisteredAccounts } = useAuth();
+  const registeredAccounts = getRegisteredAccounts();
+  const [isRegister, setIsRegister] = useState(() => registeredAccounts.length === 0);
 
   // Login form state
-  const [username, setUsername] = useState("omthakkar");
-  const [password, setPassword] = useState("thakkar2912");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   // Register form state
   const [regFullName, setRegFullName] = useState("");
@@ -24,6 +25,10 @@ export function AuthModal() {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
+    }
+    if (!username.trim() || !password.trim()) {
+      toast.error("Please enter both User ID and Password.");
+      return;
     }
     const success = login(username, password);
     if (success) {
@@ -69,23 +74,13 @@ export function AuthModal() {
 
         {!isRegister ? (
           <form onSubmit={handleLogin} className="space-y-4">
-            <div className="rounded-lg border bg-muted/40 p-3 text-xs space-y-1">
-              <span className="font-semibold text-primary">Demo Credentials:</span>
-              <p className="text-muted-foreground">
-                ID: <code className="font-mono text-foreground font-bold">omthakkar</code>
-              </p>
-              <p className="text-muted-foreground">
-                Pass: <code className="font-mono text-foreground font-bold">thakkar2912</code>
-              </p>
-            </div>
-
             <div className="space-y-1.5">
               <Label htmlFor="login-id">User ID</Label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id="login-id"
-                  placeholder="Enter User ID (e.g. omthakkar)"
+                  placeholder="Enter User ID"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="pl-9 h-10"
@@ -133,7 +128,7 @@ export function AuthModal() {
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id="reg-name"
-                  placeholder="e.g. Om Thakkar"
+                  placeholder="e.g. Alex Morgan"
                   value={regFullName}
                   onChange={(e) => setRegFullName(e.target.value)}
                   className="pl-9 h-10"
@@ -149,7 +144,7 @@ export function AuthModal() {
                 <Input
                   id="reg-email"
                   type="email"
-                  placeholder="e.g. omthakkar@example.com"
+                  placeholder="e.g. alex@example.com"
                   value={regEmail}
                   onChange={(e) => setRegEmail(e.target.value)}
                   className="pl-9 h-10"
@@ -164,7 +159,7 @@ export function AuthModal() {
                 <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id="reg-id"
-                  placeholder="e.g. omthakkar"
+                  placeholder="e.g. alexmorgan"
                   value={regUsername}
                   onChange={(e) => setRegUsername(e.target.value)}
                   className="pl-9 h-10"

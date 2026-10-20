@@ -116,7 +116,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                   <span
                     className={cn(
                       "rounded-full px-2 py-0.5 text-xs font-semibold",
-                      active ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                      active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-muted text-muted-foreground"
                     )}
                   >
                     {item.count}
@@ -204,7 +204,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                     <span
                       className={cn(
                         "rounded-full px-2 py-0.5 text-xs font-semibold",
-                        active ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                        active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-muted text-muted-foreground"
                       )}
                     >
                       {item.count}
@@ -410,7 +410,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase">Current Workspace</p>
-              <p className="text-sm font-semibold">Alex Morgan's Studio</p>
+              <p className="text-sm font-semibold">{displayName}'s Workspace</p>
             </div>
           </div>
         </DialogContent>

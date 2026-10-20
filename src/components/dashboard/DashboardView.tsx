@@ -30,18 +30,20 @@ import { LoadingState, ErrorState, EmptyState } from "@/components/common/states
 import { TaskStatusBadge, PriorityBadge } from "@/components/tasks/badges";
 import { TaskCard } from "@/components/tasks/TaskCard";
 import { useTasks } from "@/context/TaskContext";
+import { useAuth } from "@/context/AuthContext";
 import { dueSoon, completionSeries, isOverdue } from "@/lib/task-utils";
 import { fmtDate, fmtRelative } from "@/lib/format";
 import { Progress } from "@/components/ui/progress";
 
 const PRIORITY_COLORS = {
-  high: "oklch(0.58 0.21 25)",
-  medium: "oklch(0.52 0.22 275)",
-  low: "oklch(0.7 0.14 290)",
+  high: "var(--color-destructive)",
+  medium: "var(--color-primary)",
+  low: "var(--color-chart-2)",
 };
 
 export function DashboardView() {
   const { tasks, stats, profile, activity, state, reload } = useTasks();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   if (state === "loading") {
@@ -66,13 +68,15 @@ export function DashboardView() {
 
   const existingTaskIds = new Set(tasks.map((t) => t.id));
 
+  const displayName = user?.fullName || profile?.fullName || "Om Thakkar";
+
   return (
     <div className="space-y-8">
       {/* Welcome Banner */}
       <div className="flex flex-col gap-4 rounded-2xl border bg-card/60 p-6 shadow-card backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Welcome back, {profile?.fullName ? profile.fullName.split(" ")[0] : "Alex"}! 👋
+            Welcome back, {displayName.split(" ")[0]}! 👋
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Here's what is happening with your tasks today. You have{" "}
@@ -149,27 +153,30 @@ export function DashboardView() {
                 <span className="size-2.5 rounded-full bg-primary" /> Created
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="size-2.5 rounded-full bg-emerald-500" /> Completed
+                <span className="size-2.5 rounded-full bg-success" /> Completed
               </span>
             </div>
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={seriesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <XAxis dataKey="day" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip
-                  cursor={{ fill: "rgba(0, 0, 0, 0.04)" }}
+                  cursor={{ fill: "var(--color-muted)", opacity: 0.3 }}
                   contentStyle={{
                     backgroundColor: "var(--card)",
                     borderColor: "var(--border)",
                     borderRadius: "8px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
                     fontSize: "12px",
+                    color: "var(--foreground)",
                   }}
+                  itemStyle={{ color: "var(--foreground)" }}
+                  labelStyle={{ color: "var(--foreground)" }}
                 />
                 <Bar dataKey="created" fill="var(--color-primary)" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                <Bar dataKey="completed" fill="oklch(0.55 0.13 158)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                <Bar dataKey="completed" fill="var(--color-success)" radius={[4, 4, 0, 0]} maxBarSize={32} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -205,8 +212,12 @@ export function DashboardView() {
                       backgroundColor: "var(--card)",
                       borderColor: "var(--border)",
                       borderRadius: "8px",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
                       fontSize: "12px",
+                      color: "var(--foreground)",
                     }}
+                    itemStyle={{ color: "var(--foreground)" }}
+                    labelStyle={{ color: "var(--foreground)" }}
                   />
                 </PieChart>
               </ResponsiveContainer>
