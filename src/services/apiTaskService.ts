@@ -1,16 +1,28 @@
 import type { TaskService } from "./taskService.types";
 
-/**
- * FUTURE: HTTP implementation for the Node.js + Express + PostgreSQL backend.
- * Not used yet — switch to it in src/services/index.ts once the API exists.
- * Set VITE_API_URL (e.g. http://localhost:4000/api).
- */
-const BASE = import.meta.env['VITE_API_URL'] ?? "/api";
+const BASE = import.meta.env["VITE_API_URL"] ?? "http://localhost:4000/api";
+
+function getActiveUserId(): string {
+  if (typeof window === "undefined" || !window.localStorage) return "user-om";
+  try {
+    const raw = window.localStorage.getItem("taskflow:auth_user");
+    if (raw) {
+      const user = JSON.parse(raw);
+      if (user?.id) return user.id;
+    }
+  } catch {}
+  return "user-om";
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const userId = getActiveUserId();
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      "x-user-id": userId,
+      ...init?.headers,
+    },
     credentials: "include",
   });
   if (!res.ok) throw new Error(`Request failed: ${res.status}`);
