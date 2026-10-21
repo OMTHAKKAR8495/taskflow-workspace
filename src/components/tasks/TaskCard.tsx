@@ -53,7 +53,9 @@ export function TaskCard({ task }: { task: Task }) {
           aria-label={task.isBookmarked ? "Remove bookmark" : "Bookmark task"}
           className={cn(
             "rounded-md p-1 transition-colors hover:bg-muted",
-            task.isBookmarked ? "text-amber-500 fill-amber-500" : "text-muted-foreground hover:text-foreground"
+            task.isBookmarked
+              ? "text-amber-500 fill-amber-500"
+              : "text-muted-foreground hover:text-foreground",
           )}
         >
           <Bookmark className={cn("size-3.5", task.isBookmarked && "fill-amber-500")} />
@@ -75,7 +77,7 @@ export function TaskCard({ task }: { task: Task }) {
       <h3
         className={cn(
           "mt-2 font-semibold text-sm leading-snug group-hover:text-primary transition-colors",
-          task.status === "completed" && "text-muted-foreground line-through"
+          task.status === "completed" && "text-muted-foreground line-through",
         )}
       >
         {task.title}
@@ -126,14 +128,25 @@ export function TaskCard({ task }: { task: Task }) {
           )}
 
           {task.dueDate && (
-            <span className={cn("inline-flex items-center gap-1 text-[11px]", overdue && "font-medium text-destructive")}>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-[11px]",
+                overdue && "font-medium text-destructive",
+              )}
+            >
               <CalendarDays className="size-3" aria-hidden />
               {fmtDate(task.dueDate)}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+        <div
+          className="flex items-center gap-1"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
           <button
             type="button"
             onClick={() => navigate({ to: "/tasks/$id/edit", params: { id: task.id } })}

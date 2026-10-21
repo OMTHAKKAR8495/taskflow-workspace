@@ -22,7 +22,7 @@ pool.on("error", (err) => {
 
 export async function query<T extends pg.QueryResultRow = any>(
   text: string,
-  params?: any[]
+  params?: any[],
 ): Promise<pg.QueryResult<T>> {
   const start = Date.now();
   const res = await pool.query<T>(text, params);

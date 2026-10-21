@@ -20,6 +20,8 @@ import {
   CheckSquare,
   Users,
   FolderKanban,
+  Repeat,
+  List as ListIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -35,10 +37,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useTasks } from "@/context/TaskContext";
 import { cn } from "@/lib/utils";
-import type { Task, TaskInput, TaskPriority, TaskStatus } from "@/types";
+import type { RecurrencePattern, Task, TaskInput, TaskPriority, TaskStatus } from "@/types";
 import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 
 export const TITLE_MAX = 100;
@@ -59,6 +67,8 @@ export const taskSchema = z.object({
   dueDate: z.date().nullable(),
   projectId: z.string().optional(),
   assigneeId: z.string().optional(),
+  listId: z.string().optional(),
+  recurrence: z.enum(["none", "daily", "weekly", "monthly", "weekdays"]).optional(),
   estimate: z.string().optional(),
   tags: z.string().optional(),
 });
@@ -78,10 +88,10 @@ export function TaskForm({
   onCancel: () => void;
   onDelete?: () => Promise<void>;
 }) {
-  const { projects, team } = useTasks();
+  const { projects, team, lists } = useTasks();
   const [dateOpen, setDateOpen] = useState(false);
   const [subtasks, setSubtasks] = useState<{ id: string; title: string; completed: boolean }[]>(
-    initial?.subtasks || []
+    initial?.subtasks || [],
   );
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
 
@@ -95,6 +105,8 @@ export function TaskForm({
       dueDate: initial?.dueDate ? new Date(initial.dueDate) : null,
       projectId: initial?.projectId ?? (projects[0]?.id || "proj-core"),
       assigneeId: initial?.assignee?.id ?? (team[0]?.id || "team-om"),
+      listId: initial?.listId ?? (lists[0]?.id || "list-personal"),
+      recurrence: initial?.recurrence ?? "none",
       estimate: initial?.estimate ?? "3 pts",
       tags: initial?.tags ? initial.tags.join(", ") : "Frontend, API",
     },
@@ -139,6 +151,8 @@ export function TaskForm({
           .filter(Boolean)
       : [];
 
+    const chosenList = lists.find((l) => l.id === v.listId);
+
     await onSubmit({
       title: v.title,
       description: v.description,
@@ -147,6 +161,10 @@ export function TaskForm({
       dueDate: due,
       projectId: v.projectId,
       assigneeId: v.assigneeId,
+      listId: v.listId,
+      listName: chosenList?.name,
+      listColor: chosenList?.color,
+      recurrence: (v.recurrence as RecurrencePattern) || "none",
       estimate: v.estimate,
       tags: parsedTags,
       subtasks,
@@ -189,8 +207,43 @@ export function TaskForm({
           )}
         />
 
-        {/* Project & Assignee Selection (Task Management Core) */}
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* List, Project & Assignee Selection */}
+        <div className="grid gap-4 sm:grid-cols-3">
+          {/* List Select */}
+          <FormField
+            control={form.control}
+            name="listId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="flex items-center gap-1.5">
+                  <ListIcon className="size-4 text-primary" />
+                  <span>List</span>
+                </FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger className="h-10 bg-card">
+                      <SelectValue placeholder="Select a list" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {lists.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="size-2 rounded-full"
+                            style={{ backgroundColor: l.color }}
+                          />
+                          <span className="font-medium">{l.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
           {/* Project Select */}
           <FormField
             control={form.control}
@@ -211,7 +264,10 @@ export function TaskForm({
                     {projects.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         <div className="flex items-center gap-2">
-                          <span className="size-2 rounded-full" style={{ backgroundColor: p.color }} />
+                          <span
+                            className="size-2 rounded-full"
+                            style={{ backgroundColor: p.color }}
+                          />
                           <span className="font-medium">{p.name}</span>
                           <span className="text-xs text-muted-foreground">({p.key})</span>
                         </div>
@@ -277,7 +333,10 @@ export function TaskForm({
               <div className="flex justify-between gap-2">
                 <FormMessage />
                 <FormDescription
-                  className={cn("ml-auto text-xs", desc.length > DESCRIPTION_MAX && "text-destructive")}
+                  className={cn(
+                    "ml-auto text-xs",
+                    desc.length > DESCRIPTION_MAX && "text-destructive",
+                  )}
                 >
                   {desc.length}/{DESCRIPTION_MAX}
                 </FormDescription>
@@ -311,7 +370,12 @@ export function TaskForm({
                     onChange={() => handleToggleSubtask(s.id)}
                     className="size-4 rounded border-border text-primary focus:ring-primary"
                   />
-                  <span className={cn("text-foreground font-medium", s.completed && "line-through text-muted-foreground")}>
+                  <span
+                    className={cn(
+                      "text-foreground font-medium",
+                      s.completed && "line-through text-muted-foreground",
+                    )}
+                  >
                     {s.title}
                   </span>
                 </label>
@@ -338,7 +402,13 @@ export function TaskForm({
                 }}
                 className="h-9 text-xs bg-card"
               />
-              <Button type="button" variant="outline" size="sm" onClick={handleAddSubtask} className="h-9 text-xs">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddSubtask}
+                className="h-9 text-xs"
+              >
                 <Plus className="size-3.5" /> Add
               </Button>
             </div>
@@ -364,10 +434,33 @@ export function TaskForm({
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {(
                         [
-                          { value: "pending", label: "To Do", icon: Circle, activeCls: "border-warning bg-warning-soft text-warning ring-1 ring-warning" },
-                          { value: "in_progress", label: "In Progress", icon: Timer, activeCls: "border-info bg-info-soft text-info ring-1 ring-info" },
-                          { value: "in_review", label: "In Review", icon: Eye, activeCls: "border-purple-500 bg-purple-500/10 text-purple-700 dark:text-purple-400 ring-1 ring-purple-500" },
-                          { value: "completed", label: "Done", icon: CheckCircle2, activeCls: "border-success bg-success-soft text-success ring-1 ring-success" },
+                          {
+                            value: "pending",
+                            label: "To Do",
+                            icon: Circle,
+                            activeCls:
+                              "border-warning bg-warning-soft text-warning ring-1 ring-warning",
+                          },
+                          {
+                            value: "in_progress",
+                            label: "In Progress",
+                            icon: Timer,
+                            activeCls: "border-info bg-info-soft text-info ring-1 ring-info",
+                          },
+                          {
+                            value: "in_review",
+                            label: "In Review",
+                            icon: Eye,
+                            activeCls:
+                              "border-purple-500 bg-purple-500/10 text-purple-700 dark:text-purple-400 ring-1 ring-purple-500",
+                          },
+                          {
+                            value: "completed",
+                            label: "Done",
+                            icon: CheckCircle2,
+                            activeCls:
+                              "border-success bg-success-soft text-success ring-1 ring-success",
+                          },
                         ] as const
                       ).map((s) => {
                         const Icon = s.icon;
@@ -381,7 +474,7 @@ export function TaskForm({
                               "flex flex-col items-center justify-center gap-1 rounded-lg border py-2 px-1 text-xs font-semibold transition-all cursor-pointer",
                               isSelected
                                 ? cn(s.activeCls, "shadow-sm")
-                                : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+                                : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
                             )}
                           >
                             <Icon className="size-3.5" />
@@ -412,9 +505,26 @@ export function TaskForm({
                     <div className="grid grid-cols-3 gap-2">
                       {(
                         [
-                          { value: "low", label: "Low", icon: ArrowDown, activeCls: "border-border bg-muted text-foreground ring-1 ring-border" },
-                          { value: "medium", label: "Medium", icon: Minus, activeCls: "border-primary bg-primary-soft text-primary ring-1 ring-primary" },
-                          { value: "high", label: "High", icon: ArrowUp, activeCls: "border-destructive bg-danger-soft text-destructive ring-1 ring-destructive" },
+                          {
+                            value: "low",
+                            label: "Low",
+                            icon: ArrowDown,
+                            activeCls: "border-border bg-muted text-foreground ring-1 ring-border",
+                          },
+                          {
+                            value: "medium",
+                            label: "Medium",
+                            icon: Minus,
+                            activeCls:
+                              "border-primary bg-primary-soft text-primary ring-1 ring-primary",
+                          },
+                          {
+                            value: "high",
+                            label: "High",
+                            icon: ArrowUp,
+                            activeCls:
+                              "border-destructive bg-danger-soft text-destructive ring-1 ring-destructive",
+                          },
                         ] as const
                       ).map((p) => {
                         const Icon = p.icon;
@@ -428,7 +538,7 @@ export function TaskForm({
                               "flex flex-col items-center justify-center gap-1 rounded-lg border py-2 px-1 text-xs font-semibold transition-all cursor-pointer",
                               isSelected
                                 ? cn(p.activeCls, "shadow-sm")
-                                : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+                                : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
                             )}
                           >
                             <Icon className="size-3.5" />
@@ -453,7 +563,11 @@ export function TaskForm({
                 <FormItem>
                   <FormLabel className="text-xs">Estimate (Points / Hours)</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. 3 pts, 4h, 1d" className="h-9 text-xs bg-card" {...field} />
+                    <Input
+                      placeholder="e.g. 3 pts, 4h, 1d"
+                      className="h-9 text-xs bg-card"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -467,7 +581,11 @@ export function TaskForm({
                 <FormItem>
                   <FormLabel className="text-xs">Tags (comma-separated)</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Frontend, API, Bug, Security" className="h-9 text-xs bg-card" {...field} />
+                    <Input
+                      placeholder="e.g. Frontend, API, Bug, Security"
+                      className="h-9 text-xs bg-card"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -520,7 +638,7 @@ export function TaskForm({
                           variant="outline"
                           className={cn(
                             "h-10 flex-1 justify-start font-normal text-left text-xs bg-card",
-                            !field.value && "text-muted-foreground"
+                            !field.value && "text-muted-foreground",
                           )}
                         >
                           <CalendarIcon className="size-4 text-muted-foreground" />
@@ -560,6 +678,49 @@ export function TaskForm({
                       <X className="size-4" />
                     </Button>
                   )}
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Recurrence Option */}
+          <FormField
+            control={form.control}
+            name="recurrence"
+            render={({ field }) => (
+              <FormItem className="border-t border-border/60 pt-4">
+                <FormLabel className="flex items-center gap-1.5 text-xs">
+                  <Repeat className="size-4 text-primary" />
+                  <span>Repeat / Recurrence</span>
+                </FormLabel>
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 pt-1">
+                  {(
+                    [
+                      { value: "none", label: "Never" },
+                      { value: "daily", label: "Daily" },
+                      { value: "weekdays", label: "Weekdays" },
+                      { value: "weekly", label: "Weekly" },
+                      { value: "monthly", label: "Monthly" },
+                    ] as const
+                  ).map((r) => {
+                    const isSelected = (field.value || "none") === r.value;
+                    return (
+                      <button
+                        key={r.value}
+                        type="button"
+                        onClick={() => field.onChange(r.value)}
+                        className={cn(
+                          "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer text-center",
+                          isSelected
+                            ? "border-primary bg-primary-soft text-primary ring-1 ring-primary font-semibold shadow-xs"
+                            : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        {r.label}
+                      </button>
+                    );
+                  })}
                 </div>
                 <FormMessage />
               </FormItem>

@@ -99,7 +99,8 @@ type SeedItem = TaskInput & {
 const SEEDS: SeedItem[] = [
   {
     title: "Design onboarding flow",
-    description: "Create wireframes and high-fidelity mockups for the new user onboarding experience, covering the welcome screen, workspace setup and first-task prompt.",
+    description:
+      "Create wireframes and high-fidelity mockups for the new user onboarding experience, covering the welcome screen, workspace setup and first-task prompt.",
     status: "in_progress",
     priority: "high",
     dueDate: iso(2),
@@ -117,7 +118,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Set up PostgreSQL schema",
-    description: "Define tables for users, tasks and profiles with proper foreign keys, indexes on user_id and due_date, and a migration script.",
+    description:
+      "Define tables for users, tasks and profiles with proper foreign keys, indexes on user_id and due_date, and a migration script.",
     status: "completed",
     priority: "high",
     dueDate: iso(-3),
@@ -135,7 +137,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Write API documentation",
-    description: "Document all REST endpoints for the tasks resource including request bodies, response shapes, and error codes.",
+    description:
+      "Document all REST endpoints for the tasks resource including request bodies, response shapes, and error codes.",
     status: "pending",
     priority: "medium",
     dueDate: iso(5),
@@ -152,7 +155,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Implement JWT authentication",
-    description: "Add login and registration endpoints in Express, hash passwords with bcrypt, and protect task routes with middleware.",
+    description:
+      "Add login and registration endpoints in Express, hash passwords with bcrypt, and protect task routes with middleware.",
     status: "in_progress",
     priority: "high",
     dueDate: iso(1),
@@ -165,12 +169,17 @@ const SEEDS: SeedItem[] = [
     subtasks: [
       { id: "sub-4-1", title: "Bcrypt salt & hash password helpers", completed: true },
       { id: "sub-4-2", title: "Sign access & refresh tokens", completed: true },
-      { id: "sub-4-3", title: "Express authenticate middleware with Bearer scheme", completed: false },
+      {
+        id: "sub-4-3",
+        title: "Express authenticate middleware with Bearer scheme",
+        completed: false,
+      },
     ],
   },
   {
     title: "Fix date picker timezone bug",
-    description: "Due dates shift by one day for users west of UTC. Normalize dates to local midnight before saving.",
+    description:
+      "Due dates shift by one day for users west of UTC. Normalize dates to local midnight before saving.",
     status: "pending",
     priority: "high",
     dueDate: iso(-1),
@@ -187,7 +196,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Add unit tests for task service",
-    description: "Cover create, update, delete and filtering logic with Vitest. Aim for at least 80% coverage on the service layer.",
+    description:
+      "Cover create, update, delete and filtering logic with Vitest. Aim for at least 80% coverage on the service layer.",
     status: "pending",
     priority: "medium",
     dueDate: iso(7),
@@ -204,7 +214,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Refactor dashboard components",
-    description: "Split the dashboard into smaller reusable components and move calculation logic into utility functions.",
+    description:
+      "Split the dashboard into smaller reusable components and move calculation logic into utility functions.",
     status: "completed",
     priority: "medium",
     dueDate: iso(-5),
@@ -221,7 +232,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Configure CI pipeline",
-    description: "Set up GitHub Actions to run linting, type checks and tests on every pull request.",
+    description:
+      "Set up GitHub Actions to run linting, type checks and tests on every pull request.",
     status: "completed",
     priority: "low",
     dueDate: iso(-7),
@@ -238,7 +250,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Prepare sprint demo",
-    description: "Put together a short walkthrough of completed features and record a backup video in case of network issues.",
+    description:
+      "Put together a short walkthrough of completed features and record a backup video in case of network issues.",
     status: "pending",
     priority: "low",
     dueDate: iso(10),
@@ -255,7 +268,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Review accessibility audit",
-    description: "Go through the audit report and fix contrast issues, missing labels and keyboard traps in modal dialogs.",
+    description:
+      "Go through the audit report and fix contrast issues, missing labels and keyboard traps in modal dialogs.",
     status: "in_progress",
     priority: "medium",
     dueDate: iso(4),
@@ -272,7 +286,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Optimize task list queries",
-    description: "Add pagination to the GET /tasks endpoint and an index on (user_id, status) to speed up filtered queries.",
+    description:
+      "Add pagination to the GET /tasks endpoint and an index on (user_id, status) to speed up filtered queries.",
     status: "pending",
     priority: "low",
     dueDate: null,
@@ -289,7 +304,8 @@ const SEEDS: SeedItem[] = [
   },
   {
     title: "Update README",
-    description: "Add setup instructions, environment variables, and screenshots to the project README.",
+    description:
+      "Add setup instructions, environment variables, and screenshots to the project README.",
     status: "completed",
     priority: "low",
     dueDate: iso(-2),
@@ -299,9 +315,7 @@ const SEEDS: SeedItem[] = [
     assigneeIndex: 0, // Om
     tags: ["Documentation", "Docs"],
     estimate: "1 pt",
-    subtasks: [
-      { id: "sub-12-1", title: "Document quick start commands", completed: true },
-    ],
+    subtasks: [{ id: "sub-12-1", title: "Document quick start commands", completed: true }],
   },
 ];
 
@@ -317,25 +331,27 @@ export function buildSeedTasks(userId = "user-om"): Task[] {
   const projects = SEED_PROJECTS;
   const team = SEED_TEAM_MEMBERS;
 
-  return SEEDS.map(({ created, updated, projectId, assigneeIndex, tags, estimate, subtasks, ...t }, i) => {
-    const proj = projects.find((p) => p.id === projectId);
-    const assignee = team[assigneeIndex] || team[0];
+  return SEEDS.map(
+    ({ created, updated, projectId, assigneeIndex, tags, estimate, subtasks, ...t }, i) => {
+      const proj = projects.find((p) => p.id === projectId);
+      const assignee = team[assigneeIndex] || team[0];
 
-    return {
-      ...t,
-      id: `task-${i + 1}`,
-      userId,
-      projectId,
-      projectName: proj?.name,
-      projectColor: proj?.color,
-      assignee,
-      tags,
-      estimate,
-      subtasks,
-      createdAt: iso(created, 9 + (i % 6)),
-      updatedAt: iso(updated, 11 + (i % 6)),
-    };
-  });
+      return {
+        ...t,
+        id: `task-${i + 1}`,
+        userId,
+        projectId,
+        projectName: proj?.name,
+        projectColor: proj?.color,
+        assignee,
+        tags,
+        estimate,
+        subtasks,
+        createdAt: iso(created, 9 + (i % 6)),
+        updatedAt: iso(updated, 11 + (i % 6)),
+      };
+    },
+  );
 }
 
 export function buildNewUserTasks(_userId?: string): Task[] {
@@ -345,7 +361,7 @@ export function buildNewUserTasks(_userId?: string): Task[] {
 export function buildSeedProfile(
   fullName = "Om Thakkar",
   email = "omthakkar@example.com",
-  id = "user-om"
+  id = "user-om",
 ): Profile {
   return {
     id,
@@ -362,7 +378,12 @@ export function buildSeedActivity(tasks: Task[]): Activity[] {
     .slice(0, 6)
     .map((t, i) => ({
       id: `act-seed-${i}`,
-      type: t.status === "completed" ? "completed" : t.createdAt === t.updatedAt ? "created" : "updated",
+      type:
+        t.status === "completed"
+          ? "completed"
+          : t.createdAt === t.updatedAt
+            ? "created"
+            : "updated",
       taskId: t.id,
       taskTitle: t.title,
       at: t.updatedAt,

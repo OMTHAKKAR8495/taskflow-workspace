@@ -21,12 +21,7 @@ import { AppLayout } from "@/components/common/AppLayout";
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
 import { PriorityBadge, TaskStatusBadge } from "@/components/tasks/badges";
 import { DeleteConfirmationDialog } from "@/components/tasks/DeleteConfirmationDialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarDatePicker } from "@/components/ui/calendar";
 import { useTasks } from "@/context/TaskContext";
@@ -48,7 +43,16 @@ export const Route = createFileRoute("/tasks/$id")({
 
 function TaskDetailsPage() {
   const { id } = Route.useParams();
-  const { tasks, state, reload, updateTask, deleteTask, toggleBookmark, addComment, toggleSubtask } = useTasks();
+  const {
+    tasks,
+    state,
+    reload,
+    updateTask,
+    deleteTask,
+    toggleBookmark,
+    addComment,
+    toggleSubtask,
+  } = useTasks();
   const navigate = useNavigate();
 
   if (state === "loading") {
@@ -81,11 +85,7 @@ function TaskDetailsPage() {
             icon={FileQuestion}
             title="Task not found"
             description="The requested task ID could not be found or may have been deleted."
-            action={
-              <Button onClick={() => navigate({ to: "/tasks" })}>
-                Back to All Tasks
-              </Button>
-            }
+            action={<Button onClick={() => navigate({ to: "/tasks" })}>Back to All Tasks</Button>}
           />
         </div>
       </AppLayout>
@@ -138,7 +138,11 @@ function TaskDetailsPage() {
                 navigate({ to: "/tasks" });
               }}
               trigger={
-                <Button variant="outline" size="sm" className="text-destructive hover:bg-danger-soft">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:bg-danger-soft"
+                >
                   <Trash2 className="size-4" /> Delete
                 </Button>
               }
@@ -326,7 +330,8 @@ function TaskDetailsPage() {
                   <h3 className="text-sm font-semibold text-foreground">Subtasks Checklist</h3>
                 </div>
                 <span className="text-xs font-semibold text-foreground">
-                  {subDone} of {subtasks.length} done ({Math.round((subDone / subtasks.length) * 100)}%)
+                  {subDone} of {subtasks.length} done (
+                  {Math.round((subDone / subtasks.length) * 100)}%)
                 </span>
               </div>
 
@@ -358,7 +363,13 @@ function TaskDetailsPage() {
                       }}
                       className="size-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
                     />
-                    <span className={s.completed ? "line-through text-muted-foreground" : "font-medium text-foreground"}>
+                    <span
+                      className={
+                        s.completed
+                          ? "line-through text-muted-foreground"
+                          : "font-medium text-foreground"
+                      }
+                    >
                       {s.title}
                     </span>
                   </label>
@@ -424,7 +435,9 @@ function TaskDetailsPage() {
                   </PopoverContent>
                 </Popover>
               </span>
-              <p className={`mt-1 font-semibold ${overdue ? "text-destructive" : "text-foreground"}`}>
+              <p
+                className={`mt-1 font-semibold ${overdue ? "text-destructive" : "text-foreground"}`}
+              >
                 {fmtDate(task.dueDate, "No due date")}
               </p>
             </div>
@@ -433,9 +446,7 @@ function TaskDetailsPage() {
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Clock className="size-3.5" /> Created
               </span>
-              <p className="mt-1 font-semibold text-foreground">
-                {fmtDate(task.createdAt)}
-              </p>
+              <p className="mt-1 font-semibold text-foreground">{fmtDate(task.createdAt)}</p>
               <p className="text-[11px] text-muted-foreground">{fmtRelative(task.createdAt)}</p>
             </div>
 
@@ -443,9 +454,7 @@ function TaskDetailsPage() {
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Clock className="size-3.5" /> Last Updated
               </span>
-              <p className="mt-1 font-semibold text-foreground">
-                {fmtDate(task.updatedAt)}
-              </p>
+              <p className="mt-1 font-semibold text-foreground">{fmtDate(task.updatedAt)}</p>
               <p className="text-[11px] text-muted-foreground">{fmtRelative(task.updatedAt)}</p>
             </div>
           </div>
@@ -461,8 +470,10 @@ function TaskDetailsPage() {
           </div>
 
           <div className="space-y-3">
-            {(!task.comments || task.comments.length === 0) ? (
-              <p className="text-xs text-muted-foreground py-2">No updates logged yet. Add notes or feedback below.</p>
+            {!task.comments || task.comments.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">
+                No updates logged yet. Add notes or feedback below.
+              </p>
             ) : (
               task.comments.map((comment) => (
                 <div key={comment.id} className="rounded-lg bg-muted/30 p-3 text-sm">
@@ -521,7 +532,9 @@ function TaskDetailsPage() {
                 >
                   <div className="min-w-0 pr-3">
                     <p className="truncate font-medium text-sm text-foreground">{rel.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Due {fmtDate(rel.dueDate)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Due {fmtDate(rel.dueDate)}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <TaskStatusBadge status={rel.status} />

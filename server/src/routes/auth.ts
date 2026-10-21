@@ -1,0 +1,184 @@
+import { Router, type Request, type Response } from "express";
+import { query } from "../db.js";
+import {
+  hashPassword,
+  verifyPassword,
+  generateToken,
+  requireAuth,
+  type AuthenticatedRequest,
+} from "../auth.js";
+
+const router = Router();
+
+// POST /api/auth/register
+router.post("/register", async (req: Request, res: Response) => {
+  try {
+    const { fullName, email, username, password } = req.body;
+
+    if (!fullName || typeof fullName !== "string" || !fullName.trim()) {
+      return res.status(400).json({ error: "Full name is required" });
+    }
+    if (!email || typeof email !== "string" || !email.includes("@")) {
+      return res.status(400).json({ error: "Valid email is required" });
+    }
+    if (!username || typeof username !== "string" || username.trim().length < 3) {
+      return res.status(400).json({ error: "Username must be at least 3 characters" });
+    }
+    if (!password || typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanFullName = fullName.trim();
+
+    // Check if user exists
+    const existing = await query(
+      "SELECT id FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $2",
+      [cleanUsername, cleanEmail],
+    );
+    if (existing.rowCount && existing.rowCount > 0) {
+      return res.status(409).json({ error: "Username or email is already in use" });
+    }
+
+    const hashedPassword = await hashPassword(password);
+    const userId = `user-${Date.now()}`;
+    const now = new Date().toISOString();
+
+    const insertRes = await query(
+      `INSERT INTO users (id, username, full_name, email, password_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, username, full_name, email, avatar_url, created_at`,
+      [userId, cleanUsername, cleanFullName, cleanEmail, hashedPassword, now, now],
+    );
+
+    const user = insertRes.rows[0];
+    const token = generateToken({ userId: user.id, username: user.username });
+
+    // Set cookie
+    res.cookie("taskflow_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.status(201).json({
+      user: {
+        id: user.id,
+        username: user.username,
+        fullName: user.full_name,
+        email: user.email,
+        avatarUrl: user.avatar_url || "",
+      },
+      token,
+    });
+  } catch (err: unknown) {
+    console.error("Registration error:", err);
+    res.status(500).json({ error: "Registration failed" });
+  }
+});
+
+// POST /api/auth/login
+router.post("/login", async (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password are required" });
+    }
+
+    const cleanUsername = String(username).trim().toLowerCase();
+
+    const result = await query(
+      `SELECT id, username, full_name, email, avatar_url, password_hash
+       FROM users
+       WHERE LOWER(username) = $1 OR LOWER(email) = $1`,
+      [cleanUsername],
+    );
+
+    if (!result.rowCount || result.rowCount === 0) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const user = result.rows[0];
+    let isValid = false;
+
+    if (user.password_hash) {
+      // Check bcrypt hash
+      if (user.password_hash.startsWith("$2a$") || user.password_hash.startsWith("$2b$")) {
+        isValid = await verifyPassword(password, user.password_hash);
+      } else {
+        // Plain text legacy fallback -> auto-upgrade to bcrypt
+        isValid = user.password_hash === password;
+        if (isValid) {
+          const newHash = await hashPassword(password);
+          await query("UPDATE users SET password_hash = $1 WHERE id = $2", [newHash, user.id]);
+        }
+      }
+    }
+
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = generateToken({ userId: user.id, username: user.username });
+
+    res.cookie("taskflow_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        fullName: user.full_name,
+        email: user.email,
+        avatarUrl: user.avatar_url || "",
+      },
+      token,
+    });
+  } catch (err: unknown) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Login failed" });
+  }
+});
+
+// POST /api/auth/logout
+router.post("/logout", (_req: Request, res: Response) => {
+  res.clearCookie("taskflow_token");
+  res.json({ success: true, message: "Logged out successfully" });
+});
+
+// GET /api/auth/me
+router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const result = await query(
+      `SELECT id, username, full_name, email, avatar_url, created_at
+       FROM users WHERE id = $1`,
+      [userId],
+    );
+
+    if (!result.rowCount || result.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const u = result.rows[0];
+    res.json({
+      id: u.id,
+      username: u.username,
+      fullName: u.full_name,
+      email: u.email,
+      avatarUrl: u.avatar_url || "",
+    });
+  } catch (err: unknown) {
+    console.error("Auth me error:", err);
+    res.status(500).json({ error: "Failed to fetch user profile" });
+  }
+});
+
+export default router;

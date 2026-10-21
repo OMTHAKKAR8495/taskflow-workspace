@@ -27,7 +27,7 @@ router.get("/", async (req: Request, res: Response) => {
           isDefault ? "Om Thakkar" : "TaskFlow User",
           isDefault ? "omthakkar@example.com" : `${userId}@example.com`,
           "",
-        ]
+        ],
       );
       const row = insert.rows[0];
       return res.json({
@@ -68,7 +68,7 @@ router.put("/", async (req: Request, res: Response) => {
          avatar_url = EXCLUDED.avatar_url,
          updated_at = NOW()
        RETURNING *`,
-      [userId, fullName?.trim() || "User", email?.trim() || "user@example.com", avatarUrl || ""]
+      [userId, fullName?.trim() || "User", email?.trim() || "user@example.com", avatarUrl || ""],
     );
 
     const row = result.rows[0];

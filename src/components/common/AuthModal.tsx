@@ -26,7 +26,7 @@ export function AuthModal() {
   const [regUsername, setRegUsername] = useState("");
   const [regPassword, setRegPassword] = useState("");
 
-  const handleLogin = (e?: React.FormEvent | React.MouseEvent) => {
+  const handleLogin = async (e?: React.FormEvent | React.MouseEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -35,7 +35,7 @@ export function AuthModal() {
       toast.error("Please enter both User ID and Password.");
       return;
     }
-    const success = login(username, password);
+    const success = await login(username, password);
     if (success) {
       toast.success("Welcome back to TaskFlow!");
     } else {
@@ -43,7 +43,7 @@ export function AuthModal() {
     }
   };
 
-  const handleRegister = (e?: React.FormEvent | React.MouseEvent) => {
+  const handleRegister = async (e?: React.FormEvent | React.MouseEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -52,7 +52,7 @@ export function AuthModal() {
       toast.error("Please fill in all fields.");
       return;
     }
-    const success = register(regFullName, regEmail, regUsername, regPassword);
+    const success = await register(regFullName, regEmail, regUsername, regPassword);
     if (success) {
       toast.success("Account created successfully! Welcome to TaskFlow.");
     } else {
@@ -115,7 +115,8 @@ export function AuthModal() {
             </Button>
 
             <div className="rounded-lg bg-muted/60 p-2.5 text-center text-xs text-muted-foreground border">
-              Default access: <span className="font-medium text-foreground">omthakkar</span> / <span className="font-medium text-foreground">thakkar2912</span>
+              Default access: <span className="font-medium text-foreground">omthakkar</span> /{" "}
+              <span className="font-medium text-foreground">thakkar2912</span>
               <button
                 type="button"
                 onClick={() => {

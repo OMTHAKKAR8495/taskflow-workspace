@@ -1,17 +1,26 @@
-import { Kanban, LayoutGrid, List, Search, X } from "lucide-react";
+import { Calendar, Kanban, LayoutGrid, List, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTasks } from "@/context/TaskContext";
 import type { SortKey, TaskFilterState, TaskPriority, TaskStatus } from "@/types";
 
-export type ViewMode = "kanban" | "list" | "grid";
+export type ViewMode = "list" | "kanban" | "calendar" | "grid";
 
 export function SearchInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div className="relative flex-1 sm:min-w-64">
-      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+      <Search
+        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        aria-hidden
+      />
       <Input
         type="search"
         aria-label="Search tasks"
@@ -50,7 +59,10 @@ export function TaskFilters({
   return (
     <div className="mb-5 flex flex-col gap-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <SearchInput value={filters.search} onChange={(search) => onChange({ ...filters, search })} />
+        <SearchInput
+          value={filters.search}
+          onChange={(search) => onChange({ ...filters, search })}
+        />
 
         {/* View Mode Toggle */}
         <div className="flex items-center gap-2 self-start lg:self-auto">
@@ -60,22 +72,39 @@ export function TaskFilters({
             onValueChange={(v) => v && onViewChange(v as ViewMode)}
             className="rounded-md border bg-card p-0.5 shadow-2xs"
           >
-            <ToggleGroupItem value="kanban" aria-label="Kanban board view" className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium">
-              <Kanban className="size-3.5" />
-              <span className="hidden sm:inline">Kanban</span>
-            </ToggleGroupItem>
-            <ToggleGroupItem value="list" aria-label="List table view" className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium">
+            <ToggleGroupItem
+              value="list"
+              aria-label="List table view"
+              className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium cursor-pointer"
+            >
               <List className="size-3.5" />
               <span className="hidden sm:inline">List</span>
             </ToggleGroupItem>
-            <ToggleGroupItem value="grid" aria-label="Grid view" className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium">
-              <LayoutGrid className="size-3.5" />
-              <span className="hidden sm:inline">Grid</span>
+            <ToggleGroupItem
+              value="kanban"
+              aria-label="Kanban board view"
+              className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium cursor-pointer"
+            >
+              <Kanban className="size-3.5" />
+              <span className="hidden sm:inline">Board</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="calendar"
+              aria-label="Calendar view"
+              className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium cursor-pointer"
+            >
+              <Calendar className="size-3.5" />
+              <span className="hidden sm:inline">Calendar</span>
             </ToggleGroupItem>
           </ToggleGroup>
 
           {active && (
-            <Button variant="ghost" size="sm" onClick={onClear} className="text-muted-foreground text-xs h-9">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              className="text-muted-foreground text-xs h-9"
+            >
               <X className="size-3.5" /> Clear filters
             </Button>
           )}
@@ -89,7 +118,10 @@ export function TaskFilters({
           value={filters.projectId || "all"}
           onValueChange={(v) => onChange({ ...filters, projectId: v })}
         >
-          <SelectTrigger className="h-9 bg-card sm:w-44 text-xs font-medium" aria-label="Filter by project">
+          <SelectTrigger
+            className="h-9 bg-card sm:w-44 text-xs font-medium"
+            aria-label="Filter by project"
+          >
             <SelectValue placeholder="All Projects" />
           </SelectTrigger>
           <SelectContent>
@@ -110,7 +142,10 @@ export function TaskFilters({
           value={filters.assigneeId || "all"}
           onValueChange={(v) => onChange({ ...filters, assigneeId: v })}
         >
-          <SelectTrigger className="h-9 bg-card sm:w-40 text-xs font-medium" aria-label="Filter by assignee">
+          <SelectTrigger
+            className="h-9 bg-card sm:w-40 text-xs font-medium"
+            aria-label="Filter by assignee"
+          >
             <SelectValue placeholder="All Assignees" />
           </SelectTrigger>
           <SelectContent>
@@ -129,7 +164,10 @@ export function TaskFilters({
           value={filters.status}
           onValueChange={(v) => onChange({ ...filters, status: v as TaskStatus | "all" })}
         >
-          <SelectTrigger className="h-9 bg-card sm:w-36 text-xs font-medium" aria-label="Filter by status">
+          <SelectTrigger
+            className="h-9 bg-card sm:w-36 text-xs font-medium"
+            aria-label="Filter by status"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -146,7 +184,10 @@ export function TaskFilters({
           value={filters.priority}
           onValueChange={(v) => onChange({ ...filters, priority: v as TaskPriority | "all" })}
         >
-          <SelectTrigger className="h-9 bg-card sm:w-32 text-xs font-medium" aria-label="Filter by priority">
+          <SelectTrigger
+            className="h-9 bg-card sm:w-32 text-xs font-medium"
+            aria-label="Filter by priority"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -162,7 +203,10 @@ export function TaskFilters({
           value={filters.sort}
           onValueChange={(v) => onChange({ ...filters, sort: v as SortKey })}
         >
-          <SelectTrigger className="h-9 bg-card sm:w-36 text-xs font-medium" aria-label="Sort tasks">
+          <SelectTrigger
+            className="h-9 bg-card sm:w-36 text-xs font-medium"
+            aria-label="Sort tasks"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

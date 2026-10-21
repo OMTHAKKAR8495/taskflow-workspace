@@ -44,7 +44,9 @@ describe("Task business logic", () => {
     expect(stats.total).toBe(tasks.length);
     expect(stats.pending + stats.inProgress + stats.completed).toBe(tasks.length);
     expect(stats.completionRate).toBe(Math.round((stats.completed / tasks.length) * 100));
-    expect(stats.byPriority.high + stats.byPriority.medium + stats.byPriority.low).toBe(tasks.length);
+    expect(stats.byPriority.high + stats.byPriority.medium + stats.byPriority.low).toBe(
+      tasks.length,
+    );
   });
 
   it("filters tasks by status and priority", () => {
@@ -53,6 +55,9 @@ describe("Task business logic", () => {
       search: "",
       status: "completed",
       priority: "all",
+      projectId: "all",
+      assigneeId: "all",
+      tag: "all",
       sort: "dueDate",
     });
 
@@ -62,6 +67,9 @@ describe("Task business logic", () => {
       search: "",
       status: "all",
       priority: "high",
+      projectId: "all",
+      assigneeId: "all",
+      tag: "all",
       sort: "dueDate",
     });
 

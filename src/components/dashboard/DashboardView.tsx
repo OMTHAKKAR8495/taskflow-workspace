@@ -33,6 +33,7 @@ import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
 import { dueSoon, completionSeries, isOverdue } from "@/lib/task-utils";
 import { fmtDate, fmtRelative } from "@/lib/format";
+import { ProductivityInsights } from "@/components/tasks/ProductivityInsights";
 import { Progress } from "@/components/ui/progress";
 
 const PRIORITY_COLORS = {
@@ -42,7 +43,8 @@ const PRIORITY_COLORS = {
 };
 
 export function DashboardView() {
-  const { tasks, stats, profile, activity, state, reload, projects, team, setSelectedProjectId } = useTasks();
+  const { tasks, stats, profile, activity, state, reload, projects, team, setSelectedProjectId } =
+    useTasks();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -55,9 +57,7 @@ export function DashboardView() {
   }
 
   const upcomingTasks = dueSoon(tasks, 7).slice(0, 5);
-  const recentTasks = [...tasks]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 5);
+  const recentTasks = [...tasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
   const seriesData = completionSeries(tasks, 7);
 
   const pieData = [
@@ -80,7 +80,10 @@ export function DashboardView() {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Here's what is happening with your tasks today. You have{" "}
-            <span className="font-semibold text-foreground">{stats.pending + stats.inProgress} active tasks</span>.
+            <span className="font-semibold text-foreground">
+              {stats.pending + stats.inProgress} active tasks
+            </span>
+            .
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -125,6 +128,9 @@ export function DashboardView() {
         />
       </div>
 
+      {/* Productivity Insights: Streak, 12-Week Heatmap, Peak Day */}
+      <ProductivityInsights />
+
       {/* Progress Indicator */}
       <div className="rounded-xl border bg-card p-5 shadow-card">
         <div className="flex items-center justify-between text-sm">
@@ -145,7 +151,9 @@ export function DashboardView() {
         <div className="rounded-xl border bg-card p-5 shadow-card lg:col-span-2">
           <div className="flex items-center justify-between pb-4">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Task Velocity (Last 7 Days)</h2>
+              <h2 className="text-base font-semibold text-foreground">
+                Task Velocity (Last 7 Days)
+              </h2>
               <p className="text-xs text-muted-foreground">Created vs Completed tasks</p>
             </div>
             <div className="flex items-center gap-4 text-xs font-medium">
@@ -160,8 +168,20 @@ export function DashboardView() {
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={seriesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                <XAxis
+                  dataKey="day"
+                  stroke="var(--color-muted-foreground)"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  stroke="var(--color-muted-foreground)"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
                 <Tooltip
                   cursor={{ fill: "var(--color-muted)", opacity: 0.3 }}
                   contentStyle={{
@@ -175,8 +195,18 @@ export function DashboardView() {
                   itemStyle={{ color: "var(--foreground)" }}
                   labelStyle={{ color: "var(--foreground)" }}
                 />
-                <Bar dataKey="created" fill="var(--color-primary)" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                <Bar dataKey="completed" fill="var(--color-success)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                <Bar
+                  dataKey="created"
+                  fill="var(--color-primary)"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={32}
+                />
+                <Bar
+                  dataKey="completed"
+                  fill="var(--color-success)"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={32}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -233,7 +263,9 @@ export function DashboardView() {
               <span className="text-muted-foreground">Medium</span>
             </div>
             <div className="text-center">
-              <span className="block font-semibold text-muted-foreground">{stats.byPriority.low}</span>
+              <span className="block font-semibold text-muted-foreground">
+                {stats.byPriority.low}
+              </span>
               <span className="text-muted-foreground">Low</span>
             </div>
           </div>
@@ -246,8 +278,12 @@ export function DashboardView() {
         <div className="rounded-xl border bg-card p-5 shadow-card space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Project Health & Milestones</h2>
-              <p className="text-xs text-muted-foreground">Click any project to inspect its tasks & board</p>
+              <h2 className="text-base font-semibold text-foreground">
+                Project Health & Milestones
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Click any project to inspect its tasks & board
+              </p>
             </div>
             <button
               type="button"
@@ -279,8 +315,13 @@ export function DashboardView() {
                 >
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="size-2.5 rounded-full group-hover:scale-125 transition-transform shrink-0" style={{ backgroundColor: proj.color }} />
-                      <span className="font-semibold text-foreground text-sm group-hover:text-primary transition-colors">{proj.name}</span>
+                      <span
+                        className="size-2.5 rounded-full group-hover:scale-125 transition-transform shrink-0"
+                        style={{ backgroundColor: proj.color }}
+                      />
+                      <span className="font-semibold text-foreground text-sm group-hover:text-primary transition-colors">
+                        {proj.name}
+                      </span>
                       <span className="text-[10px] uppercase font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                         {proj.key}
                       </span>
@@ -290,7 +331,9 @@ export function DashboardView() {
                   <Progress value={rate} className="h-2" />
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
                     <span>Lead: {proj.lead}</span>
-                    <span className="group-hover:text-primary transition-colors">{completed} of {pTasks.length} tasks completed &rarr;</span>
+                    <span className="group-hover:text-primary transition-colors">
+                      {completed} of {pTasks.length} tasks completed &rarr;
+                    </span>
                   </div>
                 </div>
               );
@@ -302,8 +345,12 @@ export function DashboardView() {
         <div className="rounded-xl border bg-card p-5 shadow-card space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Team Workload Distribution</h2>
-              <p className="text-xs text-muted-foreground">Active assignments across team members</p>
+              <h2 className="text-base font-semibold text-foreground">
+                Team Workload Distribution
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Active assignments across team members
+              </p>
             </div>
             <span className="text-xs text-muted-foreground">{team.length} members</span>
           </div>
@@ -311,11 +358,16 @@ export function DashboardView() {
           <div className="space-y-3">
             {team.map((member) => {
               const mTasks = tasks.filter((t) => t.assignee?.id === member.id);
-              const inProgress = mTasks.filter((t) => t.status === "in_progress" || t.status === "in_review").length;
+              const inProgress = mTasks.filter(
+                (t) => t.status === "in_progress" || t.status === "in_review",
+              ).length;
               const completed = mTasks.filter((t) => t.status === "completed").length;
 
               return (
-                <div key={member.id} className="flex items-center justify-between rounded-lg border bg-muted/20 p-3 text-xs">
+                <div
+                  key={member.id}
+                  className="flex items-center justify-between rounded-lg border bg-muted/20 p-3 text-xs"
+                >
                   <div className="flex items-center gap-3">
                     <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                       {member.initials}
@@ -327,11 +379,15 @@ export function DashboardView() {
                   </div>
                   <div className="flex items-center gap-4 text-right">
                     <div>
-                      <span className="block font-semibold text-blue-600 dark:text-blue-400">{inProgress}</span>
+                      <span className="block font-semibold text-blue-600 dark:text-blue-400">
+                        {inProgress}
+                      </span>
                       <span className="text-[10px] text-muted-foreground uppercase">Active</span>
                     </div>
                     <div>
-                      <span className="block font-semibold text-emerald-600 dark:text-emerald-400">{completed}</span>
+                      <span className="block font-semibold text-emerald-600 dark:text-emerald-400">
+                        {completed}
+                      </span>
                       <span className="text-[10px] text-muted-foreground uppercase">Done</span>
                     </div>
                     <div>

@@ -31,16 +31,22 @@ export function FirstTaskModal() {
 
     // Check if the user is a non-default user ID or has 0 tasks
     const isDefaultDemo = user.id === "user-om" || user.username.toLowerCase() === "omthakkar";
-    
+
     // Check flags for new login or first time onboarding
-    const newLoginTrigger = typeof window !== "undefined" && sessionStorage.getItem("taskflow:new_login_trigger") === user.id;
-    const modalFlag = typeof window !== "undefined" && localStorage.getItem(`taskflow:show_first_task_modal:${user.id}`) === "true";
-    const dismissed = typeof window !== "undefined" && localStorage.getItem(`taskflow:first_task_dismissed:${user.id}`) === "true";
+    const newLoginTrigger =
+      typeof window !== "undefined" &&
+      sessionStorage.getItem("taskflow:new_login_trigger") === user.id;
+    const modalFlag =
+      typeof window !== "undefined" &&
+      localStorage.getItem(`taskflow:show_first_task_modal:${user.id}`) === "true";
+    const dismissed =
+      typeof window !== "undefined" &&
+      localStorage.getItem(`taskflow:first_task_dismissed:${user.id}`) === "true";
 
     // Show popup when:
     // 1) New login trigger or explicit flag is set AND tasks are empty (or user is new ID)
     // 2) OR it's a non-default user with 0 tasks who hasn't dismissed yet
-    if ((newLoginTrigger || modalFlag) || (!isDefaultDemo && tasks.length === 0 && !dismissed)) {
+    if (newLoginTrigger || modalFlag || (!isDefaultDemo && tasks.length === 0 && !dismissed)) {
       setOpen(true);
     }
   }, [user, state, tasks.length]);
@@ -113,7 +119,9 @@ export function FirstTaskModal() {
             </div>
           </div>
           <DialogDescription className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Hey <span className="font-semibold text-foreground">{firstName}</span>! 👋 Your workspace is clean and empty with 0 tasks assigned. Let's make your very first task right now to get in flow! 💫
+            Hey <span className="font-semibold text-foreground">{firstName}</span>! 👋 Your
+            workspace is clean and empty with 0 tasks assigned. Let's make your very first task
+            right now to get in flow! 💫
           </DialogDescription>
         </div>
 
@@ -121,9 +129,14 @@ export function FirstTaskModal() {
         <div className="p-6 space-y-4">
           <form onSubmit={handleCreateQuickTask} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="first-task-title" className="text-xs font-semibold text-foreground flex items-center justify-between">
+              <Label
+                htmlFor="first-task-title"
+                className="text-xs font-semibold text-foreground flex items-center justify-between"
+              >
                 <span>📝 Task Title</span>
-                <span className="text-[11px] text-muted-foreground font-normal">What's on your agenda?</span>
+                <span className="text-[11px] text-muted-foreground font-normal">
+                  What's on your agenda?
+                </span>
               </Label>
               <Input
                 id="first-task-title"
@@ -137,9 +150,7 @@ export function FirstTaskModal() {
 
             {/* Priority Selector with Emojis */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-foreground">
-                ⚡ Priority Level
-              </Label>
+              <Label className="text-xs font-semibold text-foreground">⚡ Priority Level</Label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"

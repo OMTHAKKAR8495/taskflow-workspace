@@ -18,7 +18,14 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatCard } from "@/components/common/StatCard";
 import { LoadingState, ErrorState } from "@/components/common/states";
@@ -152,7 +159,9 @@ export function ProfileView() {
               name="fullName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Full Name <span className="text-destructive">*</span></FormLabel>
+                  <FormLabel>
+                    Full Name <span className="text-destructive">*</span>
+                  </FormLabel>
                   <FormControl>
                     <Input placeholder="Your full name" className="h-10" {...field} />
                   </FormControl>
@@ -166,9 +175,16 @@ export function ProfileView() {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email Address <span className="text-destructive">*</span></FormLabel>
+                  <FormLabel>
+                    Email Address <span className="text-destructive">*</span>
+                  </FormLabel>
                   <FormControl>
-                    <Input type="email" placeholder="name@example.com" className="h-10" {...field} />
+                    <Input
+                      type="email"
+                      placeholder="name@example.com"
+                      className="h-10"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -182,7 +198,11 @@ export function ProfileView() {
                 <FormItem>
                   <FormLabel>Avatar Image URL</FormLabel>
                   <FormControl>
-                    <Input placeholder="https://example.com/avatar.jpg (optional)" className="h-10" {...field} />
+                    <Input
+                      placeholder="https://example.com/avatar.jpg (optional)"
+                      className="h-10"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -191,7 +211,11 @@ export function ProfileView() {
 
             <div className="flex justify-end pt-3">
               <Button type="submit" disabled={isSaving} className="shadow-sm shadow-primary/25">
-                {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {isSaving ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
                 {isSaving ? "Saving changes..." : "Save Changes"}
               </Button>
             </div>

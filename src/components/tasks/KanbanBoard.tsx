@@ -21,6 +21,7 @@ import { fmtDate } from "@/lib/format";
 import { isOverdue } from "@/lib/task-utils";
 import { cn } from "@/lib/utils";
 import type { Task, TaskStatus } from "@/types";
+import { useTasks } from "@/context/TaskContext";
 
 const COLUMNS: {
   status: TaskStatus;
@@ -66,11 +67,12 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
     if (currentIndex === -1) return;
 
     const nextIndex = direction === "next" ? currentIndex + 1 : currentIndex - 1;
-    if (nextIndex < 0 || nextIndex >= STATUS_ORDER.length) return;
+    const nextStatus = STATUS_ORDER[nextIndex];
+    if (!nextStatus) return;
 
     setMovingId(task.id);
     try {
-      await updateTask(task.id, { status: STATUS_ORDER[nextIndex] });
+      await updateTask(task.id, { status: nextStatus });
     } finally {
       setMovingId(null);
     }
@@ -89,9 +91,18 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
             {/* Column Header */}
             <div className="mb-3.5 flex items-center justify-between border-b pb-3">
               <div className="flex items-center gap-2">
-                <span className={cn("size-2.5 rounded-full ring-2 ring-background", col.dotColor)} />
-                <h3 className="text-sm font-semibold tracking-tight text-foreground">{col.title}</h3>
-                <span className={cn("rounded-full border px-2 py-0.5 text-xs font-semibold", col.badgeBg)}>
+                <span
+                  className={cn("size-2.5 rounded-full ring-2 ring-background", col.dotColor)}
+                />
+                <h3 className="text-sm font-semibold tracking-tight text-foreground">
+                  {col.title}
+                </h3>
+                <span
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 text-xs font-semibold",
+                    col.badgeBg,
+                  )}
+                >
                   {colTasks.length}
                 </span>
               </div>
@@ -139,7 +150,9 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
                             </span>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-muted-foreground font-medium uppercase">General</span>
+                          <span className="text-[11px] text-muted-foreground font-medium uppercase">
+                            General
+                          </span>
                         )}
 
                         <button
@@ -152,11 +165,14 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
                             "cursor-pointer transition-colors",
                             task.isBookmarked
                               ? "text-amber-500 fill-amber-500"
-                              : "text-muted-foreground/40 hover:text-muted-foreground"
+                              : "text-muted-foreground/40 hover:text-muted-foreground",
                           )}
                           title="Bookmark task"
                         >
-                          <Bookmark className="size-3.5" fill={task.isBookmarked ? "currentColor" : "none"} />
+                          <Bookmark
+                            className="size-3.5"
+                            fill={task.isBookmarked ? "currentColor" : "none"}
+                          />
                         </button>
                       </div>
 
@@ -221,7 +237,10 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
                       <div className="mt-1 flex items-center justify-between border-t pt-2.5 text-xs text-muted-foreground">
                         <div className="flex items-center gap-2">
                           {task.assignee ? (
-                            <div className="flex items-center gap-1.5" title={`Assigned to ${task.assignee.name} (${task.assignee.role})`}>
+                            <div
+                              className="flex items-center gap-1.5"
+                              title={`Assigned to ${task.assignee.name} (${task.assignee.role})`}
+                            >
                               <Avatar className="size-5 border ring-1 ring-border">
                                 <AvatarFallback className="text-[9px] font-semibold bg-primary/15 text-primary">
                                   {task.assignee.initials}
@@ -232,14 +251,18 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
                               </span>
                             </div>
                           ) : (
-                            <span className="text-[11px] italic text-muted-foreground">Unassigned</span>
+                            <span className="text-[11px] italic text-muted-foreground">
+                              Unassigned
+                            </span>
                           )}
 
                           {task.dueDate && (
                             <span
                               className={cn(
                                 "flex items-center gap-1 text-[11px] font-medium",
-                                overdue ? "text-destructive font-semibold" : "text-muted-foreground"
+                                overdue
+                                  ? "text-destructive font-semibold"
+                                  : "text-muted-foreground",
                               )}
                             >
                               <Calendar className="size-3" />

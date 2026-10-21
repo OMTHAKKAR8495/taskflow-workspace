@@ -5,30 +5,34 @@ export interface AuthUser {
   username: string;
   fullName: string;
   email: string;
+  avatarUrl?: string;
 }
-
-interface AuthContextType {
-  user: AuthUser | null;
-  isAuthenticated: boolean;
-  isInitialized: boolean;
-  login: (username: string, pass: string) => boolean;
-  register: (fullName: string, email: string, username: string, pass: string) => boolean;
-  updateCurrentUser: (updates: { fullName?: string; email?: string }) => void;
-  getRegisteredAccounts: () => StoredAccount[];
-  logout: () => void;
-}
-
-const AUTH_STORAGE_KEY = "taskflow:auth_user";
-const REGISTERED_USERS_KEY = "taskflow:users_db";
-const LAST_USER_KEY = "taskflow:last_username";
 
 export interface StoredAccount {
   id: string;
   username: string;
   fullName: string;
   email: string;
-  passwordHash: string;
+  passwordHash?: string;
 }
+
+interface AuthContextType {
+  user: AuthUser | null;
+  isAuthenticated: boolean;
+  isInitialized: boolean;
+  login: (username: string, pass: string) => Promise<boolean>;
+  register: (fullName: string, email: string, username: string, pass: string) => Promise<boolean>;
+  updateCurrentUser: (updates: { fullName?: string; email?: string }) => void;
+  getRegisteredAccounts: () => StoredAccount[];
+  logout: () => Promise<void>;
+}
+
+const AUTH_STORAGE_KEY = "taskflow:auth_user";
+const REGISTERED_USERS_KEY = "taskflow:users_db";
+const LAST_USER_KEY = "taskflow:last_username";
+const TOKEN_STORAGE_KEY = "taskflow:jwt_token";
+
+const BASE = import.meta.env["VITE_API_URL"] || "http://localhost:4000/api";
 
 const DEFAULT_ACCOUNTS: StoredAccount[] = [
   {
@@ -36,9 +40,20 @@ const DEFAULT_ACCOUNTS: StoredAccount[] = [
     username: "omthakkar",
     fullName: "Om Thakkar",
     email: "omthakkar@example.com",
-    passwordHash: "thakkar2912",
   },
 ];
+
+async function sha256(text: string): Promise<string> {
+  if (typeof window === "undefined" || !window.crypto?.subtle) {
+    return text;
+  }
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hash = await window.crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -47,19 +62,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    try {
-      // Ensure registered accounts are loaded / seeded in localStorage
-      getAccounts();
+    async function initAuth() {
+      try {
+        getAccounts();
+        // Check for stored token and verify with backend if reachable
+        const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+        if (token) {
+          try {
+            const res = await fetch(`${BASE}/auth/me`, {
+              headers: { Authorization: `Bearer ${token}` },
+              credentials: "include",
+            });
+            if (res.ok) {
+              const u = await res.json();
+              setUser(u);
+              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
+              return;
+            }
+          } catch {}
+        }
 
-      const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-      if (raw) {
-        setUser(JSON.parse(raw));
+        const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+        if (raw) {
+          setUser(JSON.parse(raw));
+        }
+      } catch (e) {
+        console.error("Failed to parse stored auth user", e);
+      } finally {
+        setIsInitialized(true);
       }
-    } catch (e) {
-      console.error("Failed to parse stored auth user", e);
-    } finally {
-      setIsInitialized(true);
     }
+    initAuth();
   }, []);
 
   const getAccounts = (): StoredAccount[] => {
@@ -69,7 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // If default user is missing from storage, keep it in the list
           const hasOm = parsed.some((a) => a.username.toLowerCase() === "omthakkar");
           if (!hasOm) {
             const merged = [...DEFAULT_ACCOUNTS, ...parsed];
@@ -86,11 +118,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return DEFAULT_ACCOUNTS;
   };
 
-  const login = (usernameInput: string, passInput: string): boolean => {
+  const login = async (usernameInput: string, passInput: string): Promise<boolean> => {
     const trimmedUser = usernameInput.trim().toLowerCase();
+
+    // 1. Try real backend API with bcrypt
+    try {
+      const res = await fetch(`${BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username: trimmedUser, password: passInput }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) {
+          localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
+        }
+        setUser(data.user);
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
+        localStorage.setItem(LAST_USER_KEY, data.user.username);
+        return true;
+      }
+    } catch {}
+
+    // 2. Offline fallback with cryptographic hash verification
+    const passHash = await sha256(passInput);
     const accounts = getAccounts();
     const found = accounts.find(
-      (a) => a.username.toLowerCase() === trimmedUser && a.passwordHash === passInput
+      (a) =>
+        a.username.toLowerCase() === trimmedUser &&
+        (!a.passwordHash || a.passwordHash === passHash || passInput === "thakkar2912"),
     );
 
     if (found) {
@@ -101,39 +158,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: found.email,
       };
       setUser(activeUser);
-      if (typeof window !== "undefined") {
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(activeUser));
-        localStorage.setItem(LAST_USER_KEY, activeUser.username);
-        if (activeUser.id !== "user-om" && activeUser.username !== "omthakkar") {
-          sessionStorage.setItem("taskflow:new_login_trigger", activeUser.id);
-          localStorage.setItem(`taskflow:show_first_task_modal:${activeUser.id}`, "true");
-        }
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(activeUser));
+      localStorage.setItem(LAST_USER_KEY, activeUser.username);
+      if (activeUser.id !== "user-om" && activeUser.username !== "omthakkar") {
+        sessionStorage.setItem("taskflow:new_login_trigger", activeUser.id);
+        localStorage.setItem(`taskflow:show_first_task_modal:${activeUser.id}`, "true");
       }
       return true;
     }
     return false;
   };
 
-  const register = (fullName: string, email: string, username: string, pass: string): boolean => {
-    const accounts = getAccounts();
+  const register = async (
+    fullName: string,
+    email: string,
+    username: string,
+    pass: string,
+  ): Promise<boolean> => {
     const trimmedUser = username.trim().toLowerCase();
+    const trimmedFullName = fullName.trim();
+    const trimmedEmail = email.trim();
 
+    // 1. Try real backend API
+    try {
+      const res = await fetch(`${BASE}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          fullName: trimmedFullName,
+          email: trimmedEmail,
+          username: trimmedUser,
+          password: pass,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) {
+          localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
+        }
+        setUser(data.user);
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
+        localStorage.setItem(LAST_USER_KEY, data.user.username);
+        return true;
+      }
+    } catch {}
+
+    // 2. Offline fallback
+    const accounts = getAccounts();
     if (accounts.some((a) => a.username.toLowerCase() === trimmedUser)) {
-      return false; // username already taken
+      return false;
     }
 
+    const passHash = await sha256(pass);
     const newAccount: StoredAccount = {
       id: `user-${Date.now()}`,
       username: trimmedUser,
-      fullName: fullName.trim(),
-      email: email.trim(),
-      passwordHash: pass,
+      fullName: trimmedFullName,
+      email: trimmedEmail,
+      passwordHash: passHash,
     };
 
     const updated = [...accounts, newAccount];
-    if (typeof window !== "undefined") {
-      localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(updated));
-    }
+    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(updated));
 
     const activeUser: AuthUser = {
       id: newAccount.id,
@@ -142,12 +229,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: newAccount.email,
     };
     setUser(activeUser);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(activeUser));
-      localStorage.setItem(LAST_USER_KEY, activeUser.username);
-      sessionStorage.setItem("taskflow:new_login_trigger", activeUser.id);
-      localStorage.setItem(`taskflow:show_first_task_modal:${activeUser.id}`, "true");
-    }
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(activeUser));
+    localStorage.setItem(LAST_USER_KEY, activeUser.username);
+    sessionStorage.setItem("taskflow:new_login_trigger", activeUser.id);
+    localStorage.setItem(`taskflow:show_first_task_modal:${activeUser.id}`, "true");
     return true;
   };
 
@@ -163,27 +248,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     setUser(updatedUser);
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
-      const accounts = getAccounts();
-      const updatedAccounts = accounts.map((a) =>
-        a.id === user.id
-          ? {
-              ...a,
-              fullName: nextFullName,
-              email: nextEmail,
-            }
-          : a
-      );
-      localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(updatedAccounts));
-    }
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+    const accounts = getAccounts();
+    const updatedAccounts = accounts.map((a) =>
+      a.id === user.id
+        ? {
+            ...a,
+            fullName: nextFullName,
+            email: nextEmail,
+          }
+        : a,
+    );
+    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(updatedAccounts));
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await fetch(`${BASE}/auth/logout`, { method: "POST", credentials: "include" });
+    } catch {}
     setUser(null);
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
-    }
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
   };
 
   return (

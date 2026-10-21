@@ -14,7 +14,7 @@ router.get("/", async (req: Request, res: Response) => {
     const userId = getUserId(req);
     const result = await query(
       "SELECT * FROM activities WHERE user_id = $1 ORDER BY at DESC LIMIT 30",
-      [userId]
+      [userId],
     );
 
     const activities = result.rows.map((row) => ({

@@ -1,5 +1,13 @@
 import { computeStats } from "@/lib/task-utils";
-import type { Activity, ActivityType, Profile, Project, Task, TaskInput, TeamMember } from "@/types";
+import type {
+  Activity,
+  ActivityType,
+  Profile,
+  Project,
+  Task,
+  TaskInput,
+  TeamMember,
+} from "@/types";
 import {
   buildSeedActivity,
   buildSeedProfile,
@@ -27,7 +35,12 @@ function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
-function getActiveUser(): { id: string; fullName: string; email: string; username?: string } | null {
+function getActiveUser(): {
+  id: string;
+  fullName: string;
+  email: string;
+  username?: string;
+} | null {
   if (!isBrowser()) return null;
   try {
     const raw = window.localStorage.getItem("taskflow:auth_user");
@@ -47,11 +60,12 @@ function getStorageKey(): string {
 function load(): Store {
   const key = getStorageKey();
   const activeUser = getActiveUser();
-  const isDefaultUser = !activeUser || activeUser.id === "user-om" || activeUser.username === "omthakkar";
+  const isDefaultUser =
+    !activeUser || activeUser.id === "user-om" || activeUser.username === "omthakkar";
 
   if (isBrowser()) {
     try {
-      let raw = window.localStorage.getItem(key);
+      const raw = window.localStorage.getItem(key);
 
       if (raw) {
         const parsed = JSON.parse(raw) as Store;
@@ -68,17 +82,30 @@ function load(): Store {
           parsed.tasks = parsed.tasks.map((t, idx) => {
             if (!t.projectId) {
               const proj = parsed.projects[idx % parsed.projects.length];
-              t.projectId = proj.id;
-              t.projectName = proj.name;
-              t.projectColor = proj.color;
+              if (proj) {
+                t.projectId = proj.id;
+                t.projectName = proj.name;
+                t.projectColor = proj.color;
+              }
             }
             if (!t.assignee) {
-              t.assignee = parsed.team[idx % parsed.team.length];
+              const mem = parsed.team[idx % parsed.team.length];
+              if (mem) {
+                t.assignee = mem;
+              }
             }
             if (!t.subtasks) {
               t.subtasks = [
-                { id: `sub-${t.id}-1`, title: "Define specifications and scope", completed: t.status === "completed" },
-                { id: `sub-${t.id}-2`, title: "Implement core solution", completed: t.status === "completed" },
+                {
+                  id: `sub-${t.id}-1`,
+                  title: "Define specifications and scope",
+                  completed: t.status === "completed",
+                },
+                {
+                  id: `sub-${t.id}-2`,
+                  title: "Implement core solution",
+                  completed: t.status === "completed",
+                },
               ];
             }
             return t;
@@ -135,7 +162,8 @@ function save(store: Store) {
 }
 
 const wait = () => new Promise((r) => setTimeout(r, LATENCY_MS));
-const uid = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const uid = (p: string) =>
+  `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 function log(store: Store, type: ActivityType, task: Task) {
   store.activity = [
@@ -222,31 +250,91 @@ export const mockTaskService: TaskService = {
 
     let projectName = existing.projectName;
     let projectColor = existing.projectColor;
-    if (data.projectId && data.projectId !== existing.projectId) {
-      const proj = store.projects.find((p) => p.id === data.projectId);
-      if (proj) {
-        projectName = proj.name;
-        projectColor = proj.color;
+    if (data.projectId !== undefined) {
+      if (!data.projectId) {
+        projectName = undefined;
+        projectColor = undefined;
+      } else {
+        const proj = store.projects.find((p) => p.id === data.projectId);
+        if (proj) {
+          projectName = proj.name;
+          projectColor = proj.color;
+        }
       }
     }
 
     let assignee = existing.assignee;
-    if (data.assigneeId) {
-      const found = store.team.find((m) => m.id === data.assigneeId);
-      if (found) assignee = found;
+    if (data.assigneeId !== undefined) {
+      if (!data.assigneeId) {
+        assignee = undefined;
+      } else {
+        const found = store.team.find((m) => m.id === data.assigneeId);
+        if (found) assignee = found;
+      }
     }
 
+    let subtasks = existing.subtasks;
+    if (data.subtasks !== undefined) {
+      subtasks = data.subtasks.map((s, idx) => ({
+        id: `sub-${id}-${idx}`,
+        title: s.title,
+        completed: Boolean(s.completed),
+      }));
+    }
+
+    const { subtasks: _s, ...restData } = data;
     const updated: Task = {
       ...existing,
-      ...data,
+      ...restData,
       projectName,
       projectColor,
       assignee,
+      subtasks,
+      completedAt:
+        data.status === "completed" ||
+        (data.status === undefined && existing.status === "completed")
+          ? existing.completedAt || new Date().toISOString()
+          : null,
       updatedAt: new Date().toISOString(),
     };
 
     store.tasks = store.tasks.map((t) => (t.id === id ? updated : t));
     const becameDone = existing.status !== "completed" && updated.status === "completed";
+
+    // Auto-schedule next recurrence if recurring task became done
+    if (becameDone && updated.recurrence && updated.recurrence !== "none") {
+      const baseDate = updated.dueDate ? new Date(updated.dueDate) : new Date();
+      const nextDue = new Date(baseDate);
+      if (updated.recurrence === "daily") {
+        nextDue.setDate(nextDue.getDate() + 1);
+      } else if (updated.recurrence === "weekly") {
+        nextDue.setDate(nextDue.getDate() + 7);
+      } else if (updated.recurrence === "monthly") {
+        nextDue.setMonth(nextDue.getMonth() + 1);
+      } else if (updated.recurrence === "weekdays") {
+        do {
+          nextDue.setDate(nextDue.getDate() + 1);
+        } while (nextDue.getDay() === 0 || nextDue.getDay() === 6);
+      }
+
+      const nextTask: Task = {
+        ...updated,
+        id: uid("task"),
+        status: "pending",
+        dueDate: nextDue.toISOString(),
+        completedAt: null,
+        subtasks: updated.subtasks?.map((s, idx) => ({
+          ...s,
+          id: `sub-${Date.now()}-${idx}`,
+          completed: false,
+        })),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      store.tasks = [nextTask, ...store.tasks];
+      log(store, "created", nextTask);
+    }
+
     log(store, becameDone ? "completed" : "updated", updated);
     save(store);
     return updated;
@@ -259,21 +347,27 @@ export const mockTaskService: TaskService = {
     if (!task) throw new Error("Task not found");
 
     const updatedSubtasks = (task.subtasks || []).map((s) =>
-      s.id === subtaskId ? { ...s, completed: !s.completed } : s
+      s.id === subtaskId ? { ...s, completed: !s.completed } : s,
     );
 
     // Auto-update task status if all subtasks completed
     const allDone = updatedSubtasks.length > 0 && updatedSubtasks.every((s) => s.completed);
-    const newStatus = allDone ? "completed" : task.status === "completed" ? "in_progress" : task.status;
+    const newStatus = allDone
+      ? "completed"
+      : task.status === "completed"
+        ? "in_progress"
+        : task.status;
 
     const updated: Task = {
       ...task,
       status: newStatus,
       subtasks: updatedSubtasks,
+      completedAt: newStatus === "completed" ? task.completedAt || new Date().toISOString() : null,
       updatedAt: new Date().toISOString(),
     };
 
     store.tasks = store.tasks.map((t) => (t.id === taskId ? updated : t));
+    log(store, allDone ? "completed" : "updated", updated);
     save(store);
     return updated;
   },
@@ -283,8 +377,37 @@ export const mockTaskService: TaskService = {
     const store = load();
     const existing = store.tasks.find((t) => t.id === id);
     if (!existing) throw new Error("Task not found");
-    store.tasks = store.tasks.filter((t) => t.id !== id);
+    // Soft delete into Trash
+    existing.isTrash = true;
+    existing.deletedAt = new Date().toISOString();
     log(store, "deleted", existing);
+    save(store);
+  },
+
+  async restoreTask(id: string) {
+    await wait();
+    const store = load();
+    const existing = store.tasks.find((t) => t.id === id);
+    if (!existing) throw new Error("Task not found");
+    existing.isTrash = false;
+    existing.deletedAt = null;
+    existing.updatedAt = new Date().toISOString();
+    log(store, "updated", existing);
+    save(store);
+    return existing;
+  },
+
+  async permanentDeleteTask(id: string) {
+    await wait();
+    const store = load();
+    store.tasks = store.tasks.filter((t) => t.id !== id);
+    save(store);
+  },
+
+  async emptyTrash() {
+    await wait();
+    const store = load();
+    store.tasks = store.tasks.filter((t) => !t.isTrash);
     save(store);
   },
 
@@ -299,6 +422,7 @@ export const mockTaskService: TaskService = {
       updatedAt: new Date().toISOString(),
     };
     store.tasks = store.tasks.map((t) => (t.id === id ? updated : t));
+    log(store, "updated", updated);
     save(store);
     return updated;
   },

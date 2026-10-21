@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import authRouter from "./routes/auth.js";
 import tasksRouter from "./routes/tasks.js";
 import profileRouter from "./routes/profile.js";
 import activityRouter from "./routes/activity.js";
@@ -19,10 +21,11 @@ app.use(
   cors({
     origin: true,
     credentials: true,
-  })
+  }),
 );
 
 app.use(express.json());
+app.use(cookieParser());
 
 // Request logger in dev
 app.use((req, res, next) => {
@@ -56,6 +59,7 @@ app.get("/api/health", async (req, res) => {
 });
 
 // Mount Routes
+app.use("/api/auth", authRouter);
 app.use("/api/tasks", tasksRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/team", teamRouter);

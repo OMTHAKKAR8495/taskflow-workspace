@@ -16,10 +16,9 @@ router.get("/", async (req: Request, res: Response) => {
     // Fetch projects
     const projectsRes = await query("SELECT * FROM projects ORDER BY created_at ASC");
     // Fetch task counts per project
-    const tasksRes = await query(
-      "SELECT project_id, status FROM tasks WHERE user_id = $1",
-      [userId]
-    );
+    const tasksRes = await query("SELECT project_id, status FROM tasks WHERE user_id = $1", [
+      userId,
+    ]);
 
     const counts: Record<string, { total: number; completed: number }> = {};
     for (const t of tasksRes.rows) {

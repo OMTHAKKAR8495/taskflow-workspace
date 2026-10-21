@@ -6,9 +6,15 @@ export const Route = createFileRoute("/profile")({
   head: () => ({
     meta: [
       { title: "User Profile · TaskFlow" },
-      { name: "description", content: "View and edit your TaskFlow profile and workspace statistics." },
+      {
+        name: "description",
+        content: "View and edit your TaskFlow profile and workspace statistics.",
+      },
       { property: "og:title", content: "User Profile · TaskFlow" },
-      { property: "og:description", content: "View and edit your TaskFlow profile and workspace statistics." },
+      {
+        property: "og:description",
+        content: "View and edit your TaskFlow profile and workspace statistics.",
+      },
     ],
   }),
   component: ProfilePage,
@@ -16,10 +22,7 @@ export const Route = createFileRoute("/profile")({
 
 function ProfilePage() {
   return (
-    <AppLayout
-      title="User Profile"
-      breadcrumb={[{ label: "Workspace" }, { label: "Profile" }]}
-    >
+    <AppLayout title="User Profile" breadcrumb={[{ label: "Workspace" }, { label: "Profile" }]}>
       <ProfileView />
     </AppLayout>
   );

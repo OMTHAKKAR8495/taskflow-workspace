@@ -36,7 +36,13 @@ export function LoadingState({ rows = 4 }: { rows?: number }) {
   );
 }
 
-export function ErrorState({ message = "Something went wrong while loading your data.", onRetry }: { message?: string; onRetry?: () => void }) {
+export function ErrorState({
+  message = "Something went wrong while loading your data.",
+  onRetry,
+}: {
+  message?: string;
+  onRetry?: () => void;
+}) {
   return (
     <div className="flex flex-col items-center rounded-xl border border-destructive/20 bg-danger-soft px-6 py-12 text-center">
       <AlertTriangle className="mb-3 size-8 text-destructive" aria-hidden />

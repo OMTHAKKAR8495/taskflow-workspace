@@ -1,12 +1,26 @@
 import { useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import {
-  AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 
-export function DeleteConfirmationDialog({ taskTitle, onConfirm, trigger }: { taskTitle: string; onConfirm: () => Promise<void>; trigger: ReactNode }) {
+export function DeleteConfirmationDialog({
+  taskTitle,
+  onConfirm,
+  trigger,
+}: {
+  taskTitle: string;
+  onConfirm: () => Promise<void>;
+  trigger: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   return (

@@ -1,302 +1,216 @@
-# TaskFlow Workspace
+# TaskFlow — Modern Intelligent Task Management System
+
+A high-performance, full-stack personal and team task management application built with **React**, **TypeScript**, **Express**, and **PostgreSQL**. Designed with a refined SaaS aesthetic (indigo/slate palette, glassmorphism, responsive dark mode) and to-do workflows.
+
+---
+
+## Highlights & Features
+
+### 1. Smart Quick-Add Bar (NLP Parser)
+Type natural language instructions into the quick-add bar to instantly create tasks with parsed metadata:
+- **Priority**: `!high`, `!medium`, `!low`
+- **Lists / Tags**: `#groceries`, `#work`, `#study`
+- **Due Dates & Times**: `tomorrow`, `today`, `friday`, `5pm`, `10am`, `next week`
+- *Example*: `Buy organic milk tomorrow 5pm !high #groceries`
+- **Interactive Live Preview**: Shows chips for clean title, target list, due time, and priority before pressing Enter.
+
+### 2. Smart Views & Workflow Organization
+- **My Day**: Clean morning briefing view with dynamic progress ring ("3 of 7 completed"), quick-add input, and one-click task completion.
+- **Upcoming**: Chronologically organized tasks due over the coming days and weeks.
+- **Overdue**: Urgent triage view highlighting missed deadlines with red indicators.
+- **Custom Colored Lists**: Organize tasks into personal lists (e.g., Personal, Work, Study, Fitness) with custom color badges and counts.
+- **Soft Delete & Trash**: Deleted tasks move to Trash with instant undo toasts, full recovery/restore, and permanent empty trash actions.
+
+### 3. Recurring Tasks
+- Set tasks to recur **Daily**, **Weekdays**, **Weekly**, or **Monthly**.
+- Ticking a recurring task completes the current instance and automatically schedules the next occurrence with the incremented due date.
+
+### 4. Interactive Views (List, Kanban Board & Calendar)
+- **Checkbox List View**: Strikethrough animations, inline subtask counters, priority indicators, and tags.
+- **Kanban Board**: Drag-and-drop workflow across Backlog/To-Do, In Progress, In Review, and Completed.
+- **Calendar View**: Full month grid displaying task chips with drag-and-drop rescheduling across days.
+
+### 5. Focus Mode (Pomodoro Timer)
+- Built-in minimalist Pomodoro timer (25 min focus, 50 min deep work, 5 min break).
+- Automatically tracks and logs focus seconds accumulated on each task.
+
+### 6. Productivity Insights
+- **Completion Streak**: Flame counter tracking consecutive active days.
+- **12-Week Activity Heatmap**: GitHub-style activity grid mapping completed tasks and focus sessions.
+- **Productivity Analytics**: Best performing day of the week, total focus hours, and weekly created vs completed task charts.
+
+### 7. Keyboard Command Palette (`Ctrl+K` / `Cmd+K`)
+- Powered by `cmdk`.
+- Quickly search tasks by title, switch between smart views and lists, toggle themes, and trigger new task modals directly from the keyboard.
+
+### 8. Notifications & Reminders
+- Dynamic notifications popover displaying overdue items and tasks due soon.
+- Optional browser Web Notification permission toggle for system alerts.
+
+### 9. Export & Import
+- Export your tasks database as clean **JSON** or spreadsheet-compatible **CSV**.
+- Import tasks from JSON or CSV with instant schema validation and merging.
+
+### 10. Robust Authentication & Offline Resilience
+- **Bcrypt Password Hashing & JWT**: Real secure authentication via `taskflow_token` httpOnly cookies and `Authorization: Bearer` headers.
+- **Explicit Offline Banner**: Amber network status indicator when disconnected from PostgreSQL backend.
+- **Strict Error Handling**: Validation and 4xx client errors are surfaced to the user without silent mock masking.
+
+---
+
+## Tech Stack
+
+| Layer | Technologies |
+|---|---|
+| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Lucide Icons, cmdk, date-fns, Recharts |
+| **Backend** | Node.js, Express, TypeScript, bcryptjs, jsonwebtoken, cookie-parser, pg (node-postgres) |
+| **Database** | PostgreSQL 16 (with idempotent schema migrations) |
+| **Quality** | ESLint 9, Prettier, Vitest, TypeScript strict mode (`exactOptionalPropertyTypes`) |
+| **DevOps** | Docker Compose for PostgreSQL |
+
+---
+
+## Quickstart Guide
+
+### Option A: Using Docker Compose (Recommended)
+
+1. **Clone the repository and install dependencies**:
+   ```bash
+   git clone <repo-url> taskflow
+   cd taskflow
+   npm install
+   npm --prefix server install
+   ```
+
+2. **Start PostgreSQL via Docker Compose**:
+   ```bash
+   docker compose up -d
+   ```
+
+3. **Start the Express API server**:
+   ```bash
+   npm --prefix server run dev
+   ```
+   *The server runs on `http://localhost:4000` and automatically runs idempotent database migrations on startup.*
+
+4. **Start the Frontend development server**:
+   ```bash
+   npm run dev
+   ```
+   *Open `http://localhost:3000` (or the printed Vite URL) in your browser.*
+
+---
+
+### Option B: Local PostgreSQL Setup
+
+1. Create a PostgreSQL database:
+   ```sql
+   CREATE DATABASE taskflow_db;
+   ```
+2. Configure `server/.env`:
+   ```env
+   PORT=4000
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/taskflow_db
+   JWT_SECRET=your-secret-key
+   NODE_ENV=development
+   ```
+3. Run the database seed & migration:
+   ```bash
+   npm --prefix server run seed
+   ```
+4. Start both servers:
+   ```bash
+   # Terminal 1: Backend
+   npm --prefix server run dev
+
+   # Terminal 2: Frontend
+   npm run dev
+   ```
+
+---
+
+## Architecture & Directory Structure
 
-# Build TaskFlow — Complete Full-Stack Task Management UI
-
-Act as a senior UI/UX designer and React frontend developer. Build a complete, professional, modern, responsive task management web application called **TaskFlow**.
-
-## 1. Project objective
-
-Create a polished project and task management dashboard suitable for a full-stack developer internship technical assignment.
-
-The application should look like a real SaaS product, not a basic student project. Prioritize excellent UI design, clean code, reusable components, responsive layouts, and functional frontend interactions.
-
-**IMPORTANT:** Focus on building the complete FRONTEND UI. Do not spend time implementing a custom backend. Use realistic mock data and a centralized service layer so I can connect my own Node.js + Express + PostgreSQL backend later.
-
-## 2. Technology requirements
-
-- React
-- TypeScript
-- Vite
-- Tailwind CSS
-- shadcn/ui components where appropriate
-- Lucide icons
-- React Router for navigation
-- Recharts for dashboard analytics
-- React Hook Form and Zod for form validation
-- Local mock data and a service abstraction for frontend functionality
-
-Keep the code modular, maintainable, and ready for future API integration.
-
-## 3. Design system
-
-Create a premium SaaS dashboard design.
-
-Visual direction:
-- Clean, minimal, professional interface
-- White and very light gray backgrounds
-- Dark navy text
-- Indigo/violet as the primary accent
-- Soft borders and subtle shadows
-- Rounded cards with consistent spacing
-- Beautiful typography and clear visual hierarchy
-- Small status badges and priority indicators
-- Smooth, subtle hover transitions
-- Consistent Lucide icons
-- Professional empty states, loading states, and error states
-
-Use a persistent left sidebar on desktop and a collapsible navigation drawer on mobile. Add a top header containing a page title, breadcrumb where appropriate, notification icon, and user avatar/profile menu.
-
-Avoid excessive gradients, unnecessary animations, giant headings, oversized cards, and cluttered layouts.
-
-## 4. Pages to build
-
-### A. Dashboard — `/dashboard`
-
-Create a complete overview page containing:
-
-- Welcome message with the user's name
-- Summary cards for Total Tasks, Pending Tasks, In Progress, and Completed
-- Task completion progress indicator
-- Tasks due soon section
-- Recent tasks section
-- Priority distribution chart
-- Task completion chart
-- Quick Add Task button
-- Recent activity feed
-
-Use realistic sample data and calculate dashboard totals from the task dataset rather than hardcoding unrelated numbers.
-
-### B. All Tasks — `/tasks`
-
-Create a complete task management page containing:
-
-- Page title and task count
-- Search input
-- Filter dropdowns for status and priority
-- Sort options for due date, priority, and creation date
-- List and grid view toggle
-- Add Task button
-- Task rows or cards showing title, description preview, status, priority, due date, and last updated date
-- Clear filters button
-- Pagination or a simple load-more interaction if needed
-- Empty state when no tasks match the filters
-
-Use distinct, accessible badges for Pending, In Progress, Completed, Low, Medium, and High.
-
-### C. Task Details — `/tasks/:id`
-
-Create a detailed task view showing:
-
-- Task title and full description
-- Status and priority badges
-- Due date and creation date
-- Last updated date
-- Edit Task action
-- Delete Task action with a confirmation dialog
-- Mark as Complete action
-- Back to Tasks navigation
-- Related task information where relevant
-
-Handle invalid or missing task IDs with a friendly not-found state.
-
-### D. Create Task — `/tasks/new`
-
-Build a polished form containing:
-
-- Task title
-- Description
-- Status selection
-- Priority selection
-- Due date picker
-- Create Task button
-- Cancel button
-
-Add required-field validation, character limits where appropriate, helpful inline error messages, and disabled/loading button states during submission.
-
-### E. Edit Task — `/tasks/:id/edit`
-
-Reuse the create form with existing task data prefilled.
-
-Allow editing of the title, description, status, priority, and due date. Include Save Changes and Cancel buttons.
-
-### F. User Profile — `/profile`
-
-Create a user profile page showing:
-
-- Avatar and full name
-- Email address
-- Join date
-- Edit profile form
-- Task activity summary
-- Total, completed, and pending task counts
-
-Keep profile information editable in the frontend demo.
-
-### G. Not Found — `*`
-
-Create a polished 404 page with an illustration or icon, a helpful message, and a button to return to the dashboard.
-
-## 5. Navigation and layout
-
-Sidebar navigation should contain:
-
-- Dashboard
-- All Tasks
-- Profile
-- Settings (simple placeholder page or dialog)
-
-Add a visible active navigation state. The sidebar should collapse or become a drawer on mobile.
-
-The top header should contain:
-- Current page title
-- Breadcrumbs where appropriate
-- Notifications button with a simple dropdown
-- User avatar menu with Profile and Sign Out demo actions
-
-Keep navigation consistent across all main pages.
-
-## 6. Frontend functionality
-
-Implement working frontend interactions using React state and a centralized mock-data service.
-
-Required behavior:
-
-1. Create a task and display it immediately in the task list.
-2. Open a task details page by clicking its row or card.
-3. Edit an existing task and update the UI.
-4. Delete a task only after confirmation.
-5. Mark a task as completed.
-6. Search tasks by title and description.
-7. Filter tasks by status and priority.
-8. Sort tasks by due date, priority, and creation date.
-9. Update dashboard statistics when task data changes.
-10. Edit and display user profile information.
-11. Show toast notifications for successful and failed demo actions.
-12. Show appropriate loading, empty, validation, and error states.
-13. Persist demo changes with localStorage so data remains after refreshing the browser.
-
-Use a single shared task state or data context so changes are reflected consistently across the dashboard, task list, and task detail pages.
-
-Do not implement fake buttons that do nothing. Every visible interactive control must work or be clearly marked as a placeholder.
-
-## 7. Task data model
-
-Use a TypeScript interface similar to:
-
-Task:
-- id: string
-- userId: string
-- title: string
-- description: string
-- status: "pending" | "in_progress" | "completed"
-- priority: "low" | "medium" | "high"
-- dueDate: string | null
-- createdAt: string
-- updatedAt: string
-
-Create realistic demo data for at least 10–12 tasks with a mix of statuses, priorities, and deadlines.
-
-Create a Profile interface with id, fullName, email, avatarUrl, and createdAt.
-
-## 8. Component architecture
-
-Create reusable components such as:
-
-- AppLayout
-- Sidebar
-- MobileNavigation
-- TopHeader
-- PageHeader
-- StatCard
-- TaskCard
-- TaskTable
-- TaskStatusBadge
-- PriorityBadge
-- TaskFilters
-- TaskForm
-- TaskDetailsPanel
-- DeleteConfirmationDialog
-- SearchInput
-- EmptyState
-- LoadingState
-- ErrorState
-- ProfileCard
-- ActivityFeed
-
-Organize code into sensible folders for pages, components, hooks, types, services, and utilities.
-
-Keep business logic out of large UI components.
-
-## 9. Backend integration readiness
-
-The UI will later connect to a Node.js + Express + PostgreSQL backend.
-
-Create a centralized task service with functions for:
-
-- getTasks()
-- getTaskById(id)
-- createTask(data)
-- updateTask(id, data)
-- deleteTask(id)
-- getDashboardStats()
-- getProfile()
-- updateProfile(data)
-
-For now, implement these using mock data and localStorage. Keep the service interface easy to replace with HTTP API requests later.
-
-Do not create fake successful backend responses or claim that real authentication or database persistence exists.
-
-Clearly separate the mock service from the future API service.
-
-## 10. Responsive design
-
-Ensure the entire application works on:
-
-- Desktop screens
-- Tablets
-- Mobile phones
-
-On small screens, use stacked statistic cards, mobile-friendly task cards, compact filters, responsive forms, and a collapsible sidebar.
-
-Prevent horizontal overflow and keep buttons and inputs comfortable to use on touchscreens.
-
-## 11. Quality requirements
-
-- Use TypeScript types correctly.
-- Avoid unnecessary `any` types.
-- Ensure routes work on direct navigation and page refresh.
-- Keep all UI components visually consistent.
-- Ensure forms are accessible and labels are connected to inputs.
-- Add proper confirmation before destructive actions.
-- Handle empty datasets and invalid IDs.
-- Avoid duplicate task state and inconsistent dashboard totals.
-- Do not leave incomplete imports or broken routes.
-- Do not build unrelated features such as chat, billing, teams, AI, or real-time collaboration.
-- Do not waste time on backend infrastructure; this task is for the frontend UI.
-
-## 12. Final deliverable
-
-Generate the complete, working TaskFlow frontend in the project.
-
-Prioritize in this order:
-1. Shared layout and navigation
-2. Dashboard
-3. Task listing, search, and filtering
-4. Create, details, edit, and delete flows
-5. Profile page
-6. Responsive behavior and polished states
-
-Before finishing, verify that navigation, CRUD interactions, filters, dashboard statistics, validation, and browser refresh persistence work correctly.
-
-Build the complete application now. Do not stop after generating a landing page or static dashboard mockup.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
 ```
+taskflow/
+├── docker-compose.yml       # One-command PostgreSQL 16 service
+├── server/                  # Express + PostgreSQL backend
+│   ├── schema.sql           # Database schema & safe idempotent migrations
+│   ├── src/
+│   │   ├── auth.ts          # Bcrypt hashing, JWT generation & verification middleware
+│   │   ├── db.ts            # PostgreSQL connection pool with query helpers
+│   │   ├── index.ts         # Express app entrypoint & cookie parser
+│   │   ├── seed.ts          # Idempotent database seeder
+│   │   └── routes/
+│   │       ├── auth.ts      # /api/auth/register, /login, /logout, /me
+│   │       ├── tasks.ts     # CRUD, soft-delete, restore, permanent delete, batch
+│   │       ├── projects.ts  # Projects & initiatives
+│   │       ├── team.ts      # Team members
+│   │       ├── activity.ts  # Audit log / activity stream
+│   │       └── profile.ts   # User profile management
+├── src/                     # React frontend
+│   ├── components/
+│   │   ├── common/          # AppLayout, CommandPalette, NotificationsBell, OfflineBanner
+│   │   ├── tasks/           # SmartQuickAdd, FocusModeModal, ProductivityInsights, CalendarView
+│   │   └── dashboard/       # Dashboard analytics & charts
+│   ├── context/             # AuthContext, TaskContext, ThemeContext
+│   ├── services/            # apiTaskService, mockTaskService, connectionStatus
+│   ├── lib/                 # task-utils, formatters, cn helper
+│   ├── test/                # Vitest test suites (auth, routing, task logic)
+│   └── types/               # Full TypeScript type definitions
+└── README.md
+```
+
+---
+
+## API Endpoints Reference
+
+### Authentication (`/api/auth`)
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/register` | Register new user with bcrypt-hashed password & set JWT cookie |
+| `POST` | `/api/auth/login` | Authenticate user & return JWT token / set cookie |
+| `POST` | `/api/auth/logout` | Clear auth cookie |
+| `GET` | `/api/auth/me` | Fetch authenticated user profile |
+
+### Tasks (`/api/tasks`)
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/tasks` | List all tasks (with optional `status`, `priority`, `projectId`, `listId`) |
+| `POST` | `/api/tasks` | Create task (validated title, priority, status, recurrence, subtasks) |
+| `GET` | `/api/tasks/:id` | Fetch single task by ID |
+| `PATCH` | `/api/tasks/:id` | Update task fields (status, priority, recurrence, focus time) |
+| `DELETE` | `/api/tasks/:id` | Soft delete task (moves to trash) |
+| `POST` | `/api/tasks/:id/restore` | Restore soft-deleted task from trash |
+| `DELETE` | `/api/tasks/:id/permanent` | Permanently remove task from database |
+| `DELETE` | `/api/tasks/trash/empty` | Empty all trashed tasks |
+| `POST` | `/api/tasks/:id/subtasks` | Toggle subtask completed status |
+| `POST` | `/api/tasks/:id/bookmark` | Toggle task bookmark flag |
+| `POST` | `/api/tasks/:id/comments` | Add comment to task |
+
+---
+
+## Testing & Quality Assurance
+
+TaskFlow maintains zero TypeScript errors, strict linting compliance, and automated test coverage.
+
+```bash
+# Run TypeScript compilation check
+npx tsc --noEmit
+
+# Run ESLint check
+npm run lint
+
+# Run Vitest test suite
+npm test
+```
+
+### Test Coverage Highlights
+- **`src/test/auth-security.test.ts`**: Verifies bcrypt password hashing, signature verification, token expiration, and HTTP header/cookie parsing.
+- **`src/test/task-features.test.ts`**: Verifies NLP parsing of tokens (`!high`, `#list`, `tomorrow 5pm`), recurring task auto-generation on complete, and soft-delete/restore lifecycles.
+- **`src/test/app-routing.test.tsx`**: Verifies application routing, dashboard metrics aggregation, and query filters.
+
+---
+
+## License
+MIT

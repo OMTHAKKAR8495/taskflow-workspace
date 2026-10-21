@@ -1,7 +1,18 @@
-import { ArrowDown, ArrowUp, CheckCircle2, Circle, Eye, Minus, Timer } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  CalendarDays,
+  CheckCircle2,
+  Circle,
+  Clock,
+  Eye,
+  Minus,
+  Timer,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/task-utils";
-import type { TaskPriority, TaskStatus } from "@/types";
+import { PRIORITY_LABEL, STATUS_LABEL, getDueAlertInfo } from "@/lib/task-utils";
+import type { Task, TaskPriority, TaskStatus } from "@/types";
 
 const statusStyle: Record<TaskStatus, string> = {
   pending: "bg-warning-soft text-warning border-warning/20",
@@ -20,7 +31,13 @@ const statusIcon = {
 export function TaskStatusBadge({ status, className }: { status: TaskStatus; className?: string }) {
   const Icon = statusIcon[status] || Circle;
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", statusStyle[status] || statusStyle.pending, className)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
+        statusStyle[status] || statusStyle.pending,
+        className,
+      )}
+    >
       <Icon className="size-3" aria-hidden />
       {STATUS_LABEL[status] || status}
     </span>
@@ -34,13 +51,50 @@ const priorityStyle: Record<TaskPriority, string> = {
 };
 const priorityIcon = { high: ArrowUp, medium: Minus, low: ArrowDown };
 
-export function PriorityBadge({ priority, className }: { priority: TaskPriority; className?: string }) {
+export function PriorityBadge({
+  priority,
+  className,
+}: {
+  priority: TaskPriority;
+  className?: string;
+}) {
   const Icon = priorityIcon[priority];
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", priorityStyle[priority], className)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
+        priorityStyle[priority],
+        className,
+      )}
+    >
       <Icon className="size-3" aria-hidden />
       {PRIORITY_LABEL[priority]}
       <span className="sr-only"> priority</span>
+    </span>
+  );
+}
+
+export function DueDateBadge({ task, className }: { task: Task; className?: string }) {
+  const alert = getDueAlertInfo(task);
+  if (!task.dueDate) return null;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors",
+        alert.badgeClass,
+        className,
+      )}
+      title={alert.alertDescription || alert.badgeText}
+    >
+      {alert.level === "overdue" ? (
+        <AlertTriangle className="size-3 text-destructive animate-pulse" />
+      ) : alert.level === "due_today" ? (
+        <Clock className="size-3 text-amber-500" />
+      ) : (
+        <CalendarDays className="size-3" />
+      )}
+      <span>{alert.badgeText}</span>
     </span>
   );
 }

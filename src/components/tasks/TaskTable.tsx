@@ -1,6 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Bookmark, Edit, Trash2 } from "lucide-react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -69,7 +76,9 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
                     aria-label={t.isBookmarked ? "Remove bookmark" : "Bookmark task"}
                     className={cn(
                       "rounded p-1 transition-colors hover:bg-muted",
-                      t.isBookmarked ? "text-amber-500 fill-amber-500" : "text-muted-foreground hover:text-foreground"
+                      t.isBookmarked
+                        ? "text-amber-500 fill-amber-500"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <Bookmark className={cn("size-4", t.isBookmarked && "fill-amber-500")} />
@@ -78,7 +87,12 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
 
                 <TableCell className="max-w-0">
                   <div className="flex items-center gap-2">
-                    <p className={cn("truncate font-medium text-sm text-foreground", t.status === "completed" && "text-muted-foreground line-through")}>
+                    <p
+                      className={cn(
+                        "truncate font-medium text-sm text-foreground",
+                        t.status === "completed" && "text-muted-foreground line-through",
+                      )}
+                    >
                       {t.title}
                     </p>
                     {t.estimate && (
@@ -87,13 +101,18 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
                       </span>
                     )}
                   </div>
-                  <p className="truncate text-xs text-muted-foreground mt-0.5">{t.description || "No description"}</p>
+                  <p className="truncate text-xs text-muted-foreground mt-0.5">
+                    {t.description || "No description"}
+                  </p>
                 </TableCell>
 
                 <TableCell className="whitespace-nowrap">
                   {t.projectName ? (
                     <div className="flex items-center gap-1.5 text-xs font-medium">
-                      <span className="size-2 rounded-full" style={{ backgroundColor: t.projectColor || "#6366f1" }} />
+                      <span
+                        className="size-2 rounded-full"
+                        style={{ backgroundColor: t.projectColor || "#6366f1" }}
+                      />
                       <span className="text-foreground">{t.projectName}</span>
                     </div>
                   ) : (
@@ -101,8 +120,12 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
                   )}
                 </TableCell>
 
-                <TableCell><TaskStatusBadge status={t.status} /></TableCell>
-                <TableCell><PriorityBadge priority={t.priority} /></TableCell>
+                <TableCell>
+                  <TaskStatusBadge status={t.status} />
+                </TableCell>
+                <TableCell>
+                  <PriorityBadge priority={t.priority} />
+                </TableCell>
 
                 <TableCell className="whitespace-nowrap">
                   {t.assignee ? (
@@ -119,7 +142,12 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
                   )}
                 </TableCell>
 
-                <TableCell className={cn("whitespace-nowrap text-xs", isOverdue(t) ? "font-medium text-destructive" : "text-muted-foreground")}>
+                <TableCell
+                  className={cn(
+                    "whitespace-nowrap text-xs",
+                    isOverdue(t) ? "font-medium text-destructive" : "text-muted-foreground",
+                  )}
+                >
                   {fmtDate(t.dueDate, "—")}
                 </TableCell>
 

@@ -1,4 +1,12 @@
-import type { DashboardStats, Project, Task, TaskFilterState, TaskPriority, TaskStatus, TeamMember } from "@/types";
+import type {
+  DashboardStats,
+  Project,
+  Task,
+  TaskFilterState,
+  TaskPriority,
+  TaskStatus,
+  TeamMember,
+} from "@/types";
 
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: "Backlog / To Do",
@@ -82,8 +90,133 @@ export function filterAndSortTasks(tasks: Task[], f: TaskFilterState): Task[] {
   });
 }
 
-export function isOverdue(t: Task, now = new Date()) {
-  return t.status !== "completed" && !!t.dueDate && new Date(t.dueDate) < startOfDay(now);
+export function isOverdue(target: Task | string | null | undefined, now = new Date()): boolean {
+  if (!target) return false;
+  if (typeof target === "object" && "status" in target) {
+    if (target.status === "completed" || !target.dueDate) return false;
+    return new Date(target.dueDate) < startOfDay(now);
+  }
+  return new Date(target).getTime() < startOfDay(now).getTime();
+}
+
+export function isDueToday(dueDate: string | null | undefined, now = new Date()): boolean {
+  if (!dueDate) return false;
+  const today = startOfDay(now);
+  const due = startOfDay(new Date(dueDate));
+  return today.getTime() === due.getTime();
+}
+
+export function isDueSoon(dueDate: string | null | undefined, days = 2, now = new Date()): boolean {
+  if (!dueDate) return false;
+  const today = startOfDay(now);
+  const due = startOfDay(new Date(dueDate));
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
+  return diffDays > 0 && diffDays <= days;
+}
+
+export type DueAlertLevel =
+  "overdue" | "due_today" | "due_tomorrow" | "due_soon" | "upcoming" | "none";
+
+export interface DueAlertInfo {
+  level: DueAlertLevel;
+  daysDiff: number | null;
+  badgeText: string;
+  badgeClass: string;
+  alertTitle: string;
+  alertDescription: string;
+  isUrgent: boolean;
+}
+
+export function getDueAlertInfo(task: Task, now = new Date()): DueAlertInfo {
+  if (!task.dueDate || task.status === "completed") {
+    return {
+      level: "none",
+      daysDiff: null,
+      badgeText: task.dueDate
+        ? new Date(task.dueDate).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })
+        : "No due date",
+      badgeClass: "text-muted-foreground bg-muted/40",
+      alertTitle: "",
+      alertDescription: "",
+      isUrgent: false,
+    };
+  }
+
+  const today = startOfDay(now);
+  const due = startOfDay(new Date(task.dueDate));
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
+  const formattedDate = new Date(task.dueDate).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  if (diffDays < 0) {
+    const daysAgo = Math.abs(diffDays);
+    const dayStr = daysAgo === 1 ? "1 day ago" : `${daysAgo} days ago`;
+    return {
+      level: "overdue",
+      daysDiff: diffDays,
+      badgeText: `Overdue (${dayStr})`,
+      badgeClass:
+        "bg-destructive/15 text-destructive border-destructive/30 font-semibold ring-1 ring-destructive/20",
+      alertTitle: `Overdue Deadline (${dayStr})`,
+      alertDescription: `This task missed its scheduled deadline on ${formattedDate}. Immediate resolution or rescheduling is required.`,
+      isUrgent: true,
+    };
+  }
+
+  if (diffDays === 0) {
+    return {
+      level: "due_today",
+      daysDiff: 0,
+      badgeText: "Due Today",
+      badgeClass:
+        "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold ring-1 ring-amber-500/20",
+      alertTitle: "Due Today",
+      alertDescription: `This task is scheduled for completion today (${formattedDate}). Prioritize wrapping up deliverables before end of day.`,
+      isUrgent: true,
+    };
+  }
+
+  if (diffDays === 1) {
+    return {
+      level: "due_tomorrow",
+      daysDiff: 1,
+      badgeText: "Due Tomorrow",
+      badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30 font-medium",
+      alertTitle: "Due Tomorrow",
+      alertDescription: `This task deadline is tomorrow (${formattedDate}).`,
+      isUrgent: false,
+    };
+  }
+
+  if (diffDays <= 3) {
+    return {
+      level: "due_soon",
+      daysDiff: diffDays,
+      badgeText: `Due in ${diffDays}d`,
+      badgeClass:
+        "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 font-medium",
+      alertTitle: `Due in ${diffDays} days`,
+      alertDescription: `Approaching milestone deadline on ${formattedDate}.`,
+      isUrgent: false,
+    };
+  }
+
+  return {
+    level: "upcoming",
+    daysDiff: diffDays,
+    badgeText: formattedDate,
+    badgeClass: "text-muted-foreground bg-muted/40",
+    alertTitle: "",
+    alertDescription: "",
+    isUrgent: false,
+  };
 }
 
 /** Open tasks due within the next `days` days (including overdue), soonest first. */
@@ -128,14 +261,15 @@ export function computeProjectStats(projects: Project[], tasks: Task[]): Project
 /** Compute workload per team member */
 export function computeTeamWorkload(
   team: TeamMember[],
-  tasks: Task[]
+  tasks: Task[],
 ): { member: TeamMember; total: number; inProgress: number; completed: number }[] {
   return team.map((member) => {
     const mTasks = tasks.filter((t) => t.assignee?.id === member.id);
     return {
       member,
       total: mTasks.length,
-      inProgress: mTasks.filter((t) => t.status === "in_progress" || t.status === "in_review").length,
+      inProgress: mTasks.filter((t) => t.status === "in_progress" || t.status === "in_review")
+        .length,
       completed: mTasks.filter((t) => t.status === "completed").length,
     };
   });

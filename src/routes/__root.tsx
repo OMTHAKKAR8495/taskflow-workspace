@@ -16,6 +16,8 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AuthModal } from "@/components/common/AuthModal";
 import { FirstTaskModal } from "@/components/tasks/FirstTaskModal";
+import { OfflineBanner } from "@/components/common/OfflineBanner";
+import { DeadlineReminderNotifier } from "@/components/common/DeadlineReminderNotifier";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -149,6 +151,8 @@ function RootComponent() {
         <AuthProvider>
           <AuthGate>
             <TaskProviderWrapper>
+              <OfflineBanner />
+              <DeadlineReminderNotifier />
               <Outlet />
               <FirstTaskModal />
               <Toaster richColors position="top-right" />

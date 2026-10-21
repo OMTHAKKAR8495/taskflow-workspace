@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import bcrypt from "bcryptjs";
 import { pool, query } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -92,7 +93,8 @@ export const SEED_TEAM_MEMBERS = [
 const SEED_TASKS = [
   {
     title: "Design onboarding flow",
-    description: "Create wireframes and high-fidelity mockups for the new user onboarding experience, covering the welcome screen, workspace setup and first-task prompt.",
+    description:
+      "Create wireframes and high-fidelity mockups for the new user onboarding experience, covering the welcome screen, workspace setup and first-task prompt.",
     status: "in_progress",
     priority: "high",
     dueDate: iso(2),
@@ -110,7 +112,8 @@ const SEED_TASKS = [
   },
   {
     title: "Set up PostgreSQL schema",
-    description: "Define tables for users, tasks and profiles with proper foreign keys, indexes on user_id and due_date, and a migration script.",
+    description:
+      "Define tables for users, tasks and profiles with proper foreign keys, indexes on user_id and due_date, and a migration script.",
     status: "completed",
     priority: "high",
     dueDate: iso(-3),
@@ -128,7 +131,8 @@ const SEED_TASKS = [
   },
   {
     title: "Write API documentation",
-    description: "Document all REST endpoints for the tasks resource including request bodies, response shapes, and error codes.",
+    description:
+      "Document all REST endpoints for the tasks resource including request bodies, response shapes, and error codes.",
     status: "pending",
     priority: "medium",
     dueDate: iso(5),
@@ -145,7 +149,8 @@ const SEED_TASKS = [
   },
   {
     title: "Implement JWT authentication",
-    description: "Add login and registration endpoints in Express, hash passwords with bcrypt, and protect task routes with middleware.",
+    description:
+      "Add login and registration endpoints in Express, hash passwords with bcrypt, and protect task routes with middleware.",
     status: "in_progress",
     priority: "high",
     dueDate: iso(1),
@@ -158,12 +163,17 @@ const SEED_TASKS = [
     subtasks: [
       { id: "sub-4-1", title: "Bcrypt salt & hash password helpers", completed: true },
       { id: "sub-4-2", title: "Sign access & refresh tokens", completed: true },
-      { id: "sub-4-3", title: "Express authenticate middleware with Bearer scheme", completed: false },
+      {
+        id: "sub-4-3",
+        title: "Express authenticate middleware with Bearer scheme",
+        completed: false,
+      },
     ],
   },
   {
     title: "Fix date picker timezone bug",
-    description: "Due dates shift by one day for users west of UTC. Normalize dates to local midnight before saving.",
+    description:
+      "Due dates shift by one day for users west of UTC. Normalize dates to local midnight before saving.",
     status: "pending",
     priority: "high",
     dueDate: iso(-1),
@@ -180,7 +190,8 @@ const SEED_TASKS = [
   },
   {
     title: "Add unit tests for task service",
-    description: "Cover create, update, delete and filtering logic with Vitest. Aim for at least 80% coverage on the service layer.",
+    description:
+      "Cover create, update, delete and filtering logic with Vitest. Aim for at least 80% coverage on the service layer.",
     status: "pending",
     priority: "medium",
     dueDate: iso(7),
@@ -197,7 +208,8 @@ const SEED_TASKS = [
   },
   {
     title: "Refactor dashboard components",
-    description: "Split the dashboard into smaller reusable components and move calculation logic into utility functions.",
+    description:
+      "Split the dashboard into smaller reusable components and move calculation logic into utility functions.",
     status: "completed",
     priority: "medium",
     dueDate: iso(-5),
@@ -214,7 +226,8 @@ const SEED_TASKS = [
   },
   {
     title: "Configure CI pipeline",
-    description: "Set up GitHub Actions to run linting, type checks and tests on every pull request.",
+    description:
+      "Set up GitHub Actions to run linting, type checks and tests on every pull request.",
     status: "completed",
     priority: "low",
     dueDate: iso(-7),
@@ -231,7 +244,8 @@ const SEED_TASKS = [
   },
   {
     title: "Prepare sprint demo",
-    description: "Put together a short walkthrough of completed features and record a backup video in case of network issues.",
+    description:
+      "Put together a short walkthrough of completed features and record a backup video in case of network issues.",
     status: "pending",
     priority: "low",
     dueDate: iso(10),
@@ -248,7 +262,8 @@ const SEED_TASKS = [
   },
   {
     title: "Review accessibility audit",
-    description: "Go through the audit report and fix contrast issues, missing labels and keyboard traps in modal dialogs.",
+    description:
+      "Go through the audit report and fix contrast issues, missing labels and keyboard traps in modal dialogs.",
     status: "in_progress",
     priority: "medium",
     dueDate: iso(4),
@@ -265,7 +280,8 @@ const SEED_TASKS = [
   },
   {
     title: "Optimize task list queries",
-    description: "Add pagination to the GET /tasks endpoint and an index on (user_id, status) to speed up filtered queries.",
+    description:
+      "Add pagination to the GET /tasks endpoint and an index on (user_id, status) to speed up filtered queries.",
     status: "pending",
     priority: "low",
     dueDate: null,
@@ -282,7 +298,8 @@ const SEED_TASKS = [
   },
   {
     title: "Update README",
-    description: "Add setup instructions, environment variables, and screenshots to the project README.",
+    description:
+      "Add setup instructions, environment variables, and screenshots to the project README.",
     status: "completed",
     priority: "low",
     dueDate: iso(-2),
@@ -292,21 +309,27 @@ const SEED_TASKS = [
     assigneeIndex: 0,
     tags: ["Documentation", "Docs"],
     estimate: "1 pt",
-    subtasks: [
-      { id: "sub-12-1", title: "Document quick start commands", completed: true },
-    ],
+    subtasks: [{ id: "sub-12-1", title: "Document quick start commands", completed: true }],
   },
 ];
 
-export async function seedDatabase() {
-  console.log("🌱 Initializing Enterprise Task Management Schema and Seeds...");
-
+export async function seedDatabase(force = false) {
   // 1. Run Schema
   const schemaPath = path.resolve(__dirname, "../schema.sql");
   if (fs.existsSync(schemaPath)) {
     const schemaSql = fs.readFileSync(schemaPath, "utf-8");
     await query(schemaSql);
   }
+
+  // Check if users already exist
+  const existingUsers = await query("SELECT COUNT(*) as count FROM users");
+  const count = parseInt(existingUsers.rows[0]?.count || "0", 10);
+  if (count > 0 && !force) {
+    console.log("ℹ️ Database schema ready (Skipping seed: data already exists).");
+    return;
+  }
+
+  console.log("🌱 Seeding Enterprise Task Management Schema and initial records...");
 
   // 2. Seed Projects
   for (const p of SEED_PROJECTS) {
@@ -317,7 +340,7 @@ export async function seedDatabase() {
          name = EXCLUDED.name,
          color = EXCLUDED.color,
          lead = EXCLUDED.lead;`,
-      [p.id, p.name, p.key, p.description, p.color, p.status, p.lead]
+      [p.id, p.name, p.key, p.description, p.color, p.status, p.lead],
     );
   }
 
@@ -330,26 +353,21 @@ export async function seedDatabase() {
          name = EXCLUDED.name,
          role = EXCLUDED.role,
          initials = EXCLUDED.initials;`,
-      [m.id, m.name, m.email, m.role, "", m.initials]
+      [m.id, m.name, m.email, m.role, "", m.initials],
     );
   }
 
-  // 4. Ensure default user exists
+  // 4. Ensure default user exists with bcrypt hash
   const defaultUserId = "user-om";
+  const defaultPasswordHash = await bcrypt.hash("thakkar2912", 10);
   await query(
     `INSERT INTO users (id, username, full_name, email, avatar_url, password_hash)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (id) DO UPDATE SET
        full_name = EXCLUDED.full_name,
-       email = EXCLUDED.email;`,
-    [
-      defaultUserId,
-      "omthakkar",
-      "Om Thakkar",
-      "omthakkar@example.com",
-      "",
-      "thakkar2912",
-    ]
+       email = EXCLUDED.email,
+       password_hash = EXCLUDED.password_hash;`,
+    [defaultUserId, "omthakkar", "Om Thakkar", "omthakkar@example.com", "", defaultPasswordHash],
   );
 
   // 5. Seed or Update tasks with Project and Assignee data
@@ -402,7 +420,7 @@ export async function seedDatabase() {
         i === 0 || i === 3,
         createdAt,
         updatedAt,
-      ]
+      ],
     );
   }
 

@@ -1,4 +1,13 @@
-import type { Activity, DashboardStats, Profile, ProfileInput, Project, Task, TaskInput, TeamMember } from "@/types";
+import type {
+  Activity,
+  DashboardStats,
+  Profile,
+  ProfileInput,
+  Project,
+  Task,
+  TaskInput,
+  TeamMember,
+} from "@/types";
 
 /**
  * Contract shared by the mock service and the backend API service.
@@ -9,6 +18,9 @@ export interface TaskService {
   createTask(data: TaskInput): Promise<Task>;
   updateTask(id: string, data: Partial<TaskInput & { isBookmarked?: boolean }>): Promise<Task>;
   deleteTask(id: string): Promise<void>;
+  restoreTask?(id: string): Promise<Task>;
+  permanentDeleteTask?(id: string): Promise<void>;
+  emptyTrash?(): Promise<void>;
   toggleBookmark(id: string): Promise<Task>;
   addComment(id: string, content: string, author?: string): Promise<Task>;
   toggleSubtask(taskId: string, subtaskId: string): Promise<Task>;

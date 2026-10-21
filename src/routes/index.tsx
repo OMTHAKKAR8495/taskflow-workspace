@@ -6,9 +6,15 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Dashboard · TaskFlow" },
-      { name: "description", content: "Overview of your tasks, velocity, and priority metrics in TaskFlow." },
+      {
+        name: "description",
+        content: "Overview of your tasks, velocity, and priority metrics in TaskFlow.",
+      },
       { property: "og:title", content: "Dashboard · TaskFlow" },
-      { property: "og:description", content: "Overview of your tasks, velocity, and priority metrics in TaskFlow." },
+      {
+        property: "og:description",
+        content: "Overview of your tasks, velocity, and priority metrics in TaskFlow.",
+      },
     ],
   }),
   component: DashboardPage,
