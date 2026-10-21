@@ -2,12 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { taskService } from "@/services";
 import { computeStats } from "@/lib/task-utils";
 import { useAuth } from "@/context/AuthContext";
-import type { Activity, DashboardStats, Profile, ProfileInput, Task, TaskInput } from "@/types";
+import type { Activity, DashboardStats, Profile, ProfileInput, Project, Task, TaskInput, TeamMember } from "@/types";
 
 type LoadState = "loading" | "ready" | "error";
 
 interface TaskContextValue {
   tasks: Task[];
+  projects: Project[];
+  team: TeamMember[];
   profile: Profile | null;
   activity: Activity[];
   stats: DashboardStats;
@@ -18,6 +20,7 @@ interface TaskContextValue {
   deleteTask: (id: string) => Promise<void>;
   toggleBookmark: (id: string) => Promise<Task>;
   addComment: (id: string, content: string, author?: string) => Promise<Task>;
+  toggleSubtask: (taskId: string, subtaskId: string) => Promise<Task>;
   updateProfile: (data: ProfileInput) => Promise<Profile>;
 }
 
@@ -26,6 +29,8 @@ const TaskContext = createContext<TaskContextValue | null>(null);
 export function TaskProvider({ children }: { children: ReactNode }) {
   const { user, updateCurrentUser } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -33,14 +38,18 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     setState("loading");
     try {
-      const [t, p, a] = await Promise.all([
+      const [t, p, a, projs, members] = await Promise.all([
         taskService.getTasks(),
         taskService.getProfile(),
         taskService.getActivity(),
+        taskService.getProjects(),
+        taskService.getTeamMembers(),
       ]);
       setTasks(t);
       setProfile(p);
       setActivity(a);
+      setProjects(projs);
+      setTeam(members);
       setState("ready");
     } catch {
       setState("error");
@@ -56,6 +65,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TaskContextValue>(
     () => ({
       tasks,
+      projects,
+      team,
       profile,
       activity,
       state,
@@ -88,6 +99,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         setTasks((prev) => prev.map((x) => (x.id === id ? t : x)));
         return t;
       },
+      toggleSubtask: async (taskId, subtaskId) => {
+        const t = await taskService.toggleSubtask(taskId, subtaskId);
+        setTasks((prev) => prev.map((x) => (x.id === taskId ? t : x)));
+        return t;
+      },
       updateProfile: async (data) => {
         const p = await taskService.updateProfile(data);
         setProfile(p);
@@ -95,7 +111,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         return p;
       },
     }),
-    [tasks, profile, activity, state, reload, refreshActivity, updateCurrentUser],
+    [tasks, projects, team, profile, activity, state, reload, refreshActivity, updateCurrentUser],
   );
 
   return <TaskContext.Provider value={value}>{children}</TaskContext.Provider>;

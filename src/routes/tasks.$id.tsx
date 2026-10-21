@@ -8,9 +8,15 @@ import {
   FileQuestion,
   Trash2,
   AlertCircle,
+  CheckSquare,
+  Users,
+  FolderKanban,
+  Tag,
+  Gauge,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AppLayout } from "@/components/common/AppLayout";
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
 import { PriorityBadge, TaskStatusBadge } from "@/components/tasks/badges";
@@ -42,7 +48,7 @@ export const Route = createFileRoute("/tasks/$id")({
 
 function TaskDetailsPage() {
   const { id } = Route.useParams();
-  const { tasks, state, reload, updateTask, deleteTask, toggleBookmark, addComment } = useTasks();
+  const { tasks, state, reload, updateTask, deleteTask, toggleBookmark, addComment, toggleSubtask } = useTasks();
   const navigate = useNavigate();
 
   if (state === "loading") {
@@ -87,9 +93,11 @@ function TaskDetailsPage() {
   }
 
   const overdue = isOverdue(task);
+  const subtasks = task.subtasks || [];
+  const subDone = subtasks.filter((s) => s.completed).length;
 
   const relatedTasks = tasks
-    .filter((t) => t.id !== task.id && (t.status === task.status || t.priority === task.priority))
+    .filter((t) => t.id !== task.id && (t.status === task.status || t.projectId === task.projectId))
     .slice(0, 3);
 
   return (
@@ -157,7 +165,7 @@ function TaskDetailsPage() {
                 }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
               >
-                <CheckCircle2 className="size-4" /> Mark as Complete
+                <CheckCircle2 className="size-4" /> Mark as Done
               </Button>
             )}
           </div>
@@ -165,7 +173,8 @@ function TaskDetailsPage() {
 
         {/* Task Details Card */}
         <div className="rounded-xl border bg-card p-6 shadow-card space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Top Info Bar: Status, Priority, Project, ID */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
             <div className="flex flex-wrap items-center gap-2">
               {/* Quick Status Dropdown */}
               <Select
@@ -186,9 +195,10 @@ function TaskDetailsPage() {
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="pending">Backlog / To Do</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="in_review">In Review</SelectItem>
+                  <SelectItem value="completed">Done</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -228,9 +238,53 @@ function TaskDetailsPage() {
                 </span>
               )}
             </div>
-            <span className="text-xs text-muted-foreground">ID: {task.id}</span>
+            <span className="text-xs text-muted-foreground font-mono">ID: {task.id}</span>
           </div>
 
+          {/* Project & Assignee Callout Header */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-muted/30 border border-border/60">
+            {/* Project */}
+            <div className="flex items-center gap-3">
+              <div
+                className="size-8 rounded-lg flex items-center justify-center text-white shrink-0 font-bold text-xs"
+                style={{ backgroundColor: task.projectColor || "#6366f1" }}
+              >
+                <FolderKanban className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">
+                  Project
+                </span>
+                <p className="text-sm font-semibold text-foreground truncate">
+                  {task.projectName || "General Workspace Project"}
+                </p>
+              </div>
+            </div>
+
+            {/* Assignee */}
+            <div className="flex items-center gap-3">
+              <Avatar className="size-8 border shrink-0">
+                <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
+                  {task.assignee?.initials || "UN"}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">
+                  Assignee
+                </span>
+                <p className="text-sm font-semibold text-foreground truncate">
+                  {task.assignee?.name || "Unassigned"}
+                </p>
+                {task.assignee?.role && (
+                  <span className="text-[11px] text-muted-foreground block truncate">
+                    {task.assignee.role}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Title & Description */}
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               {task.title}
@@ -239,6 +293,79 @@ function TaskDetailsPage() {
               {task.description || "No description provided for this task."}
             </p>
           </div>
+
+          {/* Tags & Estimates Bar */}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+            {task.estimate && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+                <Gauge className="size-3 text-muted-foreground" />
+                Estimate: {task.estimate}
+              </span>
+            )}
+            {task.tags && task.tags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {task.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="inline-flex items-center gap-1 rounded-md bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 text-xs font-medium"
+                  >
+                    <Tag className="size-2.5" />
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Interactive Subtasks Checklist */}
+          {subtasks.length > 0 && (
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckSquare className="size-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-foreground">Subtasks Checklist</h3>
+                </div>
+                <span className="text-xs font-semibold text-foreground">
+                  {subDone} of {subtasks.length} done ({Math.round((subDone / subtasks.length) * 100)}%)
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full bg-primary transition-all duration-300 rounded-full"
+                  style={{ width: `${Math.round((subDone / subtasks.length) * 100)}%` }}
+                />
+              </div>
+
+              {/* Checklist items with instant toggle */}
+              <div className="space-y-1.5 pt-1">
+                {subtasks.map((s) => (
+                  <label
+                    key={s.id}
+                    className="flex items-center gap-3 rounded-lg border bg-card p-2.5 text-xs transition-colors hover:bg-muted/50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={s.completed}
+                      onChange={async () => {
+                        try {
+                          await toggleSubtask(task.id, s.id);
+                          toast.success(s.completed ? "Marked incomplete" : "Subtask completed!");
+                        } catch {
+                          toast.error("Failed to update subtask");
+                        }
+                      }}
+                      className="size-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                    />
+                    <span className={s.completed ? "line-through text-muted-foreground" : "font-medium text-foreground"}>
+                      {s.title}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Metadata Grid */}
           <div className="grid grid-cols-1 gap-4 border-t pt-5 text-sm sm:grid-cols-3">
@@ -328,14 +455,14 @@ function TaskDetailsPage() {
         <div className="rounded-xl border bg-card p-6 shadow-card space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
             <h2 className="text-base font-semibold text-foreground">
-              Comments ({task.comments?.length || 0})
+              Work Log & Discussion ({task.comments?.length || 0})
             </h2>
-            <span className="text-xs text-muted-foreground">Task discussion & notes</span>
+            <span className="text-xs text-muted-foreground">Team collaboration</span>
           </div>
 
           <div className="space-y-3">
             {(!task.comments || task.comments.length === 0) ? (
-              <p className="text-xs text-muted-foreground py-2">No comments yet. Leave a note or update below.</p>
+              <p className="text-xs text-muted-foreground py-2">No updates logged yet. Add notes or feedback below.</p>
             ) : (
               task.comments.map((comment) => (
                 <div key={comment.id} className="rounded-lg bg-muted/30 p-3 text-sm">
@@ -368,12 +495,12 @@ function TaskDetailsPage() {
           >
             <input
               name="comment"
-              placeholder="Add a comment or work log..."
+              placeholder="Add an update, QA note, or discussion..."
               required
               className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             <Button type="submit" size="sm">
-              Post Comment
+              Post Update
             </Button>
           </form>
         </div>
@@ -382,7 +509,7 @@ function TaskDetailsPage() {
         {relatedTasks.length > 0 && (
           <div className="space-y-3 pt-2">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Related Tasks
+              Related Project Tasks
             </h2>
             <div className="divide-y rounded-xl border bg-card p-2 shadow-card">
               {relatedTasks.map((rel) => (

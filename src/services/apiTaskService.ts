@@ -44,6 +44,10 @@ export const apiTaskService: TaskService = {
   toggleBookmark: (id) => request(`/tasks/${id}/bookmark`, { method: "POST" }),
   addComment: (id, content, author) =>
     request(`/tasks/${id}/comments`, { method: "POST", body: JSON.stringify({ content, author }) }),
+  toggleSubtask: (taskId, subtaskId) =>
+    request(`/tasks/${taskId}/subtasks/${subtaskId}/toggle`, { method: "POST" }),
+  getProjects: () => request("/projects"),
+  getTeamMembers: () => request("/team"),
   getDashboardStats: () => request("/tasks/stats"),
   getProfile: () => request("/profile"),
   updateProfile: (data) => request("/profile", { method: "PUT", body: JSON.stringify(data) }),

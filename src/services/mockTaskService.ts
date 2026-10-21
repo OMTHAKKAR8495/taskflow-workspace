@@ -1,15 +1,26 @@
 import { computeStats } from "@/lib/task-utils";
-import type { Activity, ActivityType, Profile, Task } from "@/types";
-import { buildSeedActivity, buildSeedProfile, buildSeedTasks, buildNewUserTasks, DEMO_USER_ID } from "./mockData";
+import type { Activity, ActivityType, Profile, Project, Task, TaskInput, TeamMember } from "@/types";
+import {
+  buildSeedActivity,
+  buildSeedProfile,
+  buildSeedProjects,
+  buildSeedTasks,
+  buildTeamMembers,
+  buildNewUserTasks,
+  SEED_PROJECTS,
+  SEED_TEAM_MEMBERS,
+} from "./mockData";
 import type { TaskService } from "./taskService.types";
 
 interface Store {
   tasks: Task[];
+  projects: Project[];
+  team: TeamMember[];
   profile: Profile;
   activity: Activity[];
 }
 
-const LATENCY_MS = 150;
+const LATENCY_MS = 100;
 const memoryStores: Record<string, Store> = {};
 
 function isBrowser(): boolean {
@@ -42,41 +53,37 @@ function load(): Store {
     try {
       let raw = window.localStorage.getItem(key);
 
-      // Migrate legacy "taskflow:v1" if user-scoped key is not yet set for default user
-      if (!raw && isDefaultUser) {
-        const legacy = window.localStorage.getItem("taskflow:v1");
-        if (legacy) {
-          raw = legacy;
-          window.localStorage.setItem(key, legacy);
-        }
-      }
-
       if (raw) {
         const parsed = JSON.parse(raw) as Store;
         if (parsed && Array.isArray(parsed.tasks)) {
-          // If this is a new / non-default user, ensure any leftover mock starter tasks are purged
-          if (!isDefaultUser && parsed.tasks.length > 0) {
-            const isStarterSet = parsed.tasks.every((t) =>
-              t.title.includes("Welcome to TaskFlow! Complete your first task") ||
-              t.title.includes("Customize your profile and preferences") ||
-              t.title.includes("Create your first project task")
-            );
-            if (isStarterSet) {
-              parsed.tasks = [];
-              parsed.activity = [];
-              window.localStorage.setItem(key, JSON.stringify(parsed));
-            }
+          // Ensure projects and team exist in parsed store
+          if (!parsed.projects || parsed.projects.length === 0) {
+            parsed.projects = buildSeedProjects();
+          }
+          if (!parsed.team || parsed.team.length === 0) {
+            parsed.team = buildTeamMembers();
           }
 
-          // If profile still has old default name "Alex Morgan", update to active user
-          if (activeUser && parsed.profile) {
-            if (!parsed.profile.fullName || parsed.profile.fullName === "Alex Morgan") {
-              parsed.profile.fullName = activeUser.fullName;
-              parsed.profile.email = activeUser.email;
-              parsed.profile.id = activeUser.id;
-              window.localStorage.setItem(key, JSON.stringify(parsed));
+          // Backfill projects and assignees on tasks if missing
+          parsed.tasks = parsed.tasks.map((t, idx) => {
+            if (!t.projectId) {
+              const proj = parsed.projects[idx % parsed.projects.length];
+              t.projectId = proj.id;
+              t.projectName = proj.name;
+              t.projectColor = proj.color;
             }
-          }
+            if (!t.assignee) {
+              t.assignee = parsed.team[idx % parsed.team.length];
+            }
+            if (!t.subtasks) {
+              t.subtasks = [
+                { id: `sub-${t.id}-1`, title: "Define specifications and scope", completed: t.status === "completed" },
+                { id: `sub-${t.id}-2`, title: "Implement core solution", completed: t.status === "completed" },
+              ];
+            }
+            return t;
+          });
+
           memoryStores[key] = parsed;
           return parsed;
         }
@@ -97,6 +104,8 @@ function load(): Store {
   const tasks = isDefaultUser ? buildSeedTasks(userId) : buildNewUserTasks(userId);
   const initialStore: Store = {
     tasks,
+    projects: buildSeedProjects(),
+    team: buildTeamMembers(),
     profile: buildSeedProfile(userFullName, userEmail, userId),
     activity: buildSeedActivity(tasks),
   };
@@ -140,34 +149,135 @@ export const mockTaskService: TaskService = {
     await wait();
     return load().tasks;
   },
+
   async getTaskById(id) {
     await wait();
     return load().tasks.find((t) => t.id === id) ?? null;
   },
-  async createTask(data) {
+
+  async getProjects() {
+    await wait();
+    const store = load();
+    return store.projects.map((p) => {
+      const pTasks = store.tasks.filter((t) => t.projectId === p.id);
+      const completed = pTasks.filter((t) => t.status === "completed").length;
+      return {
+        ...p,
+        taskCount: pTasks.length,
+        completedCount: completed,
+      };
+    });
+  },
+
+  async getTeamMembers() {
+    await wait();
+    return load().team;
+  },
+
+  async createTask(data: TaskInput) {
     await wait();
     const store = load();
     const user = getActiveUser();
     const userId = user?.id || "user-om";
     const now = new Date().toISOString();
-    const task: Task = { ...data, id: uid("task"), userId, createdAt: now, updatedAt: now };
+
+    const proj = store.projects.find((p) => p.id === data.projectId) || store.projects[0];
+    const assignee = store.team.find((m) => m.id === data.assigneeId) || store.team[0];
+
+    const subtasks =
+      data.subtasks && data.subtasks.length > 0
+        ? data.subtasks.map((s, idx) => ({
+            id: uid(`sub-${idx}`),
+            title: s.title,
+            completed: Boolean(s.completed),
+          }))
+        : [];
+
+    const task: Task = {
+      ...data,
+      id: uid("task"),
+      userId,
+      projectId: proj?.id,
+      projectName: proj?.name,
+      projectColor: proj?.color,
+      assignee,
+      tags: data.tags || ["General"],
+      estimate: data.estimate || "3 pts",
+      subtasks,
+      createdAt: now,
+      updatedAt: now,
+    };
+
     store.tasks = [task, ...store.tasks];
     log(store, "created", task);
     save(store);
     return task;
   },
+
   async updateTask(id, data) {
     await wait();
     const store = load();
     const existing = store.tasks.find((t) => t.id === id);
     if (!existing) throw new Error("Task not found");
-    const updated: Task = { ...existing, ...data, updatedAt: new Date().toISOString() };
+
+    let projectName = existing.projectName;
+    let projectColor = existing.projectColor;
+    if (data.projectId && data.projectId !== existing.projectId) {
+      const proj = store.projects.find((p) => p.id === data.projectId);
+      if (proj) {
+        projectName = proj.name;
+        projectColor = proj.color;
+      }
+    }
+
+    let assignee = existing.assignee;
+    if (data.assigneeId) {
+      const found = store.team.find((m) => m.id === data.assigneeId);
+      if (found) assignee = found;
+    }
+
+    const updated: Task = {
+      ...existing,
+      ...data,
+      projectName,
+      projectColor,
+      assignee,
+      updatedAt: new Date().toISOString(),
+    };
+
     store.tasks = store.tasks.map((t) => (t.id === id ? updated : t));
     const becameDone = existing.status !== "completed" && updated.status === "completed";
     log(store, becameDone ? "completed" : "updated", updated);
     save(store);
     return updated;
   },
+
+  async toggleSubtask(taskId: string, subtaskId: string) {
+    await wait();
+    const store = load();
+    const task = store.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error("Task not found");
+
+    const updatedSubtasks = (task.subtasks || []).map((s) =>
+      s.id === subtaskId ? { ...s, completed: !s.completed } : s
+    );
+
+    // Auto-update task status if all subtasks completed
+    const allDone = updatedSubtasks.length > 0 && updatedSubtasks.every((s) => s.completed);
+    const newStatus = allDone ? "completed" : task.status === "completed" ? "in_progress" : task.status;
+
+    const updated: Task = {
+      ...task,
+      status: newStatus,
+      subtasks: updatedSubtasks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    store.tasks = store.tasks.map((t) => (t.id === taskId ? updated : t));
+    save(store);
+    return updated;
+  },
+
   async deleteTask(id) {
     await wait();
     const store = load();
@@ -177,6 +287,7 @@ export const mockTaskService: TaskService = {
     log(store, "deleted", existing);
     save(store);
   },
+
   async toggleBookmark(id) {
     await wait();
     const store = load();
@@ -191,6 +302,7 @@ export const mockTaskService: TaskService = {
     save(store);
     return updated;
   },
+
   async addComment(id, content, author) {
     await wait();
     const store = load();
@@ -213,14 +325,17 @@ export const mockTaskService: TaskService = {
     save(store);
     return updated;
   },
+
   async getDashboardStats() {
     await wait();
     return computeStats(load().tasks);
   },
+
   async getProfile() {
     await wait();
     return load().profile;
   },
+
   async updateProfile(data) {
     await wait();
     const store = load();
@@ -228,6 +343,7 @@ export const mockTaskService: TaskService = {
     save(store);
     return store.profile;
   },
+
   async getActivity() {
     await wait();
     return load().activity;

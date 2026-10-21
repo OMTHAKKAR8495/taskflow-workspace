@@ -34,6 +34,20 @@ class ResilientTaskService implements TaskService {
     );
   }
 
+  getProjects() {
+    return this.execute(
+      () => apiTaskService.getProjects(),
+      () => mockTaskService.getProjects()
+    );
+  }
+
+  getTeamMembers() {
+    return this.execute(
+      () => apiTaskService.getTeamMembers(),
+      () => mockTaskService.getTeamMembers()
+    );
+  }
+
   createTask(data: any) {
     return this.execute(
       () => apiTaskService.createTask(data),
@@ -66,6 +80,13 @@ class ResilientTaskService implements TaskService {
     return this.execute(
       () => apiTaskService.addComment(id, content, author),
       () => mockTaskService.addComment(id, content, author)
+    );
+  }
+
+  toggleSubtask(taskId: string, subtaskId: string) {
+    return this.execute(
+      () => apiTaskService.toggleSubtask(taskId, subtaskId),
+      () => mockTaskService.toggleSubtask(taskId, subtaskId)
     );
   }
 

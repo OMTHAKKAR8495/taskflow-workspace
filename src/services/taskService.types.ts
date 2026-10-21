@@ -1,8 +1,7 @@
-import type { Activity, DashboardStats, Profile, ProfileInput, Task, TaskInput } from "@/types";
+import type { Activity, DashboardStats, Profile, ProfileInput, Project, Task, TaskInput, TeamMember } from "@/types";
 
 /**
- * Contract shared by the mock (localStorage) service and the future HTTP API service.
- * Swap implementations in src/services/index.ts.
+ * Contract shared by the mock service and the backend API service.
  */
 export interface TaskService {
   getTasks(): Promise<Task[]>;
@@ -12,6 +11,9 @@ export interface TaskService {
   deleteTask(id: string): Promise<void>;
   toggleBookmark(id: string): Promise<Task>;
   addComment(id: string, content: string, author?: string): Promise<Task>;
+  toggleSubtask(taskId: string, subtaskId: string): Promise<Task>;
+  getProjects(): Promise<Project[]>;
+  getTeamMembers(): Promise<TeamMember[]>;
   getDashboardStats(): Promise<DashboardStats>;
   getProfile(): Promise<Profile>;
   updateProfile(data: ProfileInput): Promise<Profile>;

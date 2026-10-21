@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CheckCircle2, Circle, Minus, Timer } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, Circle, Eye, Minus, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/task-utils";
 import type { TaskPriority, TaskStatus } from "@/types";
@@ -6,16 +6,23 @@ import type { TaskPriority, TaskStatus } from "@/types";
 const statusStyle: Record<TaskStatus, string> = {
   pending: "bg-warning-soft text-warning border-warning/20",
   in_progress: "bg-info-soft text-info border-info/20",
+  in_review: "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20",
   completed: "bg-success-soft text-success border-success/20",
 };
-const statusIcon = { pending: Circle, in_progress: Timer, completed: CheckCircle2 };
+
+const statusIcon = {
+  pending: Circle,
+  in_progress: Timer,
+  in_review: Eye,
+  completed: CheckCircle2,
+};
 
 export function TaskStatusBadge({ status, className }: { status: TaskStatus; className?: string }) {
-  const Icon = statusIcon[status];
+  const Icon = statusIcon[status] || Circle;
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", statusStyle[status], className)}>
+    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", statusStyle[status] || statusStyle.pending, className)}>
       <Icon className="size-3" aria-hidden />
-      {STATUS_LABEL[status]}
+      {STATUS_LABEL[status] || status}
     </span>
   );
 }
@@ -37,3 +44,6 @@ export function PriorityBadge({ priority, className }: { priority: TaskPriority;
     </span>
   );
 }
+
+// Re-export alias for compatibility
+export { TaskStatusBadge as StatusBadge };

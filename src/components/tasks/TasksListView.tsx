@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState, LoadingState, ErrorState } from "@/components/common/states";
 import { TaskFilters, type ViewMode } from "@/components/tasks/TaskFilters";
+import { KanbanBoard } from "@/components/tasks/KanbanBoard";
 import { TaskTable } from "@/components/tasks/TaskTable";
 import { TaskCard } from "@/components/tasks/TaskCard";
 import { useTasks } from "@/context/TaskContext";
@@ -15,6 +16,9 @@ const INITIAL_FILTERS: TaskFilterState = {
   search: "",
   status: "all",
   priority: "all",
+  projectId: "all",
+  assigneeId: "all",
+  tag: "all",
   sort: "dueDate",
 };
 
@@ -22,14 +26,19 @@ export function TasksListView() {
   const { tasks, state, reload } = useTasks();
   const navigate = useNavigate();
   const [filters, setFilters] = useState<TaskFilterState>(INITIAL_FILTERS);
-  const [view, setView] = useState<ViewMode>("list");
+  const [view, setView] = useState<ViewMode>("kanban");
 
   const filteredTasks = useMemo(() => {
     return filterAndSortTasks(tasks, filters);
   }, [tasks, filters]);
 
   const hasActiveFilters =
-    filters.search !== "" || filters.status !== "all" || filters.priority !== "all";
+    filters.search !== "" ||
+    filters.status !== "all" ||
+    filters.priority !== "all" ||
+    filters.projectId !== "all" ||
+    filters.assigneeId !== "all" ||
+    Boolean(filters.bookmarkedOnly);
 
   if (state === "loading") {
     return <LoadingState rows={5} />;
@@ -44,13 +53,13 @@ export function TasksListView() {
       <PageHeader
         title={
           <div className="flex items-center gap-2.5">
-            <span>All Tasks</span>
+            <span>All Tasks & Workflows</span>
             <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
               {filteredTasks.length} {filteredTasks.length === 1 ? "task" : "tasks"}
             </span>
           </div>
         }
-        description="Manage, filter, and track all tasks across your workspace."
+        description="Comprehensive task management board with project milestones, assignees, and real-time status tracking."
         actions={
           <Button onClick={() => navigate({ to: "/tasks/new" })} className="shadow-sm shadow-primary/25">
             <Plus className="size-4" /> Add Task
@@ -72,7 +81,7 @@ export function TasksListView() {
           title={hasActiveFilters ? "No matching tasks found" : "No tasks yet"}
           description={
             hasActiveFilters
-              ? "Try adjusting your search criteria or filter options to find what you're looking for."
+              ? "Try adjusting your search criteria, project, or assignee filters."
               : "Create your first task to start organizing your projects and workflows."
           }
           action={
@@ -87,6 +96,8 @@ export function TasksListView() {
             )
           }
         />
+      ) : view === "kanban" ? (
+        <KanbanBoard tasks={filteredTasks} />
       ) : view === "grid" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredTasks.map((task) => (

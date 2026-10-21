@@ -9,14 +9,41 @@ function getUserId(req: Request): string {
 }
 
 function formatTask(row: any, comments: any[] = []) {
+  let tags: string[] = [];
+  try {
+    tags = typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags || [];
+  } catch {}
+
+  let subtasks: any[] = [];
+  try {
+    subtasks = typeof row.subtasks === "string" ? JSON.parse(row.subtasks) : row.subtasks || [];
+  } catch {}
+
+  const assignee = row.assignee_id
+    ? {
+        id: row.assignee_id,
+        name: row.assignee_name || "Assignee",
+        role: row.assignee_role || "Team Member",
+        email: `${row.assignee_id}@example.com`,
+        initials: row.assignee_initials || "TM",
+      }
+    : undefined;
+
   return {
     id: row.id,
     userId: row.user_id,
+    projectId: row.project_id || undefined,
+    projectName: row.project_name || undefined,
+    projectColor: row.project_color || undefined,
+    assignee,
     title: row.title,
     description: row.description || "",
     status: row.status,
     priority: row.priority,
     dueDate: row.due_date ? new Date(row.due_date).toISOString() : null,
+    estimate: row.estimate || "3 pts",
+    tags,
+    subtasks,
     isBookmarked: Boolean(row.is_bookmarked),
     comments: comments.map((c) => ({
       id: c.id,
@@ -41,6 +68,7 @@ router.get("/stats", async (req: Request, res: Response) => {
 
     const pending = tasks.filter((t) => t.status === "pending").length;
     const inProgress = tasks.filter((t) => t.status === "in_progress").length;
+    const inReview = tasks.filter((t) => t.status === "in_review").length;
     const completed = tasks.filter((t) => t.status === "completed").length;
     const overdue = tasks.filter(
       (t) => t.status !== "completed" && t.due_date && new Date(t.due_date) < now
@@ -53,6 +81,7 @@ router.get("/stats", async (req: Request, res: Response) => {
       total,
       pending,
       inProgress,
+      inReview,
       completed,
       overdue,
       completionRate,
@@ -134,14 +163,24 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
-    const { title, description = "", status = "pending", priority = "medium", dueDate = null } =
-      req.body;
+    const {
+      title,
+      description = "",
+      status = "pending",
+      priority = "medium",
+      dueDate = null,
+      projectId,
+      assigneeId,
+      estimate = "3 pts",
+      tags = [],
+      subtasks = [],
+    } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ error: "Title is required" });
     }
 
-    // Ensure user exists in users table (e.g. if new user logged in on frontend)
+    // Ensure user exists in users table
     await query(
       `INSERT INTO users (id, username, full_name, email)
        VALUES ($1, $2, $3, $4)
@@ -149,14 +188,63 @@ router.post("/", async (req: Request, res: Response) => {
       [userId, userId, userId, `${userId}@example.com`]
     );
 
+    let projectName = null;
+    let projectColor = null;
+    if (projectId) {
+      const pRes = await query("SELECT name, color FROM projects WHERE id = $1", [projectId]);
+      if (pRes.rowCount && pRes.rowCount > 0) {
+        projectName = pRes.rows[0].name;
+        projectColor = pRes.rows[0].color;
+      }
+    }
+
+    let assigneeName = null;
+    let assigneeRole = null;
+    let assigneeInitials = null;
+    if (assigneeId) {
+      const mRes = await query("SELECT name, role, initials FROM team_members WHERE id = $1", [
+        assigneeId,
+      ]);
+      if (mRes.rowCount && mRes.rowCount > 0) {
+        assigneeName = mRes.rows[0].name;
+        assigneeRole = mRes.rows[0].role;
+        assigneeInitials = mRes.rows[0].initials;
+      }
+    }
+
     const taskId = `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date().toISOString();
 
     const result = await query(
-      `INSERT INTO tasks (id, user_id, title, description, status, priority, due_date, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO tasks (
+         id, user_id, project_id, project_name, project_color,
+         assignee_id, assignee_name, assignee_role, assignee_initials,
+         title, description, status, priority, due_date, estimate, tags, subtasks,
+         created_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`,
-      [taskId, userId, title.trim(), description.trim(), status, priority, dueDate, now, now]
+      [
+        taskId,
+        userId,
+        projectId || null,
+        projectName,
+        projectColor,
+        assigneeId || null,
+        assigneeName,
+        assigneeRole,
+        assigneeInitials,
+        title.trim(),
+        description.trim(),
+        status,
+        priority,
+        dueDate,
+        estimate,
+        JSON.stringify(tags),
+        JSON.stringify(subtasks),
+        now,
+        now,
+      ]
     );
 
     // Record activity
@@ -196,19 +284,75 @@ router.patch("/:id", async (req: Request, res: Response) => {
     const status = req.body.status !== undefined ? req.body.status : current.status;
     const priority = req.body.priority !== undefined ? req.body.priority : current.priority;
     const dueDate = req.body.dueDate !== undefined ? req.body.dueDate : current.due_date;
+    const estimate = req.body.estimate !== undefined ? req.body.estimate : current.estimate;
     const isBookmarked =
       req.body.isBookmarked !== undefined ? req.body.isBookmarked : current.is_bookmarked;
+    const tags = req.body.tags !== undefined ? JSON.stringify(req.body.tags) : current.tags;
+    const subtasks =
+      req.body.subtasks !== undefined ? JSON.stringify(req.body.subtasks) : current.subtasks;
+
+    let projectId = current.project_id;
+    let projectName = current.project_name;
+    let projectColor = current.project_color;
+    if (req.body.projectId !== undefined) {
+      projectId = req.body.projectId;
+      const pRes = await query("SELECT name, color FROM projects WHERE id = $1", [projectId]);
+      if (pRes.rowCount && pRes.rowCount > 0) {
+        projectName = pRes.rows[0].name;
+        projectColor = pRes.rows[0].color;
+      }
+    }
+
+    let assigneeId = current.assignee_id;
+    let assigneeName = current.assignee_name;
+    let assigneeRole = current.assignee_role;
+    let assigneeInitials = current.assignee_initials;
+    if (req.body.assigneeId !== undefined) {
+      assigneeId = req.body.assigneeId;
+      const mRes = await query("SELECT name, role, initials FROM team_members WHERE id = $1", [
+        assigneeId,
+      ]);
+      if (mRes.rowCount && mRes.rowCount > 0) {
+        assigneeName = mRes.rows[0].name;
+        assigneeRole = mRes.rows[0].role;
+        assigneeInitials = mRes.rows[0].initials;
+      }
+    }
+
     const now = new Date().toISOString();
 
     const updateRes = await query(
       `UPDATE tasks
-       SET title = $1, description = $2, status = $3, priority = $4, due_date = $5, is_bookmarked = $6, updated_at = $7
-       WHERE id = $8 AND user_id = $9
+       SET title = $1, description = $2, status = $3, priority = $4, due_date = $5,
+           project_id = $6, project_name = $7, project_color = $8,
+           assignee_id = $9, assignee_name = $10, assignee_role = $11, assignee_initials = $12,
+           estimate = $13, tags = $14, subtasks = $15, is_bookmarked = $16, updated_at = $17
+       WHERE id = $18 AND user_id = $19
        RETURNING *`,
-      [title, description, status, priority, dueDate, isBookmarked, now, id, userId]
+      [
+        title,
+        description,
+        status,
+        priority,
+        dueDate,
+        projectId,
+        projectName,
+        projectColor,
+        assigneeId,
+        assigneeName,
+        assigneeRole,
+        assigneeInitials,
+        estimate,
+        tags,
+        subtasks,
+        isBookmarked,
+        now,
+        id,
+        userId,
+      ]
     );
 
-    // Record activity if status changed or major update
+    // Record activity
     const actType = status === "completed" && current.status !== "completed" ? "completed" : "updated";
     const actId = `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     await query(
@@ -229,7 +373,54 @@ router.patch("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// 6. DELETE /tasks/:id - Delete task
+// 6. POST /tasks/:id/subtasks/:subtaskId/toggle - Toggle subtask completion
+router.post("/:id/subtasks/:subtaskId/toggle", async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const { id, subtaskId } = req.params;
+
+    const currentRes = await query("SELECT * FROM tasks WHERE id = $1 AND user_id = $2", [
+      id,
+      userId,
+    ]);
+    if (currentRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const current = currentRes.rows[0];
+
+    let subtasks: any[] = [];
+    try {
+      subtasks = typeof current.subtasks === "string" ? JSON.parse(current.subtasks) : current.subtasks || [];
+    } catch {}
+
+    const updatedSubtasks = subtasks.map((s: any) =>
+      s.id === subtaskId ? { ...s, completed: !s.completed } : s
+    );
+
+    const allDone = updatedSubtasks.length > 0 && updatedSubtasks.every((s: any) => s.completed);
+    const newStatus = allDone ? "completed" : current.status === "completed" ? "in_progress" : current.status;
+
+    const updateRes = await query(
+      `UPDATE tasks
+       SET subtasks = $1, status = $2, updated_at = NOW()
+       WHERE id = $3 AND user_id = $4
+       RETURNING *`,
+      [JSON.stringify(updatedSubtasks), newStatus, id, userId]
+    );
+
+    const commentsRes = await query(
+      "SELECT * FROM task_comments WHERE task_id = $1 ORDER BY created_at ASC",
+      [id]
+    );
+
+    res.json(formatTask(updateRes.rows[0], commentsRes.rows));
+  } catch (err: any) {
+    console.error("Error toggling subtask:", err);
+    res.status(500).json({ error: "Failed to toggle subtask" });
+  }
+});
+
+// 7. DELETE /tasks/:id - Delete task
 router.delete("/:id", async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
@@ -262,7 +453,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// 7. POST /tasks/:id/bookmark - Toggle bookmark
+// 8. POST /tasks/:id/bookmark - Toggle bookmark
 router.post("/:id/bookmark", async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
@@ -297,7 +488,7 @@ router.post("/:id/bookmark", async (req: Request, res: Response) => {
   }
 });
 
-// 8. POST /tasks/:id/comments - Add comment
+// 9. POST /tasks/:id/comments - Add comment
 router.post("/:id/comments", async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
@@ -323,7 +514,6 @@ router.post("/:id/comments", async (req: Request, res: Response) => {
       [commentId, id, author.trim(), content.trim()]
     );
 
-    // Refresh task and all its comments
     const commentsRes = await query(
       "SELECT * FROM task_comments WHERE task_id = $1 ORDER BY created_at ASC",
       [id]

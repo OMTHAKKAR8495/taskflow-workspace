@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 import tasksRouter from "./routes/tasks.js";
 import profileRouter from "./routes/profile.js";
 import activityRouter from "./routes/activity.js";
+import projectsRouter from "./routes/projects.js";
+import teamRouter from "./routes/team.js";
 import { pool, query } from "./db.js";
 import { seedDatabase } from "./seed.js";
 
@@ -12,7 +14,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
 
-// Enable CORS for frontend Vite dev server (e.g. port 3000, 5173, etc.)
+// Enable CORS for frontend Vite dev server
 app.use(
   cors({
     origin: true,
@@ -55,6 +57,8 @@ app.get("/api/health", async (req, res) => {
 
 // Mount Routes
 app.use("/api/tasks", tasksRouter);
+app.use("/api/projects", projectsRouter);
+app.use("/api/team", teamRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/activity", activityRouter);
 
@@ -74,12 +78,14 @@ async function startServer() {
   try {
     await seedDatabase();
     app.listen(PORT, () => {
-      console.log(`🚀 TaskFlow Express API running at http://localhost:${PORT}`);
+      console.log(`🚀 TaskFlow Enterprise API running at http://localhost:${PORT}`);
       console.log(`📡 Endpoints available:`);
       console.log(`   - GET  /api/health`);
       console.log(`   - GET  /api/tasks`);
       console.log(`   - GET  /api/tasks/stats`);
       console.log(`   - POST /api/tasks`);
+      console.log(`   - GET  /api/projects`);
+      console.log(`   - GET  /api/team`);
       console.log(`   - GET  /api/profile`);
       console.log(`   - GET  /api/activity`);
     });

@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Bookmark, Edit, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtRelative } from "@/lib/format";
 import { isOverdue } from "@/lib/task-utils";
@@ -35,16 +36,18 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
           <TaskCard key={t.id} task={t} />
         ))}
       </div>
-      <div className="hidden overflow-hidden rounded-xl border bg-card shadow-card md:block">
+
+      <div className="hidden overflow-hidden rounded-xl border bg-card shadow-xs md:block">
         <Table>
           <TableHeader>
-            <TableRow className="bg-muted/50 hover:bg-muted/50">
+            <TableRow className="bg-muted/40 hover:bg-muted/40 text-xs">
               <TableHead className="w-10"></TableHead>
-              <TableHead className="w-[38%]">Task</TableHead>
+              <TableHead className="w-[30%]">Task Title</TableHead>
+              <TableHead>Project</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Priority</TableHead>
-              <TableHead>Due date</TableHead>
-              <TableHead>Updated</TableHead>
+              <TableHead>Assignee</TableHead>
+              <TableHead>Due Date</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -57,7 +60,7 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
                 aria-label={`Open ${t.title}`}
                 onClick={() => open(t.id)}
                 onKeyDown={(e) => e.key === "Enter" && open(t.id)}
-                className="cursor-pointer focus-visible:bg-accent focus-visible:outline-none"
+                className="cursor-pointer focus-visible:bg-accent focus-visible:outline-none transition-colors"
               >
                 <TableCell className="w-10 pr-0" onClick={(e) => e.stopPropagation()}>
                   <button
@@ -72,16 +75,54 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
                     <Bookmark className={cn("size-4", t.isBookmarked && "fill-amber-500")} />
                   </button>
                 </TableCell>
+
                 <TableCell className="max-w-0">
-                  <p className={cn("truncate font-medium", t.status === "completed" && "text-muted-foreground line-through")}>{t.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">{t.description || "No description"}</p>
+                  <div className="flex items-center gap-2">
+                    <p className={cn("truncate font-medium text-sm text-foreground", t.status === "completed" && "text-muted-foreground line-through")}>
+                      {t.title}
+                    </p>
+                    {t.estimate && (
+                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {t.estimate}
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-xs text-muted-foreground mt-0.5">{t.description || "No description"}</p>
                 </TableCell>
+
+                <TableCell className="whitespace-nowrap">
+                  {t.projectName ? (
+                    <div className="flex items-center gap-1.5 text-xs font-medium">
+                      <span className="size-2 rounded-full" style={{ backgroundColor: t.projectColor || "#6366f1" }} />
+                      <span className="text-foreground">{t.projectName}</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+
                 <TableCell><TaskStatusBadge status={t.status} /></TableCell>
                 <TableCell><PriorityBadge priority={t.priority} /></TableCell>
-                <TableCell className={cn("whitespace-nowrap text-sm", isOverdue(t) ? "font-medium text-destructive" : "text-muted-foreground")}>
+
+                <TableCell className="whitespace-nowrap">
+                  {t.assignee ? (
+                    <div className="flex items-center gap-2 text-xs">
+                      <Avatar className="size-5 border">
+                        <AvatarFallback className="text-[9px] font-semibold bg-primary/10 text-primary">
+                          {t.assignee.initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium text-foreground">{t.assignee.name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs italic text-muted-foreground">Unassigned</span>
+                  )}
+                </TableCell>
+
+                <TableCell className={cn("whitespace-nowrap text-xs", isOverdue(t) ? "font-medium text-destructive" : "text-muted-foreground")}>
                   {fmtDate(t.dueDate, "—")}
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{fmtRelative(t.updatedAt)}</TableCell>
+
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
                     <Button

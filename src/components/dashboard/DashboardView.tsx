@@ -42,7 +42,7 @@ const PRIORITY_COLORS = {
 };
 
 export function DashboardView() {
-  const { tasks, stats, profile, activity, state, reload } = useTasks();
+  const { tasks, stats, profile, activity, state, reload, projects, team } = useTasks();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -236,6 +236,100 @@ export function DashboardView() {
               <span className="block font-semibold text-muted-foreground">{stats.byPriority.low}</span>
               <span className="text-muted-foreground">Low</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Enterprise Task Management: Project Health & Team Workload */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Project Health & Milestone Progress */}
+        <div className="rounded-xl border bg-card p-5 shadow-card space-y-4">
+          <div className="flex items-center justify-between border-b pb-3">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Project Health & Milestones</h2>
+              <p className="text-xs text-muted-foreground">Progress across active initiatives</p>
+            </div>
+            <Link
+              to="/tasks"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              All projects <ArrowRight className="size-3" />
+            </Link>
+          </div>
+
+          <div className="space-y-4">
+            {projects.map((proj) => {
+              const pTasks = tasks.filter((t) => t.projectId === proj.id);
+              const completed = pTasks.filter((t) => t.status === "completed").length;
+              const rate = pTasks.length > 0 ? Math.round((completed / pTasks.length) * 100) : 0;
+
+              return (
+                <div key={proj.id} className="space-y-1.5 rounded-lg border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="size-2.5 rounded-full" style={{ backgroundColor: proj.color }} />
+                      <span className="font-semibold text-foreground text-sm">{proj.name}</span>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        {proj.key}
+                      </span>
+                    </div>
+                    <span className="font-semibold text-foreground">{rate}% done</span>
+                  </div>
+                  <Progress value={rate} className="h-2" />
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                    <span>Lead: {proj.lead}</span>
+                    <span>{completed} of {pTasks.length} tasks completed</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Team Workload */}
+        <div className="rounded-xl border bg-card p-5 shadow-card space-y-4">
+          <div className="flex items-center justify-between border-b pb-3">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Team Workload Distribution</h2>
+              <p className="text-xs text-muted-foreground">Active assignments across team members</p>
+            </div>
+            <span className="text-xs text-muted-foreground">{team.length} members</span>
+          </div>
+
+          <div className="space-y-3">
+            {team.map((member) => {
+              const mTasks = tasks.filter((t) => t.assignee?.id === member.id);
+              const inProgress = mTasks.filter((t) => t.status === "in_progress" || t.status === "in_review").length;
+              const completed = mTasks.filter((t) => t.status === "completed").length;
+
+              return (
+                <div key={member.id} className="flex items-center justify-between rounded-lg border bg-muted/20 p-3 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      {member.initials}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground text-sm">{member.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{member.role}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-right">
+                    <div>
+                      <span className="block font-semibold text-blue-600 dark:text-blue-400">{inProgress}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase">Active</span>
+                    </div>
+                    <div>
+                      <span className="block font-semibold text-emerald-600 dark:text-emerald-400">{completed}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase">Done</span>
+                    </div>
+                    <div>
+                      <span className="block font-semibold text-foreground">{mTasks.length}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase">Total</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

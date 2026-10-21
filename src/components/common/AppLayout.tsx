@@ -47,7 +47,7 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
-  const { profile, activity, tasks } = useTasks();
+  const { profile, activity, tasks, projects, team } = useTasks();
   const { user, logout } = useAuth();
   const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -125,6 +125,43 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               </Link>
             );
           })}
+
+          {/* Projects & Initiatives Section */}
+          <div className="pt-4 px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+            <span>Projects ({projects.length})</span>
+          </div>
+          {projects.map((proj) => {
+            const pTasks = tasks.filter((t) => t.projectId === proj.id);
+            return (
+              <Link
+                key={proj.id}
+                to="/tasks"
+                className="flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground group"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: proj.color }} />
+                  <span className="truncate group-hover:text-foreground">{proj.name}</span>
+                </div>
+                <span className="rounded-full bg-muted/60 px-1.5 py-0.2 text-[10px] font-semibold text-muted-foreground">
+                  {pTasks.length}
+                </span>
+              </Link>
+            );
+          })}
+
+          {/* Team Section */}
+          <div className="pt-4 px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span>Team ({team.length})</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1">
+            {team.slice(0, 5).map((m) => (
+              <Avatar key={m.id} className="size-6 border ring-1 ring-background" title={`${m.name} (${m.role})`}>
+                <AvatarFallback className="text-[9px] font-bold bg-primary/10 text-primary">
+                  {m.initials}
+                </AvatarFallback>
+              </Avatar>
+            ))}
+          </div>
 
           <div className="pt-4 px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Preferences
