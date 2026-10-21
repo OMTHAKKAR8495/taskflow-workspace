@@ -73,6 +73,13 @@ function load(): Store {
           // Ensure projects and team exist in parsed store
           if (!parsed.projects || parsed.projects.length === 0) {
             parsed.projects = buildSeedProjects();
+          } else {
+            parsed.projects = parsed.projects.map((p) => ({
+              ...p,
+              health: p.health || "on_track",
+              priority: p.priority || "medium",
+              progress: typeof p.progress === "number" ? p.progress : 0,
+            }));
           }
           if (!parsed.team || parsed.team.length === 0) {
             parsed.team = buildTeamMembers();
@@ -448,6 +455,133 @@ export const mockTaskService: TaskService = {
     store.tasks = store.tasks.map((t) => (t.id === id ? updated : t));
     save(store);
     return updated;
+  },
+
+  async updateTaskStatus(taskId, status, blockedReason) {
+    await wait();
+    const store = load();
+    const task = store.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error("Task not found");
+    const updated: Task = {
+      ...task,
+      status,
+      blockedReason: blockedReason || (status === "blocked" ? task.blockedReason : ""),
+      completedAt: status === "completed" ? new Date().toISOString() : null,
+      updatedAt: new Date().toISOString(),
+    };
+    store.tasks = store.tasks.map((t) => (t.id === taskId ? updated : t));
+    log(store, status === "completed" ? "completed" : "updated", updated);
+    save(store);
+    return updated;
+  },
+
+  async getProjectById(id: string) {
+    await wait();
+    const store = load();
+    return store.projects.find((p) => p.id === id) || null;
+  },
+
+  async createProject(data: Partial<Project>) {
+    await wait();
+    const store = load();
+    const newProj: Project = {
+      id: `proj-${Date.now()}`,
+      name: data.name || "Untitled Project",
+      key: data.key || "NEX",
+      description: data.description || "",
+      color: data.color || "#4f46e5",
+      status: (data.status as any) || "active",
+      priority: data.priority || "medium",
+      health: data.health || "on_track",
+      lead: data.lead || "Om Thakkar",
+      progress: 0,
+      taskCount: 0,
+      completedCount: 0,
+      startDate: data.startDate || null,
+      deadline: data.deadline || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.projects.push(newProj);
+    save(store);
+    return newProj;
+  },
+
+  async updateProject(id: string, data: Partial<Project>) {
+    await wait();
+    const store = load();
+    const idx = store.projects.findIndex((p) => p.id === id);
+    if (idx === -1) throw new Error("Project not found");
+    const updated = { ...store.projects[idx], ...data, updatedAt: new Date().toISOString() };
+    store.projects[idx] = updated;
+    save(store);
+    return updated;
+  },
+
+  async archiveProject(id: string) {
+    await wait();
+    const store = load();
+    const idx = store.projects.findIndex((p) => p.id === id);
+    if (idx === -1) throw new Error("Project not found");
+    const isArchived = store.projects[idx].status === "archived";
+    const updated = {
+      ...store.projects[idx],
+      status: isArchived ? ("active" as const) : ("archived" as const),
+      archivedAt: isArchived ? null : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.projects[idx] = updated;
+    save(store);
+    return updated;
+  },
+
+  async deleteProject(id: string) {
+    await wait();
+    const store = load();
+    store.projects = store.projects.filter((p) => p.id !== id);
+    save(store);
+  },
+
+  async getMyWorkTasks() {
+    await wait();
+    const store = load();
+    const tasks = store.tasks.filter((t) => !t.isTrash);
+    const now = new Date();
+    return {
+      assignedToMe: tasks.filter((t) => t.status !== "completed"),
+      reviewing: tasks.filter((t) => t.status === "in_review"),
+      createdByMe: tasks.filter((t) => t.status !== "completed"),
+      overdue: tasks.filter((t) => t.status !== "completed" && t.dueDate && new Date(t.dueDate) < now),
+      completedRecently: tasks.filter((t) => t.status === "completed"),
+      totalActive: tasks.filter((t) => t.status !== "completed").length,
+    };
+  },
+
+  async getNotifications() {
+    await wait();
+    return {
+      notifications: [
+        {
+          id: "notif-mock-1",
+          userId: "user-om",
+          actorName: "Sarah Chen",
+          type: "assignment",
+          title: "Assigned to CORE-102",
+          message: "You have been assigned as lead on task dependency cycle detection.",
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      unreadCount: 1,
+    };
+  },
+
+  async markNotificationRead() {
+    await wait();
+  },
+
+  async markAllNotificationsRead() {
+    await wait();
   },
 
   async getDashboardStats() {

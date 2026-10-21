@@ -1,4 +1,5 @@
 import type { TaskService } from "./taskService.types";
+import type { Milestone, NotificationItem, Project, Task, TaskStatus } from "@/types";
 
 const BASE = import.meta.env["VITE_API_URL"] ?? "http://localhost:4000/api";
 
@@ -74,7 +75,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const apiTaskService: TaskService = {
-  getTasks: () => request("/tasks"),
+  getTasks: (filters) => {
+    const params = new URLSearchParams();
+    if (filters?.projectId && filters.projectId !== "all") params.append("projectId", filters.projectId);
+    if (filters?.status && filters.status !== "all") params.append("status", filters.status);
+    if (filters?.search) params.append("search", filters.search);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return request(`/tasks${qs}`);
+  },
   getTaskById: async (id) => {
     try {
       return await request(`/tasks/${id}`);
@@ -85,6 +93,11 @@ export const apiTaskService: TaskService = {
   createTask: (data) => request("/tasks", { method: "POST", body: JSON.stringify(data) }),
   updateTask: (id, data) =>
     request(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  updateTaskStatus: (taskId, status, blockedReason) =>
+    request(`/tasks/${taskId}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status, blockedReason }),
+    }),
   deleteTask: (id) => request(`/tasks/${id}`, { method: "DELETE" }),
   restoreTask: (id) => request(`/tasks/${id}/restore`, { method: "POST" }),
   permanentDeleteTask: (id) => request(`/tasks/${id}/permanent`, { method: "DELETE" }),
@@ -94,9 +107,72 @@ export const apiTaskService: TaskService = {
     request(`/tasks/${id}/comments`, { method: "POST", body: JSON.stringify({ content, author }) }),
   toggleSubtask: (taskId, subtaskId) =>
     request(`/tasks/${taskId}/subtasks/${subtaskId}/toggle`, { method: "POST" }),
-  getProjects: () => request("/projects"),
+
+  // Projects
+  getProjects: (params) => {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.append("status", params.status);
+    if (params?.search) sp.append("search", params.search);
+    const qs = sp.toString() ? `?${sp.toString()}` : "";
+    return request(`/projects${qs}`);
+  },
+  getProjectById: async (id) => {
+    try {
+      return await request(`/projects/${id}`);
+    } catch {
+      return null;
+    }
+  },
+  createProject: (data) => request("/projects", { method: "POST", body: JSON.stringify(data) }),
+  updateProject: (id, data) =>
+    request(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  archiveProject: (id) => request(`/projects/${id}/archive`, { method: "POST" }),
+  deleteProject: (id) => request(`/projects/${id}`, { method: "DELETE" }),
+  addProjectMember: (projectId, userId, role) =>
+    request(`/projects/${projectId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ userId, role }),
+    }),
+  removeProjectMember: (projectId, userId) =>
+    request(`/projects/${projectId}/members/${userId}`, { method: "DELETE" }),
+
+  // Milestones & Dependencies
+  createMilestone: (projectId, data) =>
+    request(`/projects/${projectId}/milestones`, { method: "POST", body: JSON.stringify(data) }),
+  updateMilestone: (projectId, milestoneId, data) =>
+    request(`/projects/${projectId}/milestones/${milestoneId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteMilestone: (projectId, milestoneId) =>
+    request(`/projects/${projectId}/milestones/${milestoneId}`, { method: "DELETE" }),
+  addTaskDependency: (taskId, dependsOnTaskId, dependencyType) =>
+    request(`/tasks/${taskId}/dependencies`, {
+      method: "POST",
+      body: JSON.stringify({ dependsOnTaskId, dependencyType }),
+    }),
+  removeTaskDependency: (taskId, depId) =>
+    request(`/tasks/${taskId}/dependencies/${depId}`, { method: "DELETE" }),
+
+  // Team & Personal Cockpit
   getTeamMembers: () => request("/team"),
-  getDashboardStats: () => request("/tasks/stats"),
+  getMyWorkTasks: () => request("/tasks/my-work"),
+
+  // Notifications
+  getNotifications: (unreadOnly, type) => {
+    const sp = new URLSearchParams();
+    if (unreadOnly) sp.append("unreadOnly", "true");
+    if (type && type !== "all") sp.append("type", type);
+    const qs = sp.toString() ? `?${sp.toString()}` : "";
+    return request(`/notifications${qs}`);
+  },
+  markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: "POST" }),
+  markAllNotificationsRead: () => request("/notifications/read-all", { method: "POST" }),
+
+  getDashboardStats: (projectId) => {
+    const qs = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
+    return request(`/tasks/stats${qs}`);
+  },
   getProfile: () => request("/profile"),
   updateProfile: (data) => request("/profile", { method: "PUT", body: JSON.stringify(data) }),
   getActivity: () => request("/activity"),

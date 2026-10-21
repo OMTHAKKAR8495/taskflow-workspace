@@ -1,10 +1,22 @@
-export type TaskStatus = "pending" | "in_progress" | "in_review" | "completed";
-export type TaskPriority = "low" | "medium" | "high";
+export type TaskStatus =
+  | "backlog"
+  | "ready"
+  | "in_progress"
+  | "in_review"
+  | "blocked"
+  | "completed"
+  | "pending"; // backwards compatibility
+
+export type TaskPriority = "critical" | "high" | "medium" | "low";
+
+export type TaskType = "task" | "feature" | "bug" | "improvement";
 
 export interface TaskComment {
   id: string;
+  userId?: string | undefined;
   author: string;
   content: string;
+  mentions?: string[] | undefined;
   createdAt: string;
 }
 
@@ -14,6 +26,22 @@ export interface Subtask {
   completed: boolean;
 }
 
+export interface AcceptanceCriteria {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export interface TaskDependency {
+  id: string;
+  taskId: string;
+  dependsOnTaskId: string;
+  dependsOnTaskTitle?: string | undefined;
+  dependsOnTaskIdentifier?: string | undefined;
+  dependsOnTaskStatus?: string | undefined;
+  dependencyType: "blocks" | "blocked_by" | "related";
+}
+
 export interface TeamMember {
   id: string;
   name: string;
@@ -21,6 +49,32 @@ export interface TeamMember {
   role: string;
   avatarUrl?: string | undefined;
   initials: string;
+  workload?: {
+    activeTasks: number;
+    inProgressTasks: number;
+    inReviewTasks: number;
+    blockedTasks: number;
+    completedTasks: number;
+    overdueTasks: number;
+    capacityPercent: number;
+    totalEstimatedHours: number;
+  } | undefined;
+  projects?: {
+    id: string;
+    name: string;
+    color: string;
+    role: string;
+  }[] | undefined;
+}
+
+export interface Milestone {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  targetDate: string;
+  status: "pending" | "completed";
+  createdAt?: string | undefined;
 }
 
 export interface Project {
@@ -29,10 +83,42 @@ export interface Project {
   key: string;
   description: string;
   color: string;
-  status: "active" | "planned" | "completed";
+  status: "active" | "planning" | "completed" | "archived" | "planned";
+  priority: TaskPriority;
+  health: "on_track" | "at_risk" | "delayed";
   lead: string;
+  ownerId?: string | undefined;
+  startDate?: string | null | undefined;
+  deadline?: string | null | undefined;
+  progress: number;
+  archivedAt?: string | null | undefined;
   taskCount?: number | undefined;
   completedCount?: number | undefined;
+  inProgressCount?: number | undefined;
+  blockedCount?: number | undefined;
+  overdueCount?: number | undefined;
+  memberCount?: number | undefined;
+  milestones?: { total: number; completed: number } | undefined;
+  members?: {
+    id: string;
+    membershipId: string;
+    name: string;
+    email: string;
+    role: string;
+    avatarUrl?: string;
+    initials: string;
+    joinedAt: string;
+  }[] | undefined;
+  recentActivity?: {
+    id: string;
+    type: string;
+    taskTitle: string;
+    userName: string;
+    details?: any;
+    at: string;
+  }[] | undefined;
+  createdAt?: string | undefined;
+  updatedAt?: string | undefined;
 }
 
 export interface TaskList {
@@ -47,6 +133,7 @@ export type RecurrencePattern = "none" | "daily" | "weekly" | "monthly" | "weekd
 
 export interface Task {
   id: string;
+  identifier?: string | undefined;
   userId: string;
   projectId?: string | undefined;
   projectName?: string | undefined;
@@ -56,14 +143,24 @@ export interface Task {
   listColor?: string | undefined;
   title: string;
   description: string;
+  type?: TaskType | undefined;
   status: TaskStatus;
   priority: TaskPriority;
+  blockedReason?: string | undefined;
+  startDate?: string | null | undefined;
   dueDate: string | null;
+  estimatedHours?: number | undefined;
+  actualHours?: number | undefined;
   estimate?: string | undefined;
   assignee?: TeamMember | undefined;
   assigneeId?: string | undefined;
+  reviewer?: { id: string; name: string } | undefined;
+  reviewerId?: string | undefined;
+  milestoneId?: string | undefined;
   tags?: string[] | undefined;
   subtasks?: Subtask[] | undefined;
+  acceptanceCriteria?: AcceptanceCriteria[] | undefined;
+  dependencies?: TaskDependency[] | undefined;
   isBookmarked?: boolean | undefined;
   isTrash?: boolean | undefined;
   deletedAt?: string | null | undefined;
@@ -77,12 +174,19 @@ export interface Task {
 
 export interface TaskInput {
   title: string;
-  description: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  dueDate: string | null;
+  description?: string | undefined;
+  type?: TaskType | undefined;
+  status?: TaskStatus | undefined;
+  priority?: TaskPriority | undefined;
+  blockedReason?: string | undefined;
+  startDate?: string | null | undefined;
+  dueDate?: string | null | undefined;
+  estimatedHours?: number | undefined;
+  actualHours?: number | undefined;
   projectId?: string | undefined;
   assigneeId?: string | undefined;
+  reviewerId?: string | undefined;
+  milestoneId?: string | undefined;
   listId?: string | undefined;
   listName?: string | undefined;
   listColor?: string | undefined;
@@ -91,9 +195,24 @@ export interface TaskInput {
   deletedAt?: string | null | undefined;
   focusTimeSeconds?: number | undefined;
   completedAt?: string | null | undefined;
-  subtasks?: { title: string; completed?: boolean | undefined }[] | undefined;
+  subtasks?: { id?: string; title: string; completed?: boolean | undefined }[] | undefined;
+  acceptanceCriteria?: { id?: string; text: string; completed?: boolean | undefined }[] | undefined;
   tags?: string[] | undefined;
   estimate?: string | undefined;
+}
+
+export interface NotificationItem {
+  id: string;
+  userId: string;
+  actorId?: string | undefined;
+  actorName: string;
+  type: "assignment" | "mention" | "review" | "deadline" | "system";
+  title: string;
+  message: string;
+  entityType?: "task" | "project" | "milestone" | undefined;
+  entityId?: string | undefined;
+  isRead: boolean;
+  createdAt: string;
 }
 
 export interface Profile {
@@ -106,28 +225,44 @@ export interface Profile {
 
 export type ProfileInput = Pick<Profile, "fullName" | "email" | "avatarUrl">;
 
-export type ActivityType = "created" | "updated" | "completed" | "deleted";
+export type ActivityType =
+  | "created"
+  | "updated"
+  | "completed"
+  | "deleted"
+  | "task_created"
+  | "task_completed"
+  | "status_changed"
+  | "review_requested"
+  | "project_created"
+  | "project_updated";
 
 export interface Activity {
   id: string;
   type: ActivityType;
   taskId: string;
   taskTitle: string;
+  userName?: string | undefined;
+  details?: any | undefined;
   at: string;
 }
 
 export interface DashboardStats {
   total: number;
+  backlog?: number | undefined;
+  ready?: number | undefined;
   pending: number;
   inProgress: number;
   inReview?: number | undefined;
+  blocked?: number | undefined;
   completed: number;
   completionRate: number;
   overdue: number;
+  dueThisWeek?: number | undefined;
   byPriority: Record<TaskPriority, number>;
 }
 
-export type SortKey = "dueDate" | "priority" | "createdAt";
+export type SortKey = "dueDate" | "priority" | "createdAt" | "title" | "estimate";
 
 export interface TaskFilterState {
   search: string;

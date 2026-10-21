@@ -17,7 +17,12 @@ export const SEED_PROJECTS: Project[] = [
     description: "Next-gen infrastructure, database schema, and high-performance microservices.",
     color: "#6366f1", // Indigo
     status: "active",
+    priority: "high",
+    health: "on_track",
     lead: "Om Thakkar",
+    startDate: iso(-20),
+    deadline: iso(30),
+    progress: 65,
   },
   {
     id: "proj-mobile",
@@ -26,7 +31,12 @@ export const SEED_PROJECTS: Project[] = [
     description: "Touch gestures, offline data caching, and native responsive optimizations.",
     color: "#06b6d4", // Cyan
     status: "active",
+    priority: "medium",
+    health: "on_track",
     lead: "Sarah Chen",
+    startDate: iso(-15),
+    deadline: iso(45),
+    progress: 40,
   },
   {
     id: "proj-security",
@@ -35,7 +45,12 @@ export const SEED_PROJECTS: Project[] = [
     description: "Role-based access control, cryptographic verification, and audit trail logging.",
     color: "#ec4899", // Rose
     status: "active",
+    priority: "critical",
+    health: "at_risk",
     lead: "Alex Rivera",
+    startDate: iso(-10),
+    deadline: iso(15),
+    progress: 55,
   },
   {
     id: "proj-design",
@@ -44,7 +59,12 @@ export const SEED_PROJECTS: Project[] = [
     description: "Accessible component library, theme tokens, and motion guidelines.",
     color: "#8b5cf6", // Purple
     status: "active",
+    priority: "medium",
+    health: "on_track",
     lead: "Elena Rostova",
+    startDate: iso(-30),
+    deadline: iso(20),
+    progress: 80,
   },
 ];
 

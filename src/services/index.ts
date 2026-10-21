@@ -2,11 +2,12 @@ import { apiTaskService, ApiError } from "./apiTaskService";
 import { mockTaskService } from "./mockTaskService";
 import { connectionStatus } from "./connectionStatus";
 import type { TaskService } from "./taskService.types";
+import type { TaskStatus } from "@/types";
 
 export { connectionStatus };
 
 /**
- * TaskFlow Service Layer
+ * TaskFlow Nexus Service Layer
  * Connects to the Node.js + Express + PostgreSQL backend (http://localhost:4000/api),
  * with graceful fallback to mockTaskService if the API server is unreachable.
  * Never silently swallows 4xx validation or client errors.
@@ -28,10 +29,10 @@ class ResilientTaskService implements TaskService {
     }
   }
 
-  getTasks() {
+  getTasks(filters?: any) {
     return this.execute(
-      () => apiTaskService.getTasks(),
-      () => mockTaskService.getTasks(),
+      () => apiTaskService.getTasks(filters),
+      () => mockTaskService.getTasks(filters),
     );
   }
 
@@ -39,20 +40,6 @@ class ResilientTaskService implements TaskService {
     return this.execute(
       () => apiTaskService.getTaskById(id),
       () => mockTaskService.getTaskById(id),
-    );
-  }
-
-  getProjects() {
-    return this.execute(
-      () => apiTaskService.getProjects(),
-      () => mockTaskService.getProjects(),
-    );
-  }
-
-  getTeamMembers() {
-    return this.execute(
-      () => apiTaskService.getTeamMembers(),
-      () => mockTaskService.getTeamMembers(),
     );
   }
 
@@ -67,6 +54,13 @@ class ResilientTaskService implements TaskService {
     return this.execute(
       () => apiTaskService.updateTask(id, data),
       () => mockTaskService.updateTask(id, data),
+    );
+  }
+
+  updateTaskStatus(taskId: string, status: TaskStatus, blockedReason?: string) {
+    return this.execute(
+      () => apiTaskService.updateTaskStatus(taskId, status, blockedReason),
+      () => mockTaskService.updateTaskStatus(taskId, status, blockedReason),
     );
   }
 
@@ -126,9 +120,138 @@ class ResilientTaskService implements TaskService {
     );
   }
 
-  getDashboardStats() {
+  // Projects
+  getProjects(params?: any) {
     return this.execute(
-      () => apiTaskService.getDashboardStats(),
+      () => apiTaskService.getProjects(params),
+      () => mockTaskService.getProjects(params),
+    );
+  }
+
+  getProjectById(id: string) {
+    return this.execute(
+      () => apiTaskService.getProjectById(id),
+      () => mockTaskService.getProjectById(id),
+    );
+  }
+
+  createProject(data: any) {
+    return this.execute(
+      () => apiTaskService.createProject(data),
+      () => mockTaskService.createProject(data),
+    );
+  }
+
+  updateProject(id: string, data: any) {
+    return this.execute(
+      () => apiTaskService.updateProject(id, data),
+      () => mockTaskService.updateProject(id, data),
+    );
+  }
+
+  archiveProject(id: string) {
+    return this.execute(
+      () => apiTaskService.archiveProject(id),
+      () => mockTaskService.archiveProject(id),
+    );
+  }
+
+  deleteProject(id: string) {
+    return this.execute(
+      () => apiTaskService.deleteProject(id),
+      () => mockTaskService.deleteProject(id),
+    );
+  }
+
+  addProjectMember(projectId: string, userId: string, role: string) {
+    return this.execute(
+      () => apiTaskService.addProjectMember!(projectId, userId, role),
+      async () => {},
+    );
+  }
+
+  removeProjectMember(projectId: string, userId: string) {
+    return this.execute(
+      () => apiTaskService.removeProjectMember!(projectId, userId),
+      async () => {},
+    );
+  }
+
+  createMilestone(projectId: string, data: any) {
+    return this.execute(
+      () => apiTaskService.createMilestone!(projectId, data),
+      async () => ({ id: `ms-${Date.now()}`, projectId, ...data } as any),
+    );
+  }
+
+  updateMilestone(projectId: string, milestoneId: string, data: any) {
+    return this.execute(
+      () => apiTaskService.updateMilestone!(projectId, milestoneId, data),
+      async () => ({ id: milestoneId, projectId, ...data } as any),
+    );
+  }
+
+  deleteMilestone(projectId: string, milestoneId: string) {
+    return this.execute(
+      () => apiTaskService.deleteMilestone!(projectId, milestoneId),
+      async () => {},
+    );
+  }
+
+  addTaskDependency(taskId: string, dependsOnTaskId: string, dependencyType: string) {
+    return this.execute(
+      () => apiTaskService.addTaskDependency!(taskId, dependsOnTaskId, dependencyType),
+      async () => {},
+    );
+  }
+
+  removeTaskDependency(taskId: string, depId: string) {
+    return this.execute(
+      () => apiTaskService.removeTaskDependency!(taskId, depId),
+      async () => {},
+    );
+  }
+
+  // Team & Cockpit
+  getTeamMembers() {
+    return this.execute(
+      () => apiTaskService.getTeamMembers(),
+      () => mockTaskService.getTeamMembers(),
+    );
+  }
+
+  getMyWorkTasks() {
+    return this.execute(
+      () => apiTaskService.getMyWorkTasks!(),
+      () => mockTaskService.getMyWorkTasks!(),
+    );
+  }
+
+  // Notifications
+  getNotifications(unreadOnly?: boolean, type?: string) {
+    return this.execute(
+      () => apiTaskService.getNotifications!(unreadOnly, type),
+      () => mockTaskService.getNotifications!(unreadOnly, type),
+    );
+  }
+
+  markNotificationRead(id: string) {
+    return this.execute(
+      () => apiTaskService.markNotificationRead!(id),
+      () => mockTaskService.markNotificationRead!(id),
+    );
+  }
+
+  markAllNotificationsRead() {
+    return this.execute(
+      () => apiTaskService.markAllNotificationsRead!(),
+      () => mockTaskService.markAllNotificationsRead!(),
+    );
+  }
+
+  getDashboardStats(projectId?: string) {
+    return this.execute(
+      () => apiTaskService.getDashboardStats(projectId),
       () => mockTaskService.getDashboardStats(),
     );
   }

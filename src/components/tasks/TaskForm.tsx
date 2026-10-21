@@ -427,7 +427,7 @@ export function TaskForm({
                   <FormLabel className="flex items-center justify-between">
                     <span>Task Status</span>
                     <span className="text-[11px] font-normal text-muted-foreground capitalize">
-                      {field.value.replace("_", " ")}
+                      {(field.value || "").replace("_", " ")}
                     </span>
                   </FormLabel>
                   <FormControl>

@@ -51,12 +51,6 @@ export function extractToken(req: {
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const token = extractToken(req);
   if (!token) {
-    const fallbackUserId = req.headers["x-user-id"];
-    if (typeof fallbackUserId === "string" && fallbackUserId.trim()) {
-      req.userId = fallbackUserId.trim();
-      req.user = { userId: req.userId, username: req.userId };
-      return next();
-    }
     return res.status(401).json({ error: "Authentication required" });
   }
 
@@ -78,12 +72,33 @@ export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: Ne
       req.user = decoded;
       req.userId = decoded.userId;
     }
-  } else {
-    const fallbackUserId = req.headers["x-user-id"];
-    if (typeof fallbackUserId === "string" && fallbackUserId.trim()) {
-      req.userId = fallbackUserId.trim();
-      req.user = { userId: req.userId, username: req.userId };
-    }
   }
   next();
 }
+
+// In-memory rate limiter for sensitive authentication endpoints
+const authAttempts = new Map<string, { count: number; firstAttempt: number }>();
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_AUTH_ATTEMPTS = 50; // max 50 attempts per window per IP
+
+export function authRateLimiter(req: Request, res: Response, next: NextFunction) {
+  const ip = req.ip || req.socket.remoteAddress || "unknown-ip";
+  const now = Date.now();
+  const record = authAttempts.get(ip);
+
+  if (!record || now - record.firstAttempt > RATE_LIMIT_WINDOW_MS) {
+    authAttempts.set(ip, { count: 1, firstAttempt: now });
+    return next();
+  }
+
+  if (record.count >= MAX_AUTH_ATTEMPTS) {
+    return res.status(429).json({
+      error: "Too many authentication requests. Please try again later.",
+      retryAfterSeconds: Math.ceil((record.firstAttempt + RATE_LIMIT_WINDOW_MS - now) / 1000),
+    });
+  }
+
+  record.count++;
+  next();
+}
+

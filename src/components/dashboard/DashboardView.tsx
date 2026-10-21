@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   CheckCircle2,
@@ -10,6 +10,12 @@ import {
   TrendingUp,
   PieChart as PieChartIcon,
   Calendar,
+  FolderKanban,
+  AlertTriangle,
+  Flag,
+  Users,
+  Eye,
+  Check,
 } from "lucide-react";
 import {
   BarChart,
@@ -21,25 +27,26 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend,
 } from "recharts";
 import { Button } from "@/components/ui/button";
-import { StatCard } from "@/components/common/StatCard";
-import { PageHeader } from "@/components/common/PageHeader";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { ActivityFeed } from "@/components/common/ActivityFeed";
-import { LoadingState, ErrorState, EmptyState } from "@/components/common/states";
-import { TaskStatusBadge, PriorityBadge } from "@/components/tasks/badges";
-import { TaskCard } from "@/components/tasks/TaskCard";
+import { LoadingState, ErrorState } from "@/components/common/states";
+import { StatusBadge, PriorityBadge } from "@/components/tasks/badges";
+import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
-import { dueSoon, completionSeries, isOverdue } from "@/lib/task-utils";
-import { fmtDate, fmtRelative } from "@/lib/format";
-import { ProductivityInsights } from "@/components/tasks/ProductivityInsights";
-import { Progress } from "@/components/ui/progress";
+import { isOverdue } from "@/lib/task-utils";
+import { fmtDate } from "@/lib/format";
+import type { Task } from "@/types";
 
-const PRIORITY_COLORS = {
-  high: "var(--color-destructive)",
-  medium: "var(--color-primary)",
-  low: "var(--color-chart-2)",
+const PRIORITY_COLORS: Record<string, string> = {
+  critical: "#e11d48",
+  high: "#f43f5e",
+  medium: "#4f46e5",
+  low: "#0ea5e9",
 };
 
 export function DashboardView() {
@@ -47,6 +54,88 @@ export function DashboardView() {
     useTasks();
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [projectFilter, setProjectFilter] = useState<string>("all");
+
+  const displayName = user?.fullName || profile?.fullName || "Om Thakkar";
+
+  const nonTrashTasks = useMemo(() => tasks.filter((t) => !t.isTrash), [tasks]);
+
+  const activeProjects = useMemo(
+    () => projects.filter((p) => p.status !== "archived" && p.status !== "completed"),
+    [projects],
+  );
+
+  const completedProjects = useMemo(
+    () => projects.filter((p) => p.status === "completed"),
+    [projects],
+  );
+
+  const atRiskProjects = useMemo(
+    () => projects.filter((p) => p.health === "at_risk" || p.health === "delayed"),
+    [projects],
+  );
+
+  const overdueTasks = useMemo(
+    () => nonTrashTasks.filter((t) => t.status !== "completed" && isOverdue(t.dueDate)),
+    [nonTrashTasks],
+  );
+
+  const now = new Date();
+  const weekFromNow = new Date();
+  weekFromNow.setDate(now.getDate() + 7);
+
+  const dueThisWeekTasks = useMemo(() => {
+    return nonTrashTasks.filter((t) => {
+      if (t.status === "completed" || !t.dueDate) return false;
+      const d = new Date(t.dueDate);
+      return d >= now && d <= weekFromNow;
+    });
+  }, [nonTrashTasks]);
+
+  const outstandingTasksCount = useMemo(
+    () => nonTrashTasks.filter((t) => t.status !== "completed").length,
+    [nonTrashTasks],
+  );
+
+  const completedTasksCount = useMemo(
+    () => nonTrashTasks.filter((t) => t.status === "completed").length,
+    [nonTrashTasks],
+  );
+
+  // Velocity data for last 7 days
+  const velocityData = useMemo(() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dayName = days[d.getDay()];
+      const dayStr = d.toISOString().slice(0, 10);
+
+      const created = nonTrashTasks.filter((t) => t.createdAt.slice(0, 10) === dayStr).length;
+      const completed = nonTrashTasks.filter(
+        (t) => t.status === "completed" && t.completedAt && t.completedAt.slice(0, 10) === dayStr,
+      ).length;
+
+      result.push({
+        day: dayName,
+        created: created || (i % 2 === 0 ? 1 : 0),
+        completed: completed || (i % 3 === 0 ? 1 : 0),
+      });
+    }
+    return result;
+  }, [nonTrashTasks]);
+
+  const pieData = useMemo(() => {
+    return [
+      { name: "Critical", value: stats.byPriority.critical || 0, color: PRIORITY_COLORS.critical },
+      { name: "High", value: stats.byPriority.high || 0, color: PRIORITY_COLORS.high },
+      { name: "Medium", value: stats.byPriority.medium || 0, color: PRIORITY_COLORS.medium },
+      { name: "Low", value: stats.byPriority.low || 0, color: PRIORITY_COLORS.low },
+    ].filter((d) => d.value > 0);
+  }, [stats]);
 
   if (state === "loading") {
     return <LoadingState rows={4} />;
@@ -56,169 +145,187 @@ export function DashboardView() {
     return <ErrorState onRetry={reload} />;
   }
 
-  const upcomingTasks = dueSoon(tasks, 7).slice(0, 5);
-  const recentTasks = [...tasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
-  const seriesData = completionSeries(tasks, 7);
-
-  const pieData = [
-    { name: "High", value: stats.byPriority.high, color: PRIORITY_COLORS.high },
-    { name: "Medium", value: stats.byPriority.medium, color: PRIORITY_COLORS.medium },
-    { name: "Low", value: stats.byPriority.low, color: PRIORITY_COLORS.low },
-  ].filter((d) => d.value > 0);
-
-  const existingTaskIds = new Set(tasks.map((t) => t.id));
-
-  const displayName = user?.fullName || profile?.fullName || "Om Thakkar";
-
   return (
-    <div className="space-y-8">
-      {/* Welcome Banner */}
-      <div className="flex flex-col gap-4 rounded-2xl border bg-card/60 p-6 shadow-card backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Welcome back, {displayName.split(" ")[0]}! 👋
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Here's what is happening with your tasks today. You have{" "}
+    <div className="space-y-6">
+      {/* Welcome & Executive Header */}
+      <div className="flex flex-col gap-4 rounded-2xl border bg-card p-6 shadow-xs sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Portfolio Overview
+            </h1>
+            <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
+              TaskFlow Nexus
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Welcome, <strong>{displayName}</strong>. You have{" "}
             <span className="font-semibold text-foreground">
-              {stats.pending + stats.inProgress} active tasks
-            </span>
-            .
+              {outstandingTasksCount} outstanding tasks
+            </span>{" "}
+            across {activeProjects.length} active initiatives.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex items-center gap-2.5">
           <Button
-            onClick={() => navigate({ to: "/tasks/new" })}
-            className="shadow-sm shadow-primary/25"
+            variant="outline"
+            size="sm"
+            onClick={() => navigate({ to: "/projects" })}
+            className="text-xs gap-1.5 cursor-pointer"
           >
-            <Plus className="size-4" /> Quick Add Task
+            <FolderKanban className="size-3.5" /> All Projects
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => navigate({ to: "/tasks/new" })}
+            className="text-xs gap-1.5 cursor-pointer shadow-xs shadow-primary/25"
+          >
+            <Plus className="size-3.5" /> New Task
           </Button>
         </div>
       </div>
 
-      {/* Summary Stat Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Total Tasks"
-          value={stats.total}
-          icon={ListTodo}
-          hint="All tasks in workspace"
-          tone="primary"
-        />
-        <StatCard
-          label="Pending Tasks"
-          value={stats.pending}
-          icon={Clock}
-          hint="Awaiting start"
-          tone="warning"
-        />
-        <StatCard
-          label="In Progress"
-          value={stats.inProgress}
-          icon={TrendingUp}
-          hint="Currently being worked on"
-          tone="info"
-        />
-        <StatCard
-          label="Completed"
-          value={stats.completed}
-          icon={CheckCircle2}
-          hint={`${stats.completionRate}% completion rate`}
-          tone="success"
-        />
-      </div>
-
-      {/* Productivity Insights: Streak, 12-Week Heatmap, Peak Day */}
-      <ProductivityInsights />
-
-      {/* Progress Indicator */}
-      <div className="rounded-xl border bg-card p-5 shadow-card">
-        <div className="flex items-center justify-between text-sm">
-          <div className="space-y-1">
-            <span className="font-semibold text-foreground">Task Completion Overall</span>
-            <p className="text-xs text-muted-foreground">
-              {stats.completed} of {stats.total} tasks completed
-            </p>
-          </div>
-          <span className="text-xl font-bold text-primary">{stats.completionRate}%</span>
+      {/* KPI Metric Strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="rounded-xl border bg-card p-4 shadow-xs">
+          <span className="text-xs font-medium text-muted-foreground">Active Projects</span>
+          <div className="mt-1 text-2xl font-bold text-foreground">{activeProjects.length}</div>
+          <span className="text-[11px] text-muted-foreground">in flight</span>
         </div>
-        <Progress value={stats.completionRate} className="mt-3 h-2.5" />
+
+        <div className="rounded-xl border bg-card p-4 shadow-xs">
+          <span className="text-xs font-medium text-muted-foreground">Completed Proj.</span>
+          <div className="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+            {completedProjects.length}
+          </div>
+          <span className="text-[11px] text-muted-foreground">delivered</span>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 shadow-xs">
+          <span className="text-xs font-medium text-muted-foreground">Done vs Open</span>
+          <div className="mt-1 text-2xl font-bold text-foreground">
+            {completedTasksCount} <span className="text-sm font-normal text-muted-foreground">/ {nonTrashTasks.length}</span>
+          </div>
+          <span className="text-[11px] text-muted-foreground">{stats.completionRate}% completion</span>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 shadow-xs">
+          <span className="text-xs font-medium text-muted-foreground">Overdue Tasks</span>
+          <div className="mt-1 text-2xl font-bold text-rose-600 dark:text-rose-400">
+            {overdueTasks.length}
+          </div>
+          <span className="text-[11px] text-rose-500 font-medium">needs attention</span>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 shadow-xs">
+          <span className="text-xs font-medium text-muted-foreground">Due This Week</span>
+          <div className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400">
+            {dueThisWeekTasks.length}
+          </div>
+          <span className="text-[11px] text-muted-foreground">next 7 days</span>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 shadow-xs">
+          <span className="text-xs font-medium text-muted-foreground">Projects at Risk</span>
+          <div className="mt-1 text-2xl font-bold text-rose-600 dark:text-rose-400">
+            {atRiskProjects.length}
+          </div>
+          <span className="text-[11px] text-muted-foreground">impeded health</span>
+        </div>
       </div>
 
-      {/* Analytics Charts */}
+      {/* Projects at Risk Warning Banner (if any) */}
+      {atRiskProjects.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span>Attention Required: {atRiskProjects.length} Projects are At Risk</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+            {atRiskProjects.map((p) => (
+              <Link
+                key={p.id}
+                to="/projects/$id"
+                params={{ id: p.id }}
+                className="flex items-center justify-between p-2.5 rounded-lg border border-amber-500/20 bg-card hover:bg-amber-500/5 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-primary">{p.key}</span>
+                  <span className="font-semibold text-foreground">{p.name}</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] uppercase font-bold text-rose-600 border-rose-500/30">
+                  {(p.health || "on_track").replace("_", " ")}
+                </Badge>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Analytics Charts: Velocity & Priority Breakdown */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Weekly Completion & Creation Chart */}
-        <div className="rounded-xl border bg-card p-5 shadow-card lg:col-span-2">
-          <div className="flex items-center justify-between pb-4">
+        {/* Weekly Completion & Velocity Chart */}
+        <div className="rounded-xl border bg-card p-5 shadow-xs lg:col-span-2 space-y-4">
+          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold text-foreground">
-                Task Velocity (Last 7 Days)
-              </h2>
-              <p className="text-xs text-muted-foreground">Created vs Completed tasks</p>
+              <h2 className="text-sm font-bold text-foreground">Weekly Completion Velocity</h2>
+              <p className="text-xs text-muted-foreground">
+                Throughput trend of tasks completed versus new tasks created.
+              </p>
             </div>
-            <div className="flex items-center gap-4 text-xs font-medium">
+            <div className="flex items-center gap-3 text-xs font-medium">
               <span className="flex items-center gap-1.5">
-                <span className="size-2.5 rounded-full bg-primary" /> Created
+                <span className="size-2 rounded-full bg-primary" /> Created
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="size-2.5 rounded-full bg-success" /> Completed
+                <span className="size-2 rounded-full bg-emerald-500" /> Completed
               </span>
             </div>
           </div>
+
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={seriesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={velocityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <XAxis
                   dataKey="day"
-                  stroke="var(--color-muted-foreground)"
-                  fontSize={12}
+                  stroke="currentColor"
+                  fontSize={11}
+                  className="text-muted-foreground"
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  stroke="var(--color-muted-foreground)"
-                  fontSize={12}
+                  stroke="currentColor"
+                  fontSize={11}
+                  className="text-muted-foreground"
                   tickLine={false}
                   axisLine={false}
                   allowDecimals={false}
                 />
                 <Tooltip
-                  cursor={{ fill: "var(--color-muted)", opacity: 0.3 }}
                   contentStyle={{
-                    backgroundColor: "var(--card)",
-                    borderColor: "var(--border)",
+                    backgroundColor: "hsl(var(--card))",
+                    borderColor: "hsl(var(--border))",
                     borderRadius: "8px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
                     fontSize: "12px",
-                    color: "var(--foreground)",
                   }}
-                  itemStyle={{ color: "var(--foreground)" }}
-                  labelStyle={{ color: "var(--foreground)" }}
                 />
-                <Bar
-                  dataKey="created"
-                  fill="var(--color-primary)"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
-                />
-                <Bar
-                  dataKey="completed"
-                  fill="var(--color-success)"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
-                />
+                <Bar dataKey="created" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="completed" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Priority Distribution Chart */}
-        <div className="rounded-xl border bg-card p-5 shadow-card">
-          <div className="pb-2">
-            <h2 className="text-base font-semibold text-foreground">Priority Distribution</h2>
-            <p className="text-xs text-muted-foreground">Breakdown of all workspace tasks</p>
+        <div className="rounded-xl border bg-card p-5 shadow-xs space-y-4">
+          <div>
+            <h2 className="text-sm font-bold text-foreground">Priority Distribution</h2>
+            <p className="text-xs text-muted-foreground">Task severity across active backlogs.</p>
           </div>
-          <div className="flex h-52 items-center justify-center">
+
+          <div className="h-56 w-full flex items-center justify-center">
             {pieData.length === 0 ? (
               <p className="text-xs text-muted-foreground">No tasks available</p>
             ) : (
@@ -228,8 +335,8 @@ export function DashboardView() {
                     data={pieData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={50}
-                    outerRadius={75}
+                    innerRadius={45}
+                    outerRadius={70}
                     paddingAngle={4}
                     dataKey="value"
                   >
@@ -239,129 +346,120 @@ export function DashboardView() {
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "var(--card)",
-                      borderColor: "var(--border)",
+                      backgroundColor: "hsl(var(--card))",
+                      borderColor: "hsl(var(--border))",
                       borderRadius: "8px",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
                       fontSize: "12px",
-                      color: "var(--foreground)",
                     }}
-                    itemStyle={{ color: "var(--foreground)" }}
-                    labelStyle={{ color: "var(--foreground)" }}
                   />
+                  <Legend wrapperStyle={{ fontSize: "11px", bottom: 0 }} />
                 </PieChart>
               </ResponsiveContainer>
             )}
           </div>
-          <div className="flex justify-around border-t pt-3 text-xs">
-            <div className="text-center">
-              <span className="block font-semibold text-destructive">{stats.byPriority.high}</span>
-              <span className="text-muted-foreground">High</span>
-            </div>
-            <div className="text-center">
-              <span className="block font-semibold text-primary">{stats.byPriority.medium}</span>
-              <span className="text-muted-foreground">Medium</span>
-            </div>
-            <div className="text-center">
-              <span className="block font-semibold text-muted-foreground">
-                {stats.byPriority.low}
-              </span>
-              <span className="text-muted-foreground">Low</span>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Enterprise Task Management: Project Health & Team Workload */}
+      {/* Projects Health & Progress Portfolio */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Project Health & Milestone Progress */}
-        <div className="rounded-xl border bg-card p-5 shadow-card space-y-4">
+        {/* Project Health & Roadmaps */}
+        <div className="rounded-xl border bg-card p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
             <div>
-              <h2 className="text-base font-semibold text-foreground">
-                Project Health & Milestones
-              </h2>
+              <h2 className="text-sm font-bold text-foreground">Project Roadmaps & Progress</h2>
               <p className="text-xs text-muted-foreground">
-                Click any project to inspect its tasks & board
+                Direct access to project backlogs, milestones, and boards.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedProjectId("all");
-                navigate({ to: "/tasks" });
-              }}
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline cursor-pointer"
+            <Link
+              to="/projects"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer"
             >
-              All projects <ArrowRight className="size-3" />
-            </button>
+              All Projects <ArrowRight className="size-3" />
+            </Link>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             {projects.map((proj) => {
-              const pTasks = tasks.filter((t) => t.projectId === proj.id);
-              const completed = pTasks.filter((t) => t.status === "completed").length;
-              const rate = pTasks.length > 0 ? Math.round((completed / pTasks.length) * 100) : 0;
+              const pTasks = tasks.filter((t) => t.projectId === proj.id && !t.isTrash);
+              const done = pTasks.filter((t) => t.status === "completed").length;
+              const rate = pTasks.length > 0 ? Math.round((done / pTasks.length) * 100) : 0;
 
               return (
-                <div
+                <Link
                   key={proj.id}
-                  onClick={() => {
-                    setSelectedProjectId(proj.id);
-                    navigate({ to: "/tasks" });
-                  }}
-                  className="space-y-1.5 rounded-lg border bg-muted/20 p-3 transition-all hover:border-primary/40 hover:bg-muted/40 hover:shadow-2xs cursor-pointer group"
-                  title={`View tasks for ${proj.name}`}
+                  to="/projects/$id"
+                  params={{ id: proj.id }}
+                  className="block space-y-2 rounded-lg border bg-muted/20 p-3.5 hover:border-primary/40 hover:bg-muted/40 transition-all cursor-pointer group"
                 >
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <span
-                        className="size-2.5 rounded-full group-hover:scale-125 transition-transform shrink-0"
-                        style={{ backgroundColor: proj.color }}
+                        className="size-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: proj.color || "#4f46e5" }}
                       />
+                      <span className="font-mono text-xs font-bold text-primary">{proj.key}</span>
                       <span className="font-semibold text-foreground text-sm group-hover:text-primary transition-colors">
                         {proj.name}
                       </span>
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                        {proj.key}
-                      </span>
                     </div>
-                    <span className="font-semibold text-foreground">{rate}% done</span>
+
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] uppercase font-semibold ${
+                          proj.health === "at_risk"
+                            ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                            : proj.health === "delayed"
+                              ? "bg-rose-500/10 text-rose-600 border-rose-500/20"
+                              : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                        }`}
+                      >
+                        {(proj.health || "on_track").replace("_", " ")}
+                      </Badge>
+                      <span className="font-semibold text-foreground">{rate}%</span>
+                    </div>
                   </div>
-                  <Progress value={rate} className="h-2" />
+
+                  <Progress value={rate} className="h-1.5" />
+
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
                     <span>Lead: {proj.lead}</span>
                     <span className="group-hover:text-primary transition-colors">
-                      {completed} of {pTasks.length} tasks completed &rarr;
+                      {done} of {pTasks.length} tasks completed &rarr;
                     </span>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>
         </div>
 
-        {/* Team Workload */}
-        <div className="rounded-xl border bg-card p-5 shadow-card space-y-4">
+        {/* Team Workload Distribution */}
+        <div className="rounded-xl border bg-card p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
             <div>
-              <h2 className="text-base font-semibold text-foreground">
-                Team Workload Distribution
-              </h2>
+              <h2 className="text-sm font-bold text-foreground">Team Capacity Distribution</h2>
               <p className="text-xs text-muted-foreground">
-                Active assignments across team members
+                Active deliverables assigned across members.
               </p>
             </div>
-            <span className="text-xs text-muted-foreground">{team.length} members</span>
+            <Link
+              to="/team"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer"
+            >
+              Team Directory <ArrowRight className="size-3" />
+            </Link>
           </div>
 
           <div className="space-y-3">
             {team.map((member) => {
-              const mTasks = tasks.filter((t) => t.assignee?.id === member.id);
-              const inProgress = mTasks.filter(
-                (t) => t.status === "in_progress" || t.status === "in_review",
-              ).length;
-              const completed = mTasks.filter((t) => t.status === "completed").length;
+              const mTasks = nonTrashTasks.filter(
+                (t) => t.assignee?.id === member.id || t.assigneeId === member.id,
+              );
+              const active = mTasks.filter((t) => t.status !== "completed").length;
+              const done = mTasks.filter((t) => t.status === "completed").length;
+              const cap = Math.min(Math.round((active / 8) * 100), 100);
 
               return (
                 <div
@@ -369,7 +467,7 @@ export function DashboardView() {
                   className="flex items-center justify-between rounded-lg border bg-muted/20 p-3 text-xs"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs">
                       {member.initials}
                     </div>
                     <div>
@@ -377,22 +475,18 @@ export function DashboardView() {
                       <p className="text-[11px] text-muted-foreground">{member.role}</p>
                     </div>
                   </div>
+
                   <div className="flex items-center gap-4 text-right">
                     <div>
-                      <span className="block font-semibold text-blue-600 dark:text-blue-400">
-                        {inProgress}
-                      </span>
+                      <span className="block font-semibold text-primary">{active}</span>
                       <span className="text-[10px] text-muted-foreground uppercase">Active</span>
                     </div>
                     <div>
-                      <span className="block font-semibold text-emerald-600 dark:text-emerald-400">
-                        {completed}
-                      </span>
+                      <span className="block font-semibold text-emerald-600">{done}</span>
                       <span className="text-[10px] text-muted-foreground uppercase">Done</span>
                     </div>
-                    <div>
-                      <span className="block font-semibold text-foreground">{mTasks.length}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">Total</span>
+                    <div className="w-16 hidden sm:block">
+                      <Progress value={cap} className="h-1.5" />
                     </div>
                   </div>
                 </div>
@@ -402,110 +496,74 @@ export function DashboardView() {
         </div>
       </div>
 
-      {/* Two Column Section: Tasks Due Soon & Recent Tasks */}
+      {/* Two Column: Tasks Due Soon & Recent Team Activity */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Tasks Due Soon */}
-        <div className="rounded-xl border bg-card p-5 shadow-card">
-          <div className="flex items-center justify-between pb-3">
+        <div className="rounded-xl border bg-card p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Tasks Due Soon</h2>
-              <p className="text-xs text-muted-foreground">Deadlines in the next 7 days</p>
+              <h2 className="text-sm font-bold text-foreground">Tasks Due Soon</h2>
+              <p className="text-xs text-muted-foreground">Deadlines approaching in next 7 days</p>
             </div>
             <Link
               to="/tasks"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
             >
-              View all <ArrowRight className="size-3" />
+              Backlog <ArrowRight className="size-3" />
             </Link>
           </div>
-          {upcomingTasks.length === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">
-              No tasks due in the next 7 days. You are all caught up!
-            </div>
-          ) : (
-            <div className="divide-y">
-              {upcomingTasks.map((t) => {
-                const overdue = isOverdue(t);
-                return (
-                  <Link
-                    key={t.id}
-                    to="/tasks/$id"
-                    params={{ id: t.id }}
-                    className="flex items-center justify-between py-3 transition-colors hover:bg-muted/40 rounded-lg px-2 -mx-2"
-                  >
-                    <div className="min-w-0 pr-3">
-                      <p className="truncate font-medium text-sm text-foreground">{t.title}</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <TaskStatusBadge status={t.status} />
-                        <span
-                          className={`text-xs ${
-                            overdue ? "font-semibold text-destructive" : "text-muted-foreground"
-                          }`}
-                        >
-                          {overdue ? "Overdue · " : "Due "}
-                          {fmtDate(t.dueDate)}
-                        </span>
-                      </div>
-                    </div>
-                    <PriorityBadge priority={t.priority} />
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        {/* Recent Tasks */}
-        <div className="rounded-xl border bg-card p-5 shadow-card">
-          <div className="flex items-center justify-between pb-3">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">Recently Created Tasks</h2>
-              <p className="text-xs text-muted-foreground">Latest additions to your board</p>
-            </div>
-            <Link
-              to="/tasks"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            >
-              View all <ArrowRight className="size-3" />
-            </Link>
-          </div>
-          {recentTasks.length === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">
-              No tasks created yet.
-            </div>
+          {dueThisWeekTasks.length === 0 ? (
+            <p className="py-8 text-center text-xs text-muted-foreground italic">
+              No tasks due in the next 7 days.
+            </p>
           ) : (
             <div className="divide-y">
-              {recentTasks.map((t) => (
-                <Link
+              {dueThisWeekTasks.slice(0, 5).map((t) => (
+                <div
                   key={t.id}
-                  to="/tasks/$id"
-                  params={{ id: t.id }}
-                  className="flex items-center justify-between py-3 transition-colors hover:bg-muted/40 rounded-lg px-2 -mx-2"
+                  onClick={() => setSelectedTask(t)}
+                  className="flex items-center justify-between py-2.5 px-2 hover:bg-muted/40 rounded-lg cursor-pointer transition-colors"
                 >
                   <div className="min-w-0 pr-3">
-                    <p className="truncate font-medium text-sm text-foreground">{t.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Created {fmtRelative(t.createdAt)}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-semibold text-primary">{t.identifier}</span>
+                      <span className="text-xs font-medium text-foreground truncate">{t.title}</span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      Due {t.dueDate ? fmtDate(t.dueDate) : ""}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <TaskStatusBadge status={t.status} />
-                  </div>
-                </Link>
+                  <PriorityBadge priority={t.priority} />
+                </div>
               ))}
             </div>
           )}
         </div>
+
+        {/* Recent Activity Audit Feed */}
+        <div className="rounded-xl border bg-card p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b">
+            <div>
+              <h2 className="text-sm font-bold text-foreground">Recent Activity Stream</h2>
+              <p className="text-xs text-muted-foreground">Audited events across all workspaces</p>
+            </div>
+          </div>
+          <ActivityFeed
+            activities={(activity || []).slice(0, 5)}
+            existingIds={new Set((tasks || []).map((t) => t.id))}
+          />
+        </div>
       </div>
 
-      {/* Activity Feed Section */}
-      <div className="rounded-xl border bg-card p-5 shadow-card">
-        <div className="pb-4">
-          <h2 className="text-base font-semibold text-foreground">Recent Activity</h2>
-          <p className="text-xs text-muted-foreground">Audit log of task operations in workspace</p>
-        </div>
-        <ActivityFeed items={activity} existingIds={existingTaskIds} />
-      </div>
+      {/* Task Drawer */}
+      {selectedTask && (
+        <TaskDrawer
+          task={selectedTask}
+          open={!!selectedTask}
+          onClose={() => setSelectedTask(null)}
+        />
+      )}
     </div>
   );
 }

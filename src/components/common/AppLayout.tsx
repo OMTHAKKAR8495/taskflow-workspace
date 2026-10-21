@@ -1,16 +1,18 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   CheckSquare,
-  User,
+  FolderKanban,
+  Users,
+  Calendar,
+  BarChart3,
+  Bell,
   Settings,
   Menu,
   Sparkles,
   Sun,
   Moon,
-  Laptop,
-  Calendar,
   Clock,
   AlertTriangle,
   Flame,
@@ -18,8 +20,13 @@ import {
   Plus,
   RefreshCw,
   Download,
-  CheckCircle2,
-  Database,
+  ChevronDown,
+  ChevronRight,
+  User,
+  ListTodo,
+  ShieldCheck,
+  Search,
+  ExternalLink,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -39,7 +46,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
@@ -49,6 +56,7 @@ import { CommandPalette } from "@/components/common/CommandPalette";
 import { DataExportImportModal } from "@/components/tasks/DataExportImportModal";
 import { connectionStatus, type BackendMode } from "@/services/connectionStatus";
 import { toast } from "sonner";
+import type { TaskPriority } from "@/types";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -57,18 +65,42 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
-  const { profile, tasks, lists, addList, activeFilter, setActiveFilter, reload } = useTasks();
+  const {
+    profile,
+    tasks,
+    projects,
+    team,
+    lists,
+    addList,
+    activeFilter,
+    setActiveFilter,
+    reload,
+    unreadNotificationCount,
+    createProject,
+  } = useTasks();
   const { user, logout } = useAuth();
-  const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
+  const { resolvedTheme, toggleTheme } = useTheme();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [createProjectModalOpen, setCreateProjectModalOpen] = useState(false);
+  const [taskViewsCollapsed, setTaskViewsCollapsed] = useState(false);
+  const [backendMode, setBackendMode] = useState<BackendMode>(connectionStatus.getMode());
+  const [testingConnection, setTestingConnection] = useState(false);
+
+  // New Project Form State
+  const [projectName, setProjectName] = useState("");
+  const [projectKey, setProjectKey] = useState("");
+  const [projectDesc, setProjectDesc] = useState("");
+  const [projectColor, setProjectColor] = useState("#6366f1");
+  const [projectPriority, setProjectPriority] = useState<TaskPriority>("medium");
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+
+  // User list creation state
   const [newListName, setNewListName] = useState("");
   const [newListColor, setNewListColor] = useState("#6366f1");
   const [addingList, setAddingList] = useState(false);
-  const [backendMode, setBackendMode] = useState<BackendMode>(connectionStatus.getMode());
-  const [testingConnection, setTestingConnection] = useState(false);
 
   const routerState = useRouterState();
   const navigate = useNavigate();
@@ -88,85 +120,126 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
     .toUpperCase()
     .slice(0, 2);
 
-  // Filter calculations
-  const nonTrashTasks = tasks.filter((t) => !t.isTrash);
-  const trashTasks = tasks.filter((t) => t.isTrash);
+  // Overdue / Review counts for badges
+  const overdueCount = useMemo(() => {
+    return tasks.filter((t) => !t.isTrash && t.status !== "completed" && isOverdue(t.dueDate)).length;
+  }, [tasks]);
 
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const needsReviewCount = useMemo(() => {
+    return tasks.filter((t) => !t.isTrash && t.status === "in_review").length;
+  }, [tasks]);
 
-  const myDayTasks = nonTrashTasks.filter((t) => {
-    if (!t.dueDate) return false;
-    return new Date(t.dueDate).toISOString().slice(0, 10) === todayStr;
-  });
+  const activeProjectsCount = useMemo(() => {
+    return projects.filter((p) => p.status === "active").length;
+  }, [projects]);
 
-  const upcomingTasks = nonTrashTasks.filter((t) => {
-    if (!t.dueDate || t.status === "completed") return false;
-    return new Date(t.dueDate) > now;
-  });
-
-  const overdueTasksList = nonTrashTasks.filter(
-    (t) => t.status !== "completed" && isOverdue(t.dueDate),
-  );
-
-  const smartNav = [
+  // Main 8 Enterprise Navigation items
+  const mainNav = [
     {
-      id: "my-day",
-      label: "My Day",
-      icon: Sparkles,
-      count: myDayTasks.length,
-      iconClass: "text-amber-500",
+      id: "overview",
+      label: "Overview",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+      active: pathname === "/dashboard" || pathname === "/",
     },
     {
-      id: "upcoming",
-      label: "Upcoming",
-      icon: Clock,
-      count: upcomingTasks.length,
-      iconClass: "text-blue-500",
+      id: "my-work",
+      label: "My Work",
+      href: "/my-work",
+      icon: CheckSquare,
+      active: pathname.startsWith("/my-work"),
+      badge: needsReviewCount > 0 ? `${needsReviewCount} review` : overdueCount > 0 ? `${overdueCount} due` : undefined,
+      badgeColor: needsReviewCount > 0 ? "bg-purple-500/20 text-purple-300 border-purple-500/30" : "bg-rose-500/20 text-rose-300 border-rose-500/30",
     },
     {
-      id: "overdue",
-      label: "Overdue",
-      icon: AlertTriangle,
-      count: overdueTasksList.length,
-      iconClass: "text-rose-500",
+      id: "projects",
+      label: "Projects",
+      href: "/projects",
+      icon: FolderKanban,
+      active: pathname.startsWith("/projects"),
+      badge: activeProjectsCount > 0 ? `${activeProjectsCount}` : undefined,
+    },
+    {
+      id: "team",
+      label: "Team",
+      href: "/team",
+      icon: Users,
+      active: pathname.startsWith("/team"),
+      badge: team.length > 0 ? `${team.length}` : undefined,
     },
     {
       id: "calendar",
       label: "Calendar",
+      href: "/calendar",
       icon: Calendar,
-      count: undefined,
-      iconClass: "text-purple-500",
+      active: pathname.startsWith("/calendar"),
     },
     {
-      id: "all",
-      label: "All Tasks",
-      icon: CheckSquare,
-      count: nonTrashTasks.length,
-      iconClass: "text-primary",
+      id: "reports",
+      label: "Reports & Analytics",
+      href: "/reports",
+      icon: BarChart3,
+      active: pathname.startsWith("/reports"),
+    },
+    {
+      id: "notifications",
+      label: "Notifications",
+      href: "/notifications",
+      icon: Bell,
+      active: pathname.startsWith("/notifications"),
+      badge: unreadNotificationCount > 0 ? `${unreadNotificationCount}` : undefined,
+      badgeColor: "bg-indigo-500 text-white font-bold",
+    },
+    {
+      id: "settings",
+      label: "Settings",
+      href: "/settings",
+      icon: Settings,
+      active: pathname.startsWith("/settings"),
     },
   ];
-
-  const handleSmartSelect = (filterId: string) => {
-    setActiveFilter(filterId);
-    if (pathname !== "/tasks") {
-      navigate({ to: "/tasks" });
-    }
-    setMobileOpen(false);
-  };
 
   const handleTestConnection = async () => {
     setTestingConnection(true);
     try {
       const isUp = await connectionStatus.checkHealth();
       if (isUp) {
-        toast.success("Connected to PostgreSQL API backend successfully!");
+        toast.success("PostgreSQL API backend is healthy and connected!");
         void reload();
       } else {
         toast.warning("API server is offline. Local storage mode is active.");
       }
     } finally {
       setTestingConnection(false);
+    }
+  };
+
+  const handleCreateProjectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectName.trim()) return;
+    setIsCreatingProject(true);
+    try {
+      const genKey = projectKey.trim().toUpperCase() || projectName.slice(0, 3).toUpperCase();
+      const newProj = await createProject({
+        name: projectName.trim(),
+        key: genKey,
+        description: projectDesc.trim(),
+        color: projectColor,
+        priority: projectPriority,
+        health: "on_track",
+        status: "active",
+        progress: 0,
+      });
+      toast.success(`Project "${newProj.name}" created successfully!`);
+      setCreateProjectModalOpen(false);
+      setProjectName("");
+      setProjectKey("");
+      setProjectDesc("");
+      navigate({ to: "/projects/$id", params: { id: newProj.id } });
+    } catch {
+      toast.error("Failed to create project");
+    } finally {
+      setIsCreatingProject(false);
     }
   };
 
@@ -178,263 +251,283 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
     setAddingList(false);
   };
 
+  const handleSmartSelect = (filterId: string) => {
+    setActiveFilter(filterId);
+    if (!pathname.startsWith("/tasks")) {
+      navigate({ to: "/tasks" });
+    }
+    setMobileOpen(false);
+  };
+
+  const renderSidebarContent = () => (
+    <div className="flex h-full flex-col bg-slate-950 text-slate-300">
+      {/* Brand Header */}
+      <div className="flex h-16 items-center justify-between border-b border-slate-800/80 px-5">
+        <Link to="/dashboard" className="flex items-center gap-2.5">
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white shadow-md shadow-indigo-600/30">
+            <Sparkles className="size-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-base font-bold tracking-tight text-white">TaskFlow</span>
+              <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-300 border border-indigo-500/30">
+                Nexus
+              </span>
+            </div>
+            <span className="block text-[10px] font-medium tracking-wide text-slate-400">
+              Enterprise PM Platform
+            </span>
+          </div>
+        </Link>
+      </div>
+
+      {/* Nav Body */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-800">
+        {/* Core Workspace Routes */}
+        <div className="space-y-1">
+          <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Main Navigation
+          </div>
+          {mainNav.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.id}
+                to={item.href}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold transition-all group",
+                  item.active
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/30 font-bold"
+                    : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                )}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon
+                    className={cn(
+                      "size-4 shrink-0 transition-transform group-hover:scale-105",
+                      item.active ? "text-white" : "text-slate-400 group-hover:text-slate-200",
+                    )}
+                  />
+                  <span>{item.label}</span>
+                </div>
+                {item.badge && (
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-semibold border",
+                      item.badgeColor
+                        ? item.badgeColor
+                        : item.active
+                          ? "bg-white/20 text-white border-white/20"
+                          : "bg-slate-800 text-slate-300 border-slate-700",
+                    )}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Active Projects Quick Access */}
+        <div className="space-y-1 border-t border-slate-800/80 pt-4">
+          <div className="flex items-center justify-between px-3 pb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Active Projects
+            </span>
+            <button
+              type="button"
+              onClick={() => setCreateProjectModalOpen(true)}
+              className="text-slate-400 hover:text-indigo-400 cursor-pointer p-0.5"
+              title="Create new project"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+
+          <div className="space-y-0.5">
+            {projects.slice(0, 6).map((proj) => {
+              const isCurrent = pathname === `/projects/${proj.id}`;
+              return (
+                <Link
+                  key={proj.id}
+                  to="/projects/$id"
+                  params={{ id: proj.id }}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "flex items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-all group",
+                    isCurrent
+                      ? "bg-slate-800 text-white font-semibold"
+                      : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                  )}
+                >
+                  <div className="flex items-center gap-2.5 truncate">
+                    <span
+                      className="size-2 rounded-full shrink-0 ring-1 ring-white/20"
+                      style={{ backgroundColor: proj.color || "#6366f1" }}
+                    />
+                    <span className="truncate">{proj.name}</span>
+                  </div>
+                  {proj.key && (
+                    <span className="text-[10px] text-slate-400 font-mono group-hover:text-slate-300">
+                      {proj.key}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+            {projects.length > 6 && (
+              <Link
+                to="/projects"
+                onClick={() => setMobileOpen(false)}
+                className="block px-3 py-1 text-[11px] font-medium text-indigo-400 hover:underline"
+              >
+                + {projects.length - 6} more projects
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {/* Task Views & Custom Lists */}
+        <div className="space-y-1 border-t border-slate-800/80 pt-4">
+          <button
+            type="button"
+            onClick={() => setTaskViewsCollapsed(!taskViewsCollapsed)}
+            className="flex w-full items-center justify-between px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 cursor-pointer"
+          >
+            <span>Task Backlog & Lists</span>
+            {taskViewsCollapsed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
+          </button>
+
+          {!taskViewsCollapsed && (
+            <div className="space-y-0.5">
+              <Link
+                to="/tasks"
+                onClick={() => {
+                  setActiveFilter("all");
+                  setMobileOpen(false);
+                }}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                  pathname === "/tasks" && activeFilter === "all"
+                    ? "bg-slate-800 text-white"
+                    : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <ListTodo className="size-3.5 text-slate-400" />
+                  <span>All Tasks Board</span>
+                </div>
+                <span className="text-[10px] text-slate-400">{tasks.filter((t) => !t.isTrash).length}</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => handleSmartSelect("overdue")}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                  pathname.startsWith("/tasks") && activeFilter === "overdue"
+                    ? "bg-rose-500/20 text-rose-300"
+                    : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="size-3.5 text-rose-400" />
+                  <span>Overdue Tasks</span>
+                </div>
+                {overdueCount > 0 && (
+                  <span className="rounded-full bg-rose-500/20 px-1.5 py-0.2 text-[10px] font-semibold text-rose-300">
+                    {overdueCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSmartSelect("trash")}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                  pathname.startsWith("/tasks") && activeFilter === "trash"
+                    ? "bg-slate-800 text-rose-400"
+                    : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Trash2 className="size-3.5 text-slate-400" />
+                  <span>Trash</span>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sidebar Footer with PostgreSQL Live Status & Profile */}
+      <div className="border-t border-slate-800/80 p-3 space-y-2 bg-slate-950/80">
+        <div className="flex items-center justify-between px-2">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="flex items-center gap-1.5 text-[11px] font-medium text-slate-300 hover:text-white cursor-pointer"
+          >
+            <ShieldCheck className="size-3.5 text-indigo-400" />
+            <span>Database Node</span>
+          </button>
+          <span
+            className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+              backendMode === "connected"
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+            }`}
+          >
+            <span
+              className={`size-1.5 rounded-full ${backendMode === "connected" ? "bg-emerald-400" : "bg-amber-400"}`}
+            />
+            <span>{backendMode === "connected" ? "PostgreSQL Active" : "Local Mode"}</span>
+          </span>
+        </div>
+
+        <Link
+          to="/profile"
+          className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-slate-900"
+        >
+          <Avatar className="size-8 border border-slate-700">
+            <AvatarImage src={profile?.avatarUrl} alt={displayName} />
+            <AvatarFallback className="bg-indigo-600/30 text-indigo-300 font-bold text-xs">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold text-white">{displayName}</p>
+            <p className="truncate text-[10px] text-slate-400">{displayEmail}</p>
+          </div>
+        </Link>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex min-h-screen bg-background">
       <CommandPalette />
       <DataExportImportModal open={exportModalOpen} onOpenChange={setExportModalOpen} />
 
-      {/* Desktop Sidebar */}
-      <aside className="hidden w-64 flex-col border-r bg-card/60 backdrop-blur-md lg:flex lg:fixed lg:inset-y-0 z-30">
-        <div className="flex h-16 items-center justify-between px-6 border-b">
-          <Link to="/tasks" className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm shadow-primary/30">
-              <Sparkles className="size-5" />
-            </div>
-            <div>
-              <span className="text-lg font-bold tracking-tight text-foreground">TaskFlow</span>
-              <span className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                To-Do & Productivity
-              </span>
-            </div>
-          </Link>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          {/* Smart Views Navigation */}
-          <div className="space-y-1">
-            <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Smart Views
-            </div>
-            {smartNav.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname.startsWith("/tasks") && activeFilter === item.id;
-              return (
-                <button
-                  type="button"
-                  key={item.id}
-                  onClick={() => handleSmartSelect(item.id)}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all cursor-pointer",
-                    isActive
-                      ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon
-                      className={cn(
-                        "size-4",
-                        isActive ? "text-primary-foreground" : item.iconClass,
-                      )}
-                    />
-                    <span>{item.label}</span>
-                  </div>
-                  {item.count !== undefined && item.count > 0 && (
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-xs font-semibold",
-                        isActive
-                          ? "bg-primary-foreground/20 text-primary-foreground"
-                          : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {item.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-
-            {/* Dashboard & Insights */}
-            <Link
-              to="/dashboard"
-              className={cn(
-                "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all",
-                pathname === "/dashboard"
-                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <Flame
-                  className={cn(
-                    "size-4",
-                    pathname === "/dashboard" ? "text-primary-foreground" : "text-orange-500",
-                  )}
-                />
-                <span>Insights & Streak</span>
-              </div>
-            </Link>
-          </div>
-
-          {/* User Colored Lists Section */}
-          <div className="space-y-1 pt-2 border-t">
-            <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
-              <span>My Lists</span>
-              <button
-                type="button"
-                onClick={() => setAddingList(!addingList)}
-                className="text-primary hover:text-primary/80 cursor-pointer"
-                aria-label="Add List"
-              >
-                <Plus className="size-3.5" />
-              </button>
-            </div>
-
-            {addingList && (
-              <form
-                onSubmit={handleCreateList}
-                className="p-2 bg-muted/30 rounded-lg space-y-2 border"
-              >
-                <input
-                  type="text"
-                  value={newListName}
-                  onChange={(e) => setNewListName(e.target.value)}
-                  placeholder="List name (e.g. Fitness)..."
-                  className="w-full text-xs bg-background px-2 py-1 rounded border outline-none"
-                  autoFocus
-                />
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-1">
-                    {["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ec4899"].map((c) => (
-                      <button
-                        type="button"
-                        key={c}
-                        onClick={() => setNewListColor(c)}
-                        className={`size-4 rounded-full ${newListColor === c ? "ring-2 ring-foreground" : ""}`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex gap-1">
-                    <Button type="submit" size="sm" className="h-6 px-2 text-[10px]">
-                      Add
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setAddingList(false)}
-                      className="h-6 px-1.5 text-[10px]"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              </form>
-            )}
-
-            {lists.map((list) => {
-              const count = nonTrashTasks.filter((t) => t.listId === list.id).length;
-              const isActive = pathname.startsWith("/tasks") && activeFilter === list.id;
-              return (
-                <button
-                  type="button"
-                  key={list.id}
-                  onClick={() => handleSmartSelect(list.id)}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all cursor-pointer",
-                    isActive
-                      ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                >
-                  <div className="flex items-center gap-2.5 truncate">
-                    <span
-                      className="size-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: list.color }}
-                    />
-                    <span className="truncate">{list.name}</span>
-                  </div>
-                  {count > 0 && (
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-xs font-semibold",
-                        isActive
-                          ? "bg-primary-foreground/20 text-primary-foreground"
-                          : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Trash Section at Bottom */}
-          <div className="pt-2 border-t">
-            <button
-              type="button"
-              onClick={() => handleSmartSelect("trash")}
-              className={cn(
-                "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all cursor-pointer",
-                pathname.startsWith("/tasks") && activeFilter === "trash"
-                  ? "bg-rose-500 text-white shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <Trash2 className="size-4" />
-                <span>Trash</span>
-              </div>
-              {trashTasks.length > 0 && (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                  {trashTasks.length}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Sidebar Footer User Info */}
-        <div className="border-t p-3 space-y-2">
-          <div className="flex items-center justify-between px-2">
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              <Settings className="size-4" />
-              <span>Settings</span>
-            </button>
-            <span
-              className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                backendMode === "connected"
-                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-              }`}
-            >
-              <span
-                className={`size-1.5 rounded-full ${backendMode === "connected" ? "bg-emerald-500" : "bg-amber-500"}`}
-              />
-              <span>{backendMode === "connected" ? "API Live" : "Offline"}</span>
-            </span>
-          </div>
-
-          <Link
-            to="/profile"
-            className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-muted"
-          >
-            <Avatar className="size-8 border border-border">
-              <AvatarImage src={profile?.avatarUrl} alt={profile?.fullName || "User"} />
-              <AvatarFallback className="bg-primary/10 text-primary font-semibold text-xs">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-foreground">{displayName}</p>
-              <p className="truncate text-[10px] text-muted-foreground">{displayEmail}</p>
-            </div>
-          </Link>
-        </div>
+      {/* Desktop Sidebar (Deep Charcoal / Navy #0f172a) */}
+      <aside className="hidden w-64 flex-col border-r border-slate-800 bg-slate-950 lg:flex lg:fixed lg:inset-y-0 z-30 shadow-xl">
+        {renderSidebarContent()}
       </aside>
+
+      {/* Mobile Drawer */}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="left" className="w-72 p-0 border-r border-slate-800 bg-slate-950">
+          {renderSidebarContent()}
+        </SheetContent>
+      </Sheet>
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col lg:pl-64">
         {/* Top Header */}
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-card/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-card/85 px-4 backdrop-blur-md sm:px-6 lg:px-8 shadow-xs">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -453,7 +546,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                     <span key={crumb.label} className="flex items-center gap-1.5">
                       {idx > 0 && <span>/</span>}
                       {crumb.href ? (
-                        <Link to={crumb.href} className="hover:text-foreground transition-colors">
+                        <Link to={crumb.href} className="hover:text-foreground transition-colors font-medium">
                           {crumb.label}
                         </Link>
                       ) : (
@@ -464,7 +557,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                 </div>
               ) : null}
               {title && (
-                <h1 className="text-lg font-semibold tracking-tight text-foreground truncate">
+                <h1 className="text-lg font-bold tracking-tight text-foreground truncate">
                   {title}
                 </h1>
               )}
@@ -473,7 +566,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
 
           {/* Header Right Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Command Palette Trigger Button */}
+            {/* Command Palette Trigger */}
             <button
               type="button"
               onClick={() => {
@@ -482,11 +575,41 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               }}
               className="hidden sm:flex items-center gap-2 rounded-lg border bg-muted/40 hover:bg-muted px-2.5 py-1.5 text-xs text-muted-foreground transition-colors cursor-pointer"
             >
-              <span>Quick Search</span>
+              <Search className="size-3.5" />
+              <span>Search</span>
               <kbd className="rounded bg-background px-1.5 py-0.5 text-[10px] font-semibold border">
                 ⌘K
               </kbd>
             </button>
+
+            {/* Quick Create Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm shadow-indigo-600/30">
+                  <Plus className="size-3.5" />
+                  <span className="hidden sm:inline">Create</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48 shadow-xl">
+                <DropdownMenuLabel className="text-xs uppercase text-muted-foreground">
+                  Quick Create
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() => navigate({ to: "/tasks/new" })}
+                  className="flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <CheckSquare className="size-4 text-indigo-500" />
+                  <span>New Task</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setCreateProjectModalOpen(true)}
+                  className="flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <FolderKanban className="size-4 text-emerald-500" />
+                  <span>New Project</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Theme Toggle */}
             <Button
@@ -497,13 +620,13 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               aria-label="Toggle theme"
             >
               {resolvedTheme === "dark" ? (
-                <Moon className="size-4 text-primary" />
+                <Moon className="size-4 text-indigo-400" />
               ) : (
                 <Sun className="size-4 text-amber-500" />
               )}
             </Button>
 
-            {/* Notifications Bell */}
+            {/* Live Notifications Bell */}
             <NotificationsBell />
 
             {/* Profile Dropdown */}
@@ -512,7 +635,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                 <Button variant="ghost" className="relative size-9 rounded-full p-0 cursor-pointer">
                   <Avatar className="size-8 border">
                     <AvatarImage src={profile?.avatarUrl} alt={displayName} />
-                    <AvatarFallback className="bg-primary/10 text-primary font-semibold text-xs">
+                    <AvatarFallback className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs">
                       {initials}
                     </AvatarFallback>
                   </Avatar>
@@ -537,12 +660,11 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                   <Download className="size-4" />
                   <span>Export & Import Data</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setSettingsOpen(true)}
-                  className="flex items-center gap-2 cursor-pointer"
-                >
-                  <Settings className="size-4" />
-                  <span>Workspace Settings</span>
+                <DropdownMenuItem asChild>
+                  <Link to="/settings" className="flex items-center gap-2 cursor-pointer">
+                    <Settings className="size-4" />
+                    <span>Workspace Settings</span>
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -560,21 +682,123 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
         <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
 
-      {/* Settings Dialog */}
+      {/* Quick Create Project Modal */}
+      <Dialog open={createProjectModalOpen} onOpenChange={setCreateProjectModalOpen}>
+        <DialogContent className="sm:max-w-md p-6 bg-card rounded-2xl shadow-xl border">
+          <DialogHeader>
+            <div className="flex size-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 mb-2">
+              <FolderKanban className="size-5" />
+            </div>
+            <DialogTitle className="text-lg font-bold">Create New Project</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Define a new initiative, roadmap, or client workspace with deliverables and milestones.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateProjectSubmit} className="space-y-4 py-2">
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-foreground">Project Name *</label>
+              <input
+                type="text"
+                required
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="e.g. Mobile Banking App v2"
+                className="w-full text-sm bg-background px-3 py-2 rounded-lg border outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Key Prefix</label>
+                <input
+                  type="text"
+                  maxLength={5}
+                  value={projectKey}
+                  onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
+                  placeholder="e.g. BNK"
+                  className="w-full text-sm bg-background px-3 py-2 rounded-lg border outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Priority</label>
+                <select
+                  value={projectPriority}
+                  onChange={(e) => setProjectPriority(e.target.value as TaskPriority)}
+                  className="w-full text-sm bg-background px-3 py-2 rounded-lg border outline-none"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-foreground">Color Theme</label>
+              <div className="flex gap-2">
+                {["#4f46e5", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#ef4444"].map((c) => (
+                  <button
+                    type="button"
+                    key={c}
+                    onClick={() => setProjectColor(c)}
+                    className={`size-6 rounded-full cursor-pointer transition-transform ${
+                      projectColor === c ? "ring-2 ring-foreground scale-110" : ""
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-foreground">Description</label>
+              <textarea
+                rows={2}
+                value={projectDesc}
+                onChange={(e) => setProjectDesc(e.target.value)}
+                placeholder="High-level goal and scope..."
+                className="w-full text-xs bg-background px-3 py-2 rounded-lg border outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setCreateProjectModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isCreatingProject}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+              >
+                {isCreatingProject ? "Creating..." : "Create Project"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Backend Diagnostics Modal */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="sm:max-w-md p-6 bg-card rounded-2xl shadow-xl border">
           <DialogHeader>
-            <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-2">
-              <Settings className="size-5" />
+            <div className="flex size-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 mb-2">
+              <ShieldCheck className="size-5" />
             </div>
-            <DialogTitle className="text-lg font-bold">Workspace Settings</DialogTitle>
+            <DialogTitle className="text-lg font-bold">PostgreSQL Engine Status</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Manage backend connectivity, database status, and workspace data.
+              Monitor real-time Express and PostgreSQL connection diagnostics.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2 text-sm">
-            {/* Backend Connectivity Status */}
             <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
               <div className="flex justify-between items-center">
                 <span className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
@@ -594,15 +818,15 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                   />
                   <span>
                     {backendMode === "connected"
-                      ? "Connected to PostgreSQL API"
-                      : "Offline Mode (Local Storage)"}
+                      ? "Connected to PostgreSQL"
+                      : "Offline Fallback Mode"}
                   </span>
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
                 {backendMode === "connected"
                   ? "Connected to Express + PostgreSQL on http://localhost:4000/api with bcrypt JWT sessions."
-                  : "Operating safely in offline mode with client-side persistence in localStorage."}
+                  : "Operating in safe offline mode with client-side persistence in localStorage."}
               </p>
               <Button
                 variant="outline"
@@ -616,7 +840,6 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               </Button>
             </div>
 
-            {/* Quick Export / Import Action */}
             <div className="flex items-center justify-between p-3 rounded-xl border bg-card">
               <div>
                 <p className="text-xs font-semibold text-foreground">Data Backup & Migration</p>
@@ -633,13 +856,6 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               >
                 Export / Import
               </Button>
-            </div>
-
-            <div className="space-y-1 pt-1">
-              <p className="text-xs font-medium text-muted-foreground uppercase">Current Account</p>
-              <p className="text-sm font-semibold">
-                {displayName} ({user?.username || "omthakkar"})
-              </p>
             </div>
           </div>
         </DialogContent>

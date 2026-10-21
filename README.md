@@ -1,216 +1,217 @@
-# TaskFlow — Modern Intelligent Task Management System
+# TaskFlow Nexus — Enterprise Project Management & Team Collaboration Platform
 
-A high-performance, full-stack personal and team task management application built with **React**, **TypeScript**, **Express**, and **PostgreSQL**. Designed with a refined SaaS aesthetic (indigo/slate palette, glassmorphism, responsive dark mode) and to-do workflows.
-
----
-
-## Highlights & Features
-
-### 1. Smart Quick-Add Bar (NLP Parser)
-Type natural language instructions into the quick-add bar to instantly create tasks with parsed metadata:
-- **Priority**: `!high`, `!medium`, `!low`
-- **Lists / Tags**: `#groceries`, `#work`, `#study`
-- **Due Dates & Times**: `tomorrow`, `today`, `friday`, `5pm`, `10am`, `next week`
-- *Example*: `Buy organic milk tomorrow 5pm !high #groceries`
-- **Interactive Live Preview**: Shows chips for clean title, target list, due time, and priority before pressing Enter.
-
-### 2. Smart Views & Workflow Organization
-- **My Day**: Clean morning briefing view with dynamic progress ring ("3 of 7 completed"), quick-add input, and one-click task completion.
-- **Upcoming**: Chronologically organized tasks due over the coming days and weeks.
-- **Overdue**: Urgent triage view highlighting missed deadlines with red indicators.
-- **Custom Colored Lists**: Organize tasks into personal lists (e.g., Personal, Work, Study, Fitness) with custom color badges and counts.
-- **Soft Delete & Trash**: Deleted tasks move to Trash with instant undo toasts, full recovery/restore, and permanent empty trash actions.
-
-### 3. Recurring Tasks
-- Set tasks to recur **Daily**, **Weekdays**, **Weekly**, or **Monthly**.
-- Ticking a recurring task completes the current instance and automatically schedules the next occurrence with the incremented due date.
-
-### 4. Interactive Views (List, Kanban Board & Calendar)
-- **Checkbox List View**: Strikethrough animations, inline subtask counters, priority indicators, and tags.
-- **Kanban Board**: Drag-and-drop workflow across Backlog/To-Do, In Progress, In Review, and Completed.
-- **Calendar View**: Full month grid displaying task chips with drag-and-drop rescheduling across days.
-
-### 5. Focus Mode (Pomodoro Timer)
-- Built-in minimalist Pomodoro timer (25 min focus, 50 min deep work, 5 min break).
-- Automatically tracks and logs focus seconds accumulated on each task.
-
-### 6. Productivity Insights
-- **Completion Streak**: Flame counter tracking consecutive active days.
-- **12-Week Activity Heatmap**: GitHub-style activity grid mapping completed tasks and focus sessions.
-- **Productivity Analytics**: Best performing day of the week, total focus hours, and weekly created vs completed task charts.
-
-### 7. Keyboard Command Palette (`Ctrl+K` / `Cmd+K`)
-- Powered by `cmdk`.
-- Quickly search tasks by title, switch between smart views and lists, toggle themes, and trigger new task modals directly from the keyboard.
-
-### 8. Notifications & Reminders
-- Dynamic notifications popover displaying overdue items and tasks due soon.
-- Optional browser Web Notification permission toggle for system alerts.
-
-### 9. Export & Import
-- Export your tasks database as clean **JSON** or spreadsheet-compatible **CSV**.
-- Import tasks from JSON or CSV with instant schema validation and merging.
-
-### 10. Robust Authentication & Offline Resilience
-- **Bcrypt Password Hashing & JWT**: Real secure authentication via `taskflow_token` httpOnly cookies and `Authorization: Bearer` headers.
-- **Explicit Offline Banner**: Amber network status indicator when disconnected from PostgreSQL backend.
-- **Strict Error Handling**: Validation and 4xx client errors are surfaced to the user without silent mock masking.
+TaskFlow Nexus is an enterprise-grade project management and team collaboration SaaS platform built with **React 19**, **TypeScript**, **Express**, and **PostgreSQL 16**. Designed with modern enterprise UX inspired by **Linear**, **ClickUp**, and **Asana**, it delivers a high-performance workspace featuring deep navy navigation (`#0f172a`), real relational database persistence, directed acyclic graph (DAG) task dependency cycle detection, milestone tracking, team workload capacity analysis, project intelligence reports, and real-time notification dispatching.
 
 ---
 
-## Tech Stack
+## 🌟 Executive Overview: From Task Tracker to Enterprise Platform
 
-| Layer | Technologies |
-|---|---|
-| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Lucide Icons, cmdk, date-fns, Recharts |
-| **Backend** | Node.js, Express, TypeScript, bcryptjs, jsonwebtoken, cookie-parser, pg (node-postgres) |
-| **Database** | PostgreSQL 16 (with idempotent schema migrations) |
-| **Quality** | ESLint 9, Prettier, Vitest, TypeScript strict mode (`exactOptionalPropertyTypes`) |
-| **DevOps** | Docker Compose for PostgreSQL |
-
----
-
-## Quickstart Guide
-
-### Option A: Using Docker Compose (Recommended)
-
-1. **Clone the repository and install dependencies**:
-   ```bash
-   git clone <repo-url> taskflow
-   cd taskflow
-   npm install
-   npm --prefix server install
-   ```
-
-2. **Start PostgreSQL via Docker Compose**:
-   ```bash
-   docker compose up -d
-   ```
-
-3. **Start the Express API server**:
-   ```bash
-   npm --prefix server run dev
-   ```
-   *The server runs on `http://localhost:4000` and automatically runs idempotent database migrations on startup.*
-
-4. **Start the Frontend development server**:
-   ```bash
-   npm run dev
-   ```
-   *Open `http://localhost:3000` (or the printed Vite URL) in your browser.*
+| Capability | Legacy TaskFlow | TaskFlow Nexus (Enterprise Upgrade) |
+|---|---|---|
+| **Platform Scope** | Single-user to-do checklist | Multi-project enterprise portfolio with 8 active routes |
+| **Project Workspaces** | Flat tags/lists | Dedicated `/projects/$id` workspaces with backlog, kanban, milestones & team roles |
+| **Workflow Stages** | 3 basic statuses (`pending`, `in_progress`, `completed`) | 6 enterprise stages (`backlog`, `ready`, `in_progress`, `in_review`, `blocked`, `completed`) |
+| **Task Dependencies** | None | DAG-based `blocks` and `blocked_by` with automated cycle detection & blocker checks |
+| **Personal Cockpit** | Basic "My Day" view | Comprehensive **My Work** hub (Assigned, In Review, Overdue, Created, Completed) |
+| **Team & Capacity** | Static contact cards | Team directory with real capacity meters, active project count & workload progress |
+| **Intelligence & Exports** | Basic completion streak | Recharts project velocity, burnup distribution, lead times, and dual CSV exports |
+| **Notification Engine** | Browser alert trigger | Full relational notification center with categories, unread badges, and entity deep-links |
+| **Auth Security** | Header spoofing vulnerability (`x-user-id`) | Hardened JWT verification, bcrypt hashing, and authentication rate limiting |
 
 ---
 
-### Option B: Local PostgreSQL Setup
+## 🧭 The 8 Primary Enterprise Routes
 
-1. Create a PostgreSQL database:
-   ```sql
-   CREATE DATABASE taskflow_db;
-   ```
-2. Configure `server/.env`:
-   ```env
-   PORT=4000
-   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/taskflow_db
-   JWT_SECRET=your-secret-key
-   NODE_ENV=development
-   ```
-3. Run the database seed & migration:
-   ```bash
-   npm --prefix server run seed
-   ```
-4. Start both servers:
-   ```bash
-   # Terminal 1: Backend
-   npm --prefix server run dev
+The top-level application shell provides direct access to 8 fully functional enterprise routes backed by live PostgreSQL queries:
 
-   # Terminal 2: Frontend
-   npm run dev
-   ```
+### 1. Overview (`/dashboard`)
+- **Executive Portfolio KPI Strip**: Active initiatives, overall completion rate, overdue deliverables, and tasks due this sprint.
+- **Weekly Velocity Bar Chart & Status Distribution**: Live Recharts visualization of planned vs completed tasks.
+- **Urgent Deliverables Triage**: Instant access to overdue and high-priority blocking tasks.
+- **Audit Activity Stream**: Chronological event log tracking project updates, status changes, and task completions.
+
+### 2. My Work (`/my-work`)
+- **Personal Cockpit**: Focus zone for individual contributors and team leads.
+- **Triage Tabs**:
+  - **Assigned to Me**: Work actively owned by the logged-in user.
+  - **Needs My Review**: Tasks in `in_review` requiring peer review or acceptance sign-off.
+  - **Overdue**: Critical items past target deadlines.
+  - **Created by Me**: Tasks authored by the user for delegation tracking.
+  - **Completed**: Archive of completed personal accomplishments.
+- **Instant Actions**: One-click "Approve & Mark Done" or "Request Changes" directly from review queues.
+
+### 3. Projects Portfolio & Dedicated Workspaces (`/projects` & `/projects/$id`)
+- **Portfolio List (`/projects`)**:
+  - Health status badges (`On Track`, `At Risk`, `Off Track`).
+  - Progress percentages calculated dynamically from child tasks.
+  - Priority levels (`Critical`, `High`, `Medium`, `Low`) and target launch dates.
+  - Fast-search filter and "+ New Project" creation modal.
+- **Project Workspace (`/projects/$id`)**:
+  - **Overview**: Executive summary, key statistics, launch deadlines, and initiative lead.
+  - **Backlog**: Filterable list view with inline status and priority adjustments.
+  - **Kanban Board**: 6-column workflow across `backlog`, `ready`, `in_progress`, `in_review`, `blocked`, and `completed`.
+  - **Milestones**: Roadmap timeline tracking target deliverables, progress bars, and completion toggles.
+  - **Team & Roles**: Manage project memberships with granular roles (`owner`, `admin`, `member`, `viewer`).
+
+### 4. Team Directory & Capacity Management (`/team`)
+- **Workload Capacity Analysis**: Real-time computation of active tasks and assigned hours per team member.
+- **Visual Capacity Meters**: Color-coded progress bars indicating workload allocation (Green: Healthy, Amber: High Load, Red: Over Capacity).
+- **Contact & Role Metadata**: Department, title, email, active initiatives, and direct "+ Add Team Member" modal.
+
+### 5. Sprint Calendar (`/calendar`)
+- **Interactive Monthly Grid**: Full-month calendar plotting tasks by target due date.
+- **Project Filter Dropdown**: Isolate calendar deliverables for specific client projects or view workspace-wide deadlines.
+- **One-Click Rescheduling**: Intuitive date reassignment and priority indicators.
+
+### 6. Reports & Project Intelligence (`/reports`)
+- **Sprint Velocity & Completion Trends**: Multi-series bar and line charts comparing planned vs delivered tasks.
+- **Status & Priority Distribution**: Donut and pie charts illustrating workspace health.
+- **Team Workload Balance**: Comparative workload chart highlighting bottlenecks across engineering, design, and product.
+- **Dual One-Click CSV Exports**:
+  - **Export Tasks CSV**: Full metadata dump (ID, Title, Project, Status, Priority, Assignee, Estimate, Due Date).
+  - **Export Project Summary CSV**: High-level portfolio metrics (Projects, Health, Progress, Deadlines).
+
+### 7. Notification Center (`/notifications`)
+- **Multi-Category Inbox**: Filter notifications across `All`, `Unread`, `Task Assignments`, `Deadlines`, `Reviews`, and `System`.
+- **Entity Deep-Linking**: Clicking a notification opens the related task in the slide-in drawer.
+- **Batch Management**: "Mark All as Read" and individual dismiss actions.
+
+### 8. Workspace Settings & Diagnostics (`/settings`)
+- **Profile Customization**: Update display name, email, department, job title, and bio.
+- **Theme Switcher**: Seamless toggling between dark, light, and system themes.
+- **PostgreSQL Engine Diagnostics**: Live health checker displaying connection state, latency, and database uptime.
 
 ---
 
-## Architecture & Directory Structure
+## 🔒 Security Hardening & Architecture
+
+### 1. Eliminated Header Spoofing Vulnerability
+- **Previous Vulnerability**: The legacy server accepted unauthenticated requests if an `x-user-id` header was passed, allowing trivial authentication bypass and identity spoofing.
+- **Hardened Fix**: `server/src/auth.ts` now strictly validates cryptographically signed JSON Web Tokens (`jwt.verify`). Requests missing valid signed tokens in cookies or `Authorization: Bearer` headers are rejected with HTTP 401 Unauthorized.
+
+### 2. Rate Limiting Protection
+- Added in-memory sliding-window rate limiting on `/api/auth/login` and `/api/auth/register` to block brute-force attacks (50 requests per 15-minute window).
+
+### 3. Directed Acyclic Graph (DAG) Cycle Prevention
+- `server/src/dependencies.ts` implements breadth-first search (BFS) graph traversal (`wouldCreateCycle`) before inserting any task dependency. If task $A$ depends on $B$, and $B$ directly or transitively depends on $A$, the server rejects the request with HTTP 400 Bad Request to prevent circular deadlocks.
+
+### 4. Blocker Protection on Task Completion
+- When moving a task to `completed`, the API and frontend check all `blocked_by` prerequisites. If any prerequisite task is not in `completed` status, the transition is rejected with an actionable blocker notice.
+
+---
+
+## 🗄️ Relational Database Schema (PostgreSQL)
 
 ```
-taskflow/
-├── docker-compose.yml       # One-command PostgreSQL 16 service
-├── server/                  # Express + PostgreSQL backend
-│   ├── schema.sql           # Database schema & safe idempotent migrations
-│   ├── src/
-│   │   ├── auth.ts          # Bcrypt hashing, JWT generation & verification middleware
-│   │   ├── db.ts            # PostgreSQL connection pool with query helpers
-│   │   ├── index.ts         # Express app entrypoint & cookie parser
-│   │   ├── seed.ts          # Idempotent database seeder
-│   │   └── routes/
-│   │       ├── auth.ts      # /api/auth/register, /login, /logout, /me
-│   │       ├── tasks.ts     # CRUD, soft-delete, restore, permanent delete, batch
-│   │       ├── projects.ts  # Projects & initiatives
-│   │       ├── team.ts      # Team members
-│   │       ├── activity.ts  # Audit log / activity stream
-│   │       └── profile.ts   # User profile management
-├── src/                     # React frontend
-│   ├── components/
-│   │   ├── common/          # AppLayout, CommandPalette, NotificationsBell, OfflineBanner
-│   │   ├── tasks/           # SmartQuickAdd, FocusModeModal, ProductivityInsights, CalendarView
-│   │   └── dashboard/       # Dashboard analytics & charts
-│   ├── context/             # AuthContext, TaskContext, ThemeContext
-│   ├── services/            # apiTaskService, mockTaskService, connectionStatus
-│   ├── lib/                 # task-utils, formatters, cn helper
-│   ├── test/                # Vitest test suites (auth, routing, task logic)
-│   └── types/               # Full TypeScript type definitions
-└── README.md
+ users (id, username, email, password_hash, full_name, avatar_url, role, department, created_at)
+   │
+   ├─► projects (id, name, key, description, color, status, health, priority, progress, owner_id, deadline)
+   │     │
+   │     ├─► project_members (id, project_id, user_id, role, created_at)
+   │     │
+   │     ├─► milestones (id, project_id, title, description, target_date, completed, created_at)
+   │     │
+   │     └─► tasks (id, user_id, project_id, milestone_id, assignee_id, reviewer_id,
+   │                identifier, title, description, status, priority, type,
+   │                estimated_hours, actual_hours, blocked_reason, due_date, ...)
+   │           │
+   │           ├─► task_dependencies (id, task_id, depends_on_task_id, dependency_type)
+   │           ├─► comments (id, task_id, author, content, created_at)
+   │           └─► subtasks (id, task_id, title, completed, created_at)
+   │
+   └─► notifications (id, user_id, title, message, type, entity_type, entity_id, is_read, created_at)
 ```
 
 ---
 
-## API Endpoints Reference
+## 🚀 Quickstart Guide
 
-### Authentication (`/api/auth`)
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/auth/register` | Register new user with bcrypt-hashed password & set JWT cookie |
-| `POST` | `/api/auth/login` | Authenticate user & return JWT token / set cookie |
-| `POST` | `/api/auth/logout` | Clear auth cookie |
-| `GET` | `/api/auth/me` | Fetch authenticated user profile |
+### Prerequisites
+- Node.js 20+
+- PostgreSQL 16+ (or Docker Compose)
 
-### Tasks (`/api/tasks`)
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/tasks` | List all tasks (with optional `status`, `priority`, `projectId`, `listId`) |
-| `POST` | `/api/tasks` | Create task (validated title, priority, status, recurrence, subtasks) |
-| `GET` | `/api/tasks/:id` | Fetch single task by ID |
-| `PATCH` | `/api/tasks/:id` | Update task fields (status, priority, recurrence, focus time) |
-| `DELETE` | `/api/tasks/:id` | Soft delete task (moves to trash) |
-| `POST` | `/api/tasks/:id/restore` | Restore soft-deleted task from trash |
-| `DELETE` | `/api/tasks/:id/permanent` | Permanently remove task from database |
-| `DELETE` | `/api/tasks/trash/empty` | Empty all trashed tasks |
-| `POST` | `/api/tasks/:id/subtasks` | Toggle subtask completed status |
-| `POST` | `/api/tasks/:id/bookmark` | Toggle task bookmark flag |
-| `POST` | `/api/tasks/:id/comments` | Add comment to task |
+### 1. Clone & Install Dependencies
+```bash
+git clone <repo-url> taskflow-nexus
+cd taskflow-nexus
+npm install
+npm --prefix server install
+```
+
+### 2. Configure Environment Files
+
+**Backend (`server/.env`):**
+```env
+PORT=4000
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/taskflow_db
+JWT_SECRET=super-secret-enterprise-key-change-in-prod
+NODE_ENV=development
+```
+
+**Frontend (`.env`):**
+```env
+VITE_API_BASE_URL=http://localhost:4000/api
+```
+
+### 3. Initialize & Seed Database
+```bash
+# Apply schema and seed demo workspace with projects, milestones, tasks & dependencies:
+npm --prefix server run seed
+```
+
+### 4. Start Development Servers
+```bash
+# Starts both Express API (:4000) and Vite Frontend (:3000):
+npm run dev:all
+```
 
 ---
 
-## Testing & Quality Assurance
+## 👤 Demo User Accounts
 
-TaskFlow maintains zero TypeScript errors, strict linting compliance, and automated test coverage.
+The database seeder provisions realistic accounts with pre-populated workspaces:
+
+| Username | Password | Role | Description |
+|---|---|---|---|
+| `omthakkar` | `password123` | **Engineering Lead (Admin)** | Primary account with full access to all projects, tasks & reviews |
+| `sarahchen` | `password123` | **Product Manager** | Oversees mobile banking and platform milestones |
+| `marcus` | `password123` | **Senior Backend Engineer** | Assigned core architecture & database tasks |
+| `elena` | `password123` | **Lead UI/UX Designer** | Owns design system tokens and component reviews |
+
+---
+
+## 🧪 Automated Testing & Verification
+
+TaskFlow Nexus includes automated test suites covering routing, authentication security, NLP parsing, DAG cycle detection, and enterprise 6-state task workflows:
 
 ```bash
-# Run TypeScript compilation check
+# Run Vitest test suite (All 33 tests passing):
+npm test
+
+# Run TypeScript compilation check:
 npx tsc --noEmit
 
-# Run ESLint check
-npm run lint
-
-# Run Vitest test suite
-npm test
+# Run production build:
+npm run build
 ```
 
-### Test Coverage Highlights
-- **`src/test/auth-security.test.ts`**: Verifies bcrypt password hashing, signature verification, token expiration, and HTTP header/cookie parsing.
-- **`src/test/task-features.test.ts`**: Verifies NLP parsing of tokens (`!high`, `#list`, `tomorrow 5pm`), recurring task auto-generation on complete, and soft-delete/restore lifecycles.
-- **`src/test/app-routing.test.tsx`**: Verifies application routing, dashboard metrics aggregation, and query filters.
+### Test Suites:
+1. **`src/test/enterprise-features.test.ts`**: Verifies DAG cycle prevention, 2-node/3-node transitive cycles, 6-state transitions, and dependency blocker enforcement.
+2. **`src/test/app-routing.test.tsx`**: Verifies all 8 primary application routes, route params, and search queries.
+3. **`src/test/auth-security.test.ts`**: Verifies bcrypt hashing, JWT cookie parsing, and signature validation.
+4. **`src/test/task-features.test.ts`**: Verifies natural language quick-add parsing, recurring task generation, and soft-delete/restore lifecycles.
 
 ---
 
-## License
-MIT
+## 📦 Production Deployment
+
+To build the client and server for production deployment:
+```bash
+npm run build
+```
+The output is generated in `.output/` ready for containerization or edge deployment.
+
+---
+
+## 📄 License
+MIT License. Built for full-stack software engineering evaluation.

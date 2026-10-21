@@ -5,13 +5,14 @@ import {
   verifyPassword,
   generateToken,
   requireAuth,
+  authRateLimiter,
   type AuthenticatedRequest,
 } from "../auth.js";
 
 const router = Router();
 
 // POST /api/auth/register
-router.post("/register", async (req: Request, res: Response) => {
+router.post("/register", authRateLimiter, async (req: Request, res: Response) => {
   try {
     const { fullName, email, username, password } = req.body;
 
@@ -80,7 +81,7 @@ router.post("/register", async (req: Request, res: Response) => {
 });
 
 // POST /api/auth/login
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
 

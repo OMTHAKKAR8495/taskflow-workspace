@@ -14,12 +14,14 @@ import { useAuth } from "@/context/AuthContext";
 import type {
   Activity,
   DashboardStats,
+  NotificationItem,
   Profile,
   ProfileInput,
   Project,
   Task,
   TaskInput,
   TaskList,
+  TaskStatus,
   TeamMember,
 } from "@/types";
 
@@ -45,9 +47,12 @@ interface TaskContextValue {
   setSelectedProjectId: (id: string | "all") => void;
   activeFilter: string;
   setActiveFilter: (filter: string) => void;
+  notifications: NotificationItem[];
+  unreadNotificationCount: number;
   reload: () => Promise<void>;
   createTask: (data: TaskInput) => Promise<Task>;
   updateTask: (id: string, data: Partial<TaskInput & { isBookmarked?: boolean }>) => Promise<Task>;
+  updateTaskStatus: (taskId: string, status: TaskStatus, blockedReason?: string) => Promise<Task>;
   deleteTask: (id: string) => Promise<void>;
   restoreTask: (id: string) => Promise<Task>;
   permanentDeleteTask: (id: string) => Promise<void>;
@@ -58,6 +63,12 @@ interface TaskContextValue {
   toggleSubtask: (taskId: string, subtaskId: string) => Promise<Task>;
   updateFocusTime: (id: string, seconds: number) => Promise<Task>;
   addList: (name: string, color: string) => void;
+  createProject: (data: Partial<Project>) => Promise<Project>;
+  updateProject: (id: string, data: Partial<Project>) => Promise<Project>;
+  archiveProject: (id: string) => Promise<Project>;
+  deleteProject: (id: string) => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
   updateProfile: (data: ProfileInput) => Promise<Profile>;
 }
 
@@ -70,6 +81,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0);
   const [state, setState] = useState<LoadState>("loading");
   const [selectedProjectId, setSelectedProjectIdState] = useState<string | "all">("all");
   const [activeFilter, setActiveFilter] = useState<string>("all");
@@ -141,8 +154,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       setActivity(a);
       setProjects(projs);
       setTeam(members);
+
+      // Notifications
+      if (taskService.getNotifications) {
+        try {
+          const notifs = await taskService.getNotifications();
+          setNotifications(notifs.notifications || []);
+          setUnreadNotificationCount(notifs.unreadCount || 0);
+        } catch {}
+      }
+
       setState("ready");
-    } catch {
+    } catch (err) {
+      console.error("TaskContext reload error:", err);
       setState("error");
     }
   }, []);
@@ -177,7 +201,6 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const deleteTask = useCallback(
     async (id: string) => {
-      const taskToDelete = tasks.find((t) => t.id === id);
       await taskService.deleteTask(id);
       setTasks((prev) =>
         prev.map((t) =>
@@ -194,7 +217,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    [tasks, restoreTask, refreshActivity],
+    [restoreTask, refreshActivity],
   );
 
   const permanentDeleteTask = useCallback(async (id: string) => {
@@ -225,28 +248,48 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     [refreshActivity],
   );
 
+  const updateTaskStatus = useCallback(
+    async (taskId: string, status: TaskStatus, blockedReason?: string) => {
+      // Optimistic update
+      const previous = tasks.find((t) => t.id === taskId);
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                status,
+                blockedReason: blockedReason || (status !== "blocked" ? "" : t.blockedReason),
+                completedAt: status === "completed" ? new Date().toISOString() : null,
+              }
+            : t,
+        ),
+      );
+
+      try {
+        const updated = await taskService.updateTaskStatus(taskId, status, blockedReason);
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+        void refreshActivity();
+        toast.success(`Task moved to ${status.replace("_", " ")}`);
+        return updated;
+      } catch (err: any) {
+        // Rollback on error
+        if (previous) {
+          setTasks((prev) => prev.map((t) => (t.id === taskId ? previous : t)));
+        }
+        const errorMsg = err?.data?.error || err?.message || "Failed to update task status";
+        toast.error(errorMsg);
+        throw err;
+      }
+    },
+    [tasks, refreshActivity],
+  );
+
   const toggleTaskComplete = useCallback(
     async (task: Task) => {
-      const nextStatus = task.status === "completed" ? "pending" : "completed";
-      const updated = await updateTask(task.id, {
-        status: nextStatus,
-        completedAt: nextStatus === "completed" ? new Date().toISOString() : null,
-      });
-
-      toast(nextStatus === "completed" ? "Task marked completed!" : "Task reopened", {
-        action: {
-          label: "Undo",
-          onClick: () => {
-            void updateTask(task.id, {
-              status: task.status,
-              completedAt: task.completedAt || null,
-            });
-          },
-        },
-      });
-      return updated;
+      const nextStatus: TaskStatus = task.status === "completed" ? "ready" : "completed";
+      return updateTaskStatus(task.id, nextStatus);
     },
-    [updateTask],
+    [updateTaskStatus],
   );
 
   const updateFocusTime = useCallback(
@@ -257,6 +300,52 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     },
     [tasks, updateTask],
   );
+
+  const createProject = useCallback(async (data: Partial<Project>) => {
+    const p = await taskService.createProject(data);
+    setProjects((prev) => [...prev, p]);
+    toast.success(`Project "${p.name}" created!`);
+    return p;
+  }, []);
+
+  const updateProject = useCallback(async (id: string, data: Partial<Project>) => {
+    const p = await taskService.updateProject(id, data);
+    setProjects((prev) => prev.map((x) => (x.id === id ? p : x)));
+    toast.success(`Project "${p.name}" updated!`);
+    return p;
+  }, []);
+
+  const archiveProject = useCallback(async (id: string) => {
+    const p = await taskService.archiveProject(id);
+    setProjects((prev) => prev.map((x) => (x.id === id ? p : x)));
+    toast.success(p.status === "archived" ? "Project archived" : "Project restored");
+    return p;
+  }, []);
+
+  const deleteProject = useCallback(async (id: string) => {
+    await taskService.deleteProject(id);
+    setProjects((prev) => prev.filter((x) => x.id !== id));
+    toast.success("Project deleted");
+  }, []);
+
+  const markNotificationRead = useCallback(async (id: string) => {
+    if (taskService.markNotificationRead) {
+      await taskService.markNotificationRead(id);
+    }
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+    );
+    setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
+  }, []);
+
+  const markAllNotificationsRead = useCallback(async () => {
+    if (taskService.markAllNotificationsRead) {
+      await taskService.markAllNotificationsRead();
+    }
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setUnreadNotificationCount(0);
+    toast.success("All notifications marked as read");
+  }, []);
 
   const value = useMemo<TaskContextValue>(
     () => ({
@@ -272,14 +361,18 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       setSelectedProjectId,
       activeFilter,
       setActiveFilter,
+      notifications,
+      unreadNotificationCount,
       reload,
       createTask: async (data) => {
         const t = await taskService.createTask(data);
         setTasks((prev) => [t, ...prev]);
         void refreshActivity();
+        toast.success(`Task "${t.title}" created!`);
         return t;
       },
       updateTask,
+      updateTaskStatus,
       deleteTask,
       restoreTask,
       permanentDeleteTask,
@@ -293,6 +386,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       addComment: async (id, content, author) => {
         const t = await taskService.addComment(id, content, author);
         setTasks((prev) => prev.map((x) => (x.id === id ? t : x)));
+        toast.success("Comment added");
         return t;
       },
       toggleSubtask: async (taskId, subtaskId) => {
@@ -302,10 +396,17 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       },
       updateFocusTime,
       addList,
+      createProject,
+      updateProject,
+      archiveProject,
+      deleteProject,
+      markNotificationRead,
+      markAllNotificationsRead,
       updateProfile: async (data) => {
         const p = await taskService.updateProfile(data);
         setProfile(p);
         updateCurrentUser({ fullName: p.fullName, email: p.email });
+        toast.success("Profile updated!");
         return p;
       },
     }),
@@ -321,8 +422,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       setSelectedProjectId,
       activeFilter,
       setActiveFilter,
+      notifications,
+      unreadNotificationCount,
       reload,
       updateTask,
+      updateTaskStatus,
       deleteTask,
       restoreTask,
       permanentDeleteTask,
@@ -330,6 +434,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       toggleTaskComplete,
       updateFocusTime,
       addList,
+      createProject,
+      updateProject,
+      archiveProject,
+      deleteProject,
+      markNotificationRead,
+      markAllNotificationsRead,
       refreshActivity,
       updateCurrentUser,
     ],
