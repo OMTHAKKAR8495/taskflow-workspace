@@ -14,6 +14,8 @@ interface TaskContextValue {
   activity: Activity[];
   stats: DashboardStats;
   state: LoadState;
+  selectedProjectId: string | "all";
+  setSelectedProjectId: (id: string | "all") => void;
   reload: () => Promise<void>;
   createTask: (data: TaskInput) => Promise<Task>;
   updateTask: (id: string, data: Partial<TaskInput & { isBookmarked?: boolean }>) => Promise<Task>;
@@ -34,6 +36,30 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [state, setState] = useState<LoadState>("loading");
+  const [selectedProjectId, setSelectedProjectIdState] = useState<string | "all">("all");
+
+  // Read URL query parameter on load if present
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const p = params.get("projectId") || params.get("project");
+      if (p) setSelectedProjectIdState(p);
+    }
+  }, []);
+
+  const setSelectedProjectId = useCallback((id: string | "all") => {
+    setSelectedProjectIdState(id);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (id === "all") {
+        url.searchParams.delete("project");
+        url.searchParams.delete("projectId");
+      } else {
+        url.searchParams.set("project", id);
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   const reload = useCallback(async () => {
     setState("loading");
@@ -71,6 +97,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       activity,
       state,
       stats: computeStats(tasks),
+      selectedProjectId,
+      setSelectedProjectId,
       reload,
       createTask: async (data) => {
         const t = await taskService.createTask(data);
@@ -111,7 +139,18 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         return p;
       },
     }),
-    [tasks, projects, team, profile, activity, state, reload, refreshActivity, updateCurrentUser],
+    [
+      tasks,
+      projects,
+      team,
+      profile,
+      activity,
+      state,
+      selectedProjectId,
+      reload,
+      refreshActivity,
+      updateCurrentUser,
+    ],
   );
 
   return <TaskContext.Provider value={value}>{children}</TaskContext.Provider>;

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   CheckSquare,
@@ -15,6 +15,7 @@ import {
   Sun,
   Moon,
   Laptop,
+  FolderKanban,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -47,12 +48,13 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
-  const { profile, activity, tasks, projects, team } = useTasks();
+  const { profile, activity, tasks, projects, team, selectedProjectId, setSelectedProjectId } = useTasks();
   const { user, logout } = useAuth();
   const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const routerState = useRouterState();
+  const navigate = useNavigate();
   const pathname = routerState.location.pathname;
 
   const displayName = user?.fullName || profile?.fullName || "Om Thakkar";
@@ -129,23 +131,69 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
           {/* Projects & Initiatives Section */}
           <div className="pt-4 px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
             <span>Projects ({projects.length})</span>
+            {selectedProjectId !== "all" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedProjectId("all");
+                  if (pathname !== "/tasks") {
+                    navigate({ to: "/tasks" });
+                  }
+                }}
+                className="text-[10px] text-primary hover:underline font-medium cursor-pointer"
+              >
+                All Projects
+              </button>
+            )}
           </div>
           {projects.map((proj) => {
             const pTasks = tasks.filter((t) => t.projectId === proj.id);
+            const isSelected = selectedProjectId === proj.id;
             return (
-              <Link
+              <button
                 key={proj.id}
-                to="/tasks"
-                className="flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground group"
+                type="button"
+                onClick={() => {
+                  if (isSelected) {
+                    setSelectedProjectId("all");
+                  } else {
+                    setSelectedProjectId(proj.id);
+                  }
+                  if (pathname !== "/tasks") {
+                    navigate({ to: "/tasks" });
+                  }
+                }}
+                className={cn(
+                  "w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-all group cursor-pointer text-left",
+                  isSelected
+                    ? "bg-primary/10 text-primary font-semibold ring-1 ring-primary/20 shadow-2xs"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+                title={isSelected ? "Filtered. Click to show all" : `Filter tasks for ${proj.name}`}
               >
                 <div className="flex items-center gap-2 truncate">
-                  <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: proj.color }} />
-                  <span className="truncate group-hover:text-foreground">{proj.name}</span>
+                  <span
+                    className={cn(
+                      "size-2 rounded-full shrink-0 transition-transform",
+                      isSelected && "scale-125 ring-2 ring-primary/30"
+                    )}
+                    style={{ backgroundColor: proj.color }}
+                  />
+                  <span className={cn("truncate", isSelected ? "text-primary font-semibold" : "group-hover:text-foreground")}>
+                    {proj.name}
+                  </span>
                 </div>
-                <span className="rounded-full bg-muted/60 px-1.5 py-0.2 text-[10px] font-semibold text-muted-foreground">
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.2 text-[10px] font-semibold transition-colors",
+                    isSelected
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/60 text-muted-foreground group-hover:bg-muted"
+                  )}
+                >
                   {pTasks.length}
                 </span>
-              </Link>
+              </button>
             );
           })}
 
@@ -250,6 +298,76 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                 </Link>
               );
             })}
+
+            {/* Mobile Projects Section */}
+            <div className="pt-4 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+              <span>Projects ({projects.length})</span>
+              {selectedProjectId !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedProjectId("all");
+                    setMobileOpen(false);
+                    if (pathname !== "/tasks") {
+                      navigate({ to: "/tasks" });
+                    }
+                  }}
+                  className="text-[10px] text-primary hover:underline font-medium"
+                >
+                  All Projects
+                </button>
+              )}
+            </div>
+            {projects.map((proj) => {
+              const pTasks = tasks.filter((t) => t.projectId === proj.id);
+              const isSelected = selectedProjectId === proj.id;
+              return (
+                <button
+                  key={proj.id}
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedProjectId("all");
+                    } else {
+                      setSelectedProjectId(proj.id);
+                    }
+                    setMobileOpen(false);
+                    if (pathname !== "/tasks") {
+                      navigate({ to: "/tasks" });
+                    }
+                  }}
+                  className={cn(
+                    "w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-all text-left",
+                    isSelected
+                      ? "bg-primary/10 text-primary font-semibold ring-1 ring-primary/20 shadow-2xs"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <span
+                      className={cn(
+                        "size-2 rounded-full shrink-0",
+                        isSelected && "scale-125 ring-2 ring-primary/30"
+                      )}
+                      style={{ backgroundColor: proj.color }}
+                    />
+                    <span className="truncate">{proj.name}</span>
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.2 text-[10px] font-semibold",
+                      isSelected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {pTasks.length}
+                  </span>
+                </button>
+              );
+            })}
+
+            <div className="pt-3 border-t mt-3" />
             <button
               onClick={() => {
                 toggleTheme();

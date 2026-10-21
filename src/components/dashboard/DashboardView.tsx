@@ -42,7 +42,7 @@ const PRIORITY_COLORS = {
 };
 
 export function DashboardView() {
-  const { tasks, stats, profile, activity, state, reload, projects, team } = useTasks();
+  const { tasks, stats, profile, activity, state, reload, projects, team, setSelectedProjectId } = useTasks();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -247,14 +247,18 @@ export function DashboardView() {
           <div className="flex items-center justify-between border-b pb-3">
             <div>
               <h2 className="text-base font-semibold text-foreground">Project Health & Milestones</h2>
-              <p className="text-xs text-muted-foreground">Progress across active initiatives</p>
+              <p className="text-xs text-muted-foreground">Click any project to inspect its tasks & board</p>
             </div>
-            <Link
-              to="/tasks"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProjectId("all");
+                navigate({ to: "/tasks" });
+              }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline cursor-pointer"
             >
               All projects <ArrowRight className="size-3" />
-            </Link>
+            </button>
           </div>
 
           <div className="space-y-4">
@@ -264,11 +268,19 @@ export function DashboardView() {
               const rate = pTasks.length > 0 ? Math.round((completed / pTasks.length) * 100) : 0;
 
               return (
-                <div key={proj.id} className="space-y-1.5 rounded-lg border bg-muted/20 p-3">
+                <div
+                  key={proj.id}
+                  onClick={() => {
+                    setSelectedProjectId(proj.id);
+                    navigate({ to: "/tasks" });
+                  }}
+                  className="space-y-1.5 rounded-lg border bg-muted/20 p-3 transition-all hover:border-primary/40 hover:bg-muted/40 hover:shadow-2xs cursor-pointer group"
+                  title={`View tasks for ${proj.name}`}
+                >
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="size-2.5 rounded-full" style={{ backgroundColor: proj.color }} />
-                      <span className="font-semibold text-foreground text-sm">{proj.name}</span>
+                      <span className="size-2.5 rounded-full group-hover:scale-125 transition-transform shrink-0" style={{ backgroundColor: proj.color }} />
+                      <span className="font-semibold text-foreground text-sm group-hover:text-primary transition-colors">{proj.name}</span>
                       <span className="text-[10px] uppercase font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                         {proj.key}
                       </span>
@@ -278,7 +290,7 @@ export function DashboardView() {
                   <Progress value={rate} className="h-2" />
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
                     <span>Lead: {proj.lead}</span>
-                    <span>{completed} of {pTasks.length} tasks completed</span>
+                    <span className="group-hover:text-primary transition-colors">{completed} of {pTasks.length} tasks completed &rarr;</span>
                   </div>
                 </div>
               );
