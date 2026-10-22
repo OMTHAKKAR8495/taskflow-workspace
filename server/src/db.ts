@@ -3,8 +3,15 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+const getDirname = (): string => {
+  try {
+    return path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return process.cwd();
+  }
+};
+const currentDir = getDirname();
+dotenv.config({ path: path.resolve(currentDir, "../.env") });
 dotenv.config();
 
 const { Pool } = pg;
