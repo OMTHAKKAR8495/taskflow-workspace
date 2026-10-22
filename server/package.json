@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --packages=external --footer:js=\"module.exports = index_default; module.exports.default = index_default;\" --outfile=index.js",
+    "build": "tsc && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --external:pg-native --footer:js=\"module.exports = index_default; module.exports.default = index_default;\" --outfile=index.js",
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
