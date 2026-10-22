@@ -1,7 +1,8 @@
 import type { TaskService } from "./taskService.types";
 import type { Milestone, NotificationItem, Project, Task, TaskStatus } from "@/types";
+import { getApiBaseUrl } from "@/lib/api-config";
 
-const BASE = import.meta.env["VITE_API_URL"] ?? "http://localhost:4000/api";
+const BASE = getApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;

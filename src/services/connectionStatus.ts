@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from "@/lib/api-config";
+
 export type BackendMode = "connected" | "offline";
 
 let currentMode: BackendMode = "offline";
@@ -18,9 +20,10 @@ export const connectionStatus = {
     };
   },
   checkHealth: async (): Promise<boolean> => {
-    const base = import.meta.env["VITE_API_URL"] || "http://localhost:4000/api";
+    const base = getApiBaseUrl();
     try {
       const res = await fetch(`${base}/health`, {
+
         method: "GET",
         signal: AbortSignal.timeout(2000),
       });
