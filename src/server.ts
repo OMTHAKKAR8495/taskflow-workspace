@@ -47,6 +47,15 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      // Forward /api/* to internal server service binding if reached here
+      if (typeof process !== "undefined" && process.env?.SERVER_URL) {
+        const url = new URL(request.url);
+        if (url.pathname.startsWith("/api/")) {
+          const targetUrl = new URL(url.pathname + url.search, process.env.SERVER_URL);
+          return fetch(new Request(targetUrl, request));
+        }
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
