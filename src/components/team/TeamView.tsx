@@ -23,6 +23,7 @@ import { StatusBadge, PriorityBadge } from "@/components/tasks/badges";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { toast } from "sonner";
 import type { Task, TeamMember } from "@/types";
+import { getApiBaseUrl } from "@/lib/api-config";
 
 export function TeamView() {
   const { team, tasks, projects } = useTasks();
@@ -61,7 +62,7 @@ export function TeamView() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch("http://localhost:4000/api/team", {
+      const res = await fetch(`${getApiBaseUrl()}/team`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), email: email.trim(), role: role.trim() }),

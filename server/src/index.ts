@@ -41,7 +41,7 @@ app.use((req, res, next) => {
 });
 
 // Health check endpoint
-app.get("/api/health", async (req, res) => {
+const handleHealth = async (req: express.Request, res: express.Response) => {
   try {
     const dbCheck = await query("SELECT NOW() as db_time");
     res.json({
@@ -57,19 +57,23 @@ app.get("/api/health", async (req, res) => {
       message: err.message,
     });
   }
-});
+};
 
-// Mount Routes
-app.use("/api/auth", authRouter);
-app.use("/api/tasks", tasksRouter);
-app.use("/api/projects", projectsRouter);
-app.use("/api/team", teamRouter);
-app.use("/api/profile", profileRouter);
-app.use("/api/activity", activityRouter);
-app.use("/api/notifications", notificationsRouter);
+app.get("/api/health", handleHealth);
+app.get("/health", handleHealth);
+app.get("/", (req, res) => res.json({ name: "TaskFlow Nexus Enterprise API", status: "ok" }));
+
+// Mount Routes (supporting both /api/* and root /* for flexible reverse-proxy / serverless rewrites)
+app.use(["/api/auth", "/auth"], authRouter);
+app.use(["/api/tasks", "/tasks"], tasksRouter);
+app.use(["/api/projects", "/projects"], projectsRouter);
+app.use(["/api/team", "/team"], teamRouter);
+app.use(["/api/profile", "/profile"], profileRouter);
+app.use(["/api/activity", "/activity"], activityRouter);
+app.use(["/api/notifications", "/notifications"], notificationsRouter);
 
 // 404 handler for API
-app.use("/api/*", (req, res) => {
+app.use(["/api/*", "/*"], (req, res) => {
   res.status(404).json({ error: "Endpoint not found" });
 });
 
@@ -101,6 +105,9 @@ async function startServer() {
   }
 }
 
-startServer();
+// In serverless environments like Vercel, export the handler directly without starting a port listener
+if (!process.env.VERCEL) {
+  startServer();
+}
 
 export default app;

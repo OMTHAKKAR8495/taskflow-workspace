@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { getApiBaseUrl } from "@/lib/api-config";
 
 export interface AuthUser {
   id: string;
@@ -32,7 +33,7 @@ const REGISTERED_USERS_KEY = "taskflow:users_db";
 const LAST_USER_KEY = "taskflow:last_username";
 const TOKEN_STORAGE_KEY = "taskflow:jwt_token";
 
-const BASE = import.meta.env["VITE_API_URL"] || "http://localhost:4000/api";
+const BASE = getApiBaseUrl();
 
 const DEFAULT_ACCOUNTS: StoredAccount[] = [
   {

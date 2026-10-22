@@ -1,9 +1,21 @@
 import pg from "pg";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 dotenv.config();
 
 const { Pool } = pg;
+
+const isRemoteDb = Boolean(
+  process.env.DATABASE_URL &&
+    (process.env.DATABASE_URL.includes("supabase") ||
+      process.env.DATABASE_URL.includes("sslmode=require") ||
+      process.env.DATABASE_URL.includes("neon.tech") ||
+      process.env.DB_SSL === "true")
+);
 
 export const pool = new Pool({
   connectionString:
@@ -11,6 +23,7 @@ export const pool = new Pool({
     `postgresql://${process.env.PGUSER || process.env.USER || "postgres"}:${process.env.PGPASSWORD || ""}@${
       process.env.PGHOST || "localhost"
     }:${process.env.PGPORT || 5432}/${process.env.PGDATABASE || "taskflow_db"}`,
+  ssl: isRemoteDb ? { rejectUnauthorized: false } : undefined,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,

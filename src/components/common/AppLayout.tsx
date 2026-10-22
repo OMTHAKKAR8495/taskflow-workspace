@@ -825,7 +825,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               </div>
               <p className="text-xs text-muted-foreground">
                 {backendMode === "connected"
-                  ? "Connected to Express + PostgreSQL on http://localhost:4000/api with bcrypt JWT sessions."
+                  ? "Connected to live PostgreSQL database with authenticated JWT sessions."
                   : "Operating in safe offline mode with client-side persistence in localStorage."}
               </p>
               <Button

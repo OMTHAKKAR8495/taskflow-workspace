@@ -21,6 +21,7 @@ import { connectionStatus, type BackendMode } from "@/services/connectionStatus"
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { getApiBaseUrl } from "@/lib/api-config";
 
 export function SettingsView() {
   const { theme, setTheme } = useTheme();
@@ -42,7 +43,7 @@ export function SettingsView() {
   const handleCheckHealth = async () => {
     setTestingConnection(true);
     try {
-      const res = await fetch("http://localhost:4000/api/health");
+      const res = await fetch(`${getApiBaseUrl()}/health`);
       if (res.ok) {
         const data = await res.json();
         setHealthInfo(data);
@@ -210,7 +211,7 @@ export function SettingsView() {
 
           <div className="text-xs text-muted-foreground space-y-1 pt-1">
             <p>
-              • <strong>Backend Endpoint:</strong> <code>http://localhost:4000/api</code>
+              • <strong>Backend Endpoint:</strong> <code>{getApiBaseUrl()}</code>
             </p>
             <p>
               • <strong>Database Engine:</strong> PostgreSQL 14+ with pg connection pool
