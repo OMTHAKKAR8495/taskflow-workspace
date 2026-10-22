@@ -23,10 +23,9 @@ import { StatusBadge, PriorityBadge } from "@/components/tasks/badges";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { toast } from "sonner";
 import type { Task, TeamMember } from "@/types";
-import { getApiBaseUrl } from "@/lib/api-config";
 
 export function TeamView() {
-  const { team, tasks, projects } = useTasks();
+  const { team, tasks, projects, addTeamMember } = useTasks();
   const [search, setSearch] = useState("");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
@@ -62,19 +61,16 @@ export function TeamView() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${getApiBaseUrl()}/team`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), email: email.trim(), role: role.trim() }),
+      await addTeamMember({
+        name: name.trim(),
+        email: email.trim(),
+        role: role.trim(),
       });
-      if (!res.ok) throw new Error("Failed to add member");
-      toast.success(`Team member ${name} added!`);
       setAddMemberOpen(false);
       setName("");
       setEmail("");
-      window.location.reload();
-    } catch {
-      toast.error("Failed to add member");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to add member");
     } finally {
       setIsSubmitting(false);
     }

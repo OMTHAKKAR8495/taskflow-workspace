@@ -181,6 +181,11 @@ export const apiTaskService: TaskService = {
 
   // Team & Personal Cockpit
   getTeamMembers: () => request("/team"),
+  addTeamMember: (data) =>
+    request("/team", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   getMyWorkTasks: () => request("/tasks/my-work"),
 
   // Notifications
