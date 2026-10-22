@@ -16,7 +16,7 @@
     "server": {
       "root": "server",
       "framework": "express",
-      "entrypoint": "src/index.ts"
+      "entrypoint": "index.mjs"
     }
   },
   "rewrites": [
