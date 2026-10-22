@@ -70,7 +70,7 @@ Your repository is configured via the root [vercel.json](file:///Users/omthakkar
 1. Go to [Vercel Dashboard](https://vercel.com/new) and import your `taskflow-workspace` repository.
 2. Vercel automatically detects the root `vercel.json` and multi-service setup.
 3. In **Environment Variables**, add:
-   - `DATABASE_URL`: `postgresql://postgres:9558413347%40Om@db.ciqhtdrunnnwsiyobtvp.supabase.co:5432/postgres`
+   - `DATABASE_URL`: `postgresql://postgres.ciqhtdrunnnwsiyobtvp:9558413347%40Om@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres` (Important: Use Supavisor Pooler URL as direct `db.*.supabase.co` is IPv6-only)
    - `JWT_SECRET`: `your_random_secret_key`
 4. Click **Deploy**.
 5. Both services will build and deploy under a single public URL (e.g., `https://taskflow-nexus.vercel.app`).
