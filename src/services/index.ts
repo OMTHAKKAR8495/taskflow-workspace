@@ -220,6 +220,16 @@ class ResilientTaskService implements TaskService {
     );
   }
 
+  addTeamMember(data: { name: string; email: string; role: string; avatarUrl?: string }) {
+    return this.execute(
+      () =>
+        apiTaskService.addTeamMember
+          ? apiTaskService.addTeamMember(data)
+          : mockTaskService.addTeamMember!(data),
+      () => mockTaskService.addTeamMember!(data),
+    );
+  }
+
   getMyWorkTasks() {
     return this.execute(
       () => apiTaskService.getMyWorkTasks!(),

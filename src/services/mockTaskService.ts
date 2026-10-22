@@ -211,6 +211,45 @@ export const mockTaskService: TaskService = {
     return load().team;
   },
 
+  async addTeamMember(data: { name: string; email: string; role: string; avatarUrl?: string }) {
+    await wait();
+    const store = load();
+    const cleanName = data.name.trim();
+    const cleanEmail = data.email.trim();
+    const cleanRole = data.role.trim() || "Software Engineer";
+    const initials =
+      cleanName
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2) || "TM";
+
+    const newMember: TeamMember = {
+      id: uid("team"),
+      name: cleanName,
+      email: cleanEmail,
+      role: cleanRole,
+      avatarUrl: data.avatarUrl || "",
+      initials,
+      workload: {
+        activeTasks: 0,
+        inProgressTasks: 0,
+        inReviewTasks: 0,
+        blockedTasks: 0,
+        completedTasks: 0,
+        overdueTasks: 0,
+        capacityPercent: 0,
+        totalEstimatedHours: 0,
+      },
+      projects: [],
+    };
+
+    store.team.push(newMember);
+    save(store);
+    return newMember;
+  },
+
   async createTask(data: TaskInput) {
     await wait();
     const store = load();

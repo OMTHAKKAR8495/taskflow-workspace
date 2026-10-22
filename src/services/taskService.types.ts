@@ -79,6 +79,7 @@ export interface TaskService {
 
   // Team & Personal Cockpit
   getTeamMembers(): Promise<TeamMember[]>;
+  addTeamMember?(data: { name: string; email: string; role: string; avatarUrl?: string }): Promise<TeamMember>;
   getMyWorkTasks?(): Promise<{
     assignedToMe: Task[];
     reviewing: Task[];

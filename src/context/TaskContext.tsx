@@ -69,6 +69,7 @@ interface TaskContextValue {
   deleteProject: (id: string) => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
+  addTeamMember: (data: { name: string; email: string; role: string; avatarUrl?: string }) => Promise<TeamMember>;
   updateProfile: (data: ProfileInput) => Promise<Profile>;
 }
 
@@ -347,6 +348,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     toast.success("All notifications marked as read");
   }, []);
 
+  const addTeamMember = useCallback(
+    async (data: { name: string; email: string; role: string; avatarUrl?: string }) => {
+      if (!taskService.addTeamMember) {
+        throw new Error("Add team member is not supported");
+      }
+      const member = await taskService.addTeamMember(data);
+      setTeam((prev) => [...prev, member]);
+      toast.success(`Team member "${member.name}" added!`);
+      return member;
+    },
+    [],
+  );
+
   const value = useMemo<TaskContextValue>(
     () => ({
       tasks,
@@ -402,6 +416,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       deleteProject,
       markNotificationRead,
       markAllNotificationsRead,
+      addTeamMember,
       updateProfile: async (data) => {
         const p = await taskService.updateProfile(data);
         setProfile(p);
@@ -440,6 +455,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       deleteProject,
       markNotificationRead,
       markAllNotificationsRead,
+      addTeamMember,
       refreshActivity,
       updateCurrentUser,
     ],
