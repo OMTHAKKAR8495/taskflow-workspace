@@ -48,12 +48,16 @@ export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
       // Forward /api/* to internal server service binding if reached here
-      if (typeof process !== "undefined" && process.env?.SERVER_URL) {
-        const url = new URL(request.url);
-        if (url.pathname.startsWith("/api/")) {
+      const url = new URL(request.url);
+      if (url.pathname.startsWith("/api/")) {
+        if (typeof process !== "undefined" && process.env?.SERVER_URL) {
           const targetUrl = new URL(url.pathname + url.search, process.env.SERVER_URL);
           return fetch(new Request(targetUrl, request));
         }
+        return new Response(JSON.stringify({ error: "Backend API unavailable" }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        });
       }
 
       const handler = await getServerEntry();

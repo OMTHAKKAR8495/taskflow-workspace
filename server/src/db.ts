@@ -9,24 +9,41 @@ dotenv.config();
 
 const { Pool } = pg;
 
+function getNormalizedDatabaseUrl(): string | undefined {
+  let url = process.env.DATABASE_URL;
+  if (!url) return undefined;
+
+  // Automatically migrate legacy IPv6-only Supabase direct host to IPv4 Supavisor pooler
+  if (url.includes("db.your-project-ref.supabase.co")) {
+    url = url
+      .replace("postgres:", "postgres.your-project-ref:")
+      .replace("db.your-project-ref.supabase.co:5432", "aws-0-ap-northeast-1.pooler.supabase.com:5432")
+      .replace("db.your-project-ref.supabase.co", "aws-0-ap-northeast-1.pooler.supabase.com:5432");
+  }
+
+  return url;
+}
+
+const resolvedDbUrl = getNormalizedDatabaseUrl();
+
 const isRemoteDb = Boolean(
-  process.env.DATABASE_URL &&
-    (process.env.DATABASE_URL.includes("supabase") ||
-      process.env.DATABASE_URL.includes("sslmode=require") ||
-      process.env.DATABASE_URL.includes("neon.tech") ||
+  resolvedDbUrl &&
+    (resolvedDbUrl.includes("supabase") ||
+      resolvedDbUrl.includes("sslmode=require") ||
+      resolvedDbUrl.includes("neon.tech") ||
       process.env.DB_SSL === "true")
 );
 
 export const pool = new Pool({
   connectionString:
-    process.env.DATABASE_URL ||
+    resolvedDbUrl ||
     `postgresql://${process.env.PGUSER || process.env.USER || "postgres"}:${process.env.PGPASSWORD || ""}@${
       process.env.PGHOST || "localhost"
     }:${process.env.PGPORT || 5432}/${process.env.PGDATABASE || "taskflow_db"}`,
   ssl: isRemoteDb ? { rejectUnauthorized: false } : undefined,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on("error", (err) => {
