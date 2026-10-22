@@ -4,7 +4,14 @@ import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
 import { pool, query } from "./db.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const getDirname = (): string => {
+  try {
+    return path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return process.cwd();
+  }
+};
+const seedDirname = getDirname();
 
 function iso(daysFromNow: number, hour = 10) {
   const d = new Date();
@@ -461,7 +468,7 @@ const SEED_TASKS = [
 
 export async function seedDatabase(force = false) {
   // 1. Run Schema
-  const schemaPath = path.resolve(__dirname, "../schema.sql");
+  const schemaPath = path.resolve(seedDirname, "../schema.sql");
   if (fs.existsSync(schemaPath)) {
     const schemaSql = fs.readFileSync(schemaPath, "utf-8");
     await query(schemaSql);
