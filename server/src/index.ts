@@ -9,6 +9,7 @@ import activityRouter from "./routes/activity.js";
 import projectsRouter from "./routes/projects.js";
 import teamRouter from "./routes/team.js";
 import notificationsRouter from "./routes/notifications.js";
+import { invitationsRouter } from "./routes/invitations.js";
 import { pool, query } from "./db.js";
 import { seedDatabase } from "./seed.js";
 
@@ -71,6 +72,7 @@ app.use(["/api/team", "/team"], teamRouter);
 app.use(["/api/profile", "/profile"], profileRouter);
 app.use(["/api/activity", "/activity"], activityRouter);
 app.use(["/api/notifications", "/notifications"], notificationsRouter);
+app.use(["/api", "/"], invitationsRouter);
 
 // 404 handler for API
 app.use(["/api/*", "/*"], (req, res) => {

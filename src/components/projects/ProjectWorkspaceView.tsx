@@ -20,6 +20,13 @@ import {
   Trash2,
   UserPlus,
   Flag,
+  Mail,
+  Copy,
+  Send,
+  RefreshCw,
+  XCircle,
+  Info,
+  ShieldAlert,
 } from "lucide-react";
 import { useTasks } from "@/context/TaskContext";
 import { taskService } from "@/services";
@@ -27,12 +34,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { StatusBadge, PriorityBadge } from "@/components/tasks/badges";
 import { KanbanBoard } from "@/components/tasks/KanbanBoard";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { toast } from "sonner";
-import type { Milestone, Project, Task, TaskPriority, TaskStatus } from "@/types";
+import type {
+  Milestone,
+  Project,
+  Task,
+  TaskPriority,
+  TaskStatus,
+  ProjectInvitation,
+  CreateInvitationResponse,
+} from "@/types";
 
 interface ProjectWorkspaceViewProps {
   projectId: string;
@@ -62,6 +77,18 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedRole, setSelectedRole] = useState("developer");
 
+  // Project Invitations state
+  const [invitations, setInvitations] = useState<ProjectInvitation[]>([]);
+  const [loadingInvitations, setLoadingInvitations] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("developer");
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteResult, setInviteResult] = useState<CreateInvitationResponse | null>(null);
+  const [inviteResultModalOpen, setInviteResultModalOpen] = useState(false);
+  const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
+
   const project = useMemo(() => {
     return projects.find((p) => p.id === projectId) || projectDetail;
   }, [projects, projectId, projectDetail]);
@@ -78,9 +105,128 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
     }
   };
 
+  const loadInvitations = async () => {
+    try {
+      setLoadingInvitations(true);
+      if (taskService.getProjectInvitations) {
+        const list = await taskService.getProjectInvitations(projectId);
+        setInvitations(list || []);
+      }
+    } catch (err) {
+      console.error("Error loading project invitations:", err);
+    } finally {
+      setLoadingInvitations(false);
+    }
+  };
+
   useEffect(() => {
     void loadProjectDetail();
+    void loadInvitations();
   }, [projectId]);
+
+  const handleSendInvitation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+
+    // Check if user is already an active member of this project
+    const cleanEmail = inviteEmail.trim().toLowerCase();
+    const isAlreadyMember = (projectDetail?.members || []).some(
+      (m) => m.email && m.email.toLowerCase() === cleanEmail,
+    );
+    if (isAlreadyMember) {
+      toast.error(`${cleanEmail} is already an active member of this project.`);
+      return;
+    }
+
+    // Check if duplicate pending invite exists
+    const hasPendingInvite = invitations.some(
+      (inv) => inv.recipientEmail.toLowerCase() === cleanEmail && inv.status === "pending",
+    );
+    if (hasPendingInvite) {
+      toast.error(`A pending invitation already exists for ${cleanEmail}.`);
+      return;
+    }
+
+    setIsInviting(true);
+    try {
+      if (!taskService.createProjectInvitation) throw new Error("Service unavailable");
+      const res = await taskService.createProjectInvitation(projectId, {
+        email: cleanEmail,
+        role: inviteRole,
+        message: inviteMessage.trim() || undefined,
+      });
+
+      setInviteResult(res);
+      setInviteModalOpen(false);
+      setInviteResultModalOpen(true);
+      setInviteEmail("");
+      setInviteMessage("");
+      void loadInvitations();
+
+      if (res.emailSent) {
+        toast.success(`Invitation email sent to ${cleanEmail}`);
+      } else {
+        toast.info("Invitation created! Shareable link generated.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create invitation");
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  const handleCopyInviteLink = (url: string) => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(url);
+      toast.success("Invitation link copied to clipboard!");
+    } else {
+      toast.info("Could not access clipboard. Please copy manually.");
+    }
+  };
+
+  const handleResendInvitation = async (invitationId: string) => {
+    setActionInProgressId(invitationId);
+    try {
+      if (!taskService.resendProjectInvitation) throw new Error("Service unavailable");
+      const res = await taskService.resendProjectInvitation(invitationId);
+      void loadInvitations();
+      if (res.emailSent) {
+        toast.success("Invitation resent via email with a rotated token!");
+      } else {
+        toast.info("Invitation token rotated! Copy the updated link from the dialog.");
+        setInviteResult({
+          success: true,
+          invitation: invitations.find((i) => i.id === invitationId) as any,
+          rawToken: res.rawToken,
+          invitationUrl: res.invitationUrl,
+          emailSent: false,
+          emailError: res.emailError,
+        });
+        setInviteResultModalOpen(true);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend invitation");
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  const handleRevokeInvitation = async (invitationId: string, email: string) => {
+    if (!confirm(`Are you sure you want to revoke the invitation for ${email}? The link will immediately stop working.`)) {
+      return;
+    }
+    setActionInProgressId(invitationId);
+    try {
+      if (!taskService.revokeProjectInvitation) throw new Error("Service unavailable");
+      await taskService.revokeProjectInvitation(invitationId);
+      toast.success("Invitation revoked successfully");
+      void loadInvitations();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to revoke invitation");
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
 
   const projectTasks = useMemo(() => {
     return tasks.filter((t) => t.projectId === projectId && !t.isTrash);
@@ -578,54 +724,248 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
         </TabsContent>
 
         {/* Tab 5: Team & Roles */}
-        <TabsContent value="team" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <p className="text-xs text-muted-foreground">
-              Project members collaborate on tasks, review code, and track progress.
-            </p>
-            <Button size="sm" onClick={() => setAddMemberModalOpen(true)} className="text-xs gap-1.5 cursor-pointer">
-              <UserPlus className="size-3.5" /> Add Member
-            </Button>
+        <TabsContent value="team" className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Project Collaborators</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Manage active team memberships and pending email invitations for this workspace.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => setInviteModalOpen(true)}
+                className="text-xs gap-1.5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs shadow-indigo-600/30"
+              >
+                <Mail className="size-3.5" /> Invite Member
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setAddMemberModalOpen(true)}
+                className="text-xs gap-1.5 cursor-pointer"
+              >
+                <UserPlus className="size-3.5" /> Add Existing
+              </Button>
+            </div>
           </div>
 
-          <div className="divide-y rounded-xl border bg-card shadow-xs">
-            {(projectDetail?.members || []).map((mem) => (
-              <div key={mem.id} className="p-3.5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs">
-                    {mem.initials}
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-semibold text-foreground">{mem.name}</h4>
-                    <span className="text-[11px] text-muted-foreground">{mem.email}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <Badge variant="outline" className="text-xs capitalize font-medium">
-                    {mem.role}
-                  </Badge>
-                  {mem.role !== "owner" && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={async () => {
-                        if (confirm(`Remove ${mem.name} from this project?`)) {
-                          if (taskService.removeProjectMember) {
-                            await taskService.removeProjectMember(projectId, mem.id);
-                            void loadProjectDetail();
-                            toast.success("Member removed");
-                          }
-                        }
-                      }}
-                      className="text-rose-500 hover:text-rose-600 size-7 p-0 cursor-pointer"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  )}
-                </div>
+          {/* Active Members Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+                  Active Team Members
+                </span>
+                <Badge variant="outline" className="text-[10px] bg-muted">
+                  {(projectDetail?.members || []).length}
+                </Badge>
               </div>
-            ))}
+            </div>
+
+            <div className="divide-y rounded-xl border bg-card shadow-xs">
+              {(projectDetail?.members || []).length === 0 ? (
+                <div className="p-6 text-center text-xs text-muted-foreground">
+                  No active members assigned yet.
+                </div>
+              ) : (
+                (projectDetail?.members || []).map((mem) => (
+                  <div key={mem.id} className="p-3.5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs shadow-2xs">
+                        {mem.initials}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-foreground">{mem.name}</h4>
+                        <span className="text-[11px] text-muted-foreground">{mem.email}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className="text-xs capitalize font-medium">
+                        {mem.role}
+                      </Badge>
+                      {mem.role !== "owner" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={async () => {
+                            if (confirm(`Remove ${mem.name} from this project?`)) {
+                              if (taskService.removeProjectMember) {
+                                await taskService.removeProjectMember(projectId, mem.id);
+                                void loadProjectDetail();
+                                toast.success("Member removed");
+                              }
+                            }
+                          }}
+                          className="text-rose-500 hover:text-rose-600 size-7 p-0 cursor-pointer"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Pending Invitations Section */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+                  Pending & Recent Invitations
+                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] ${
+                    invitations.filter((i) => i.status === "pending").length > 0
+                      ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                      : "bg-muted"
+                  }`}
+                >
+                  {invitations.length}
+                </Badge>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadInvitations()}
+                disabled={loadingInvitations}
+                className="text-[11px] h-7 gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <RefreshCw className={`size-3 ${loadingInvitations ? "animate-spin" : ""}`} /> Refresh
+              </Button>
+            </div>
+
+            <div className="divide-y rounded-xl border bg-card shadow-xs">
+              {invitations.length === 0 ? (
+                <div className="p-6 text-center text-xs text-muted-foreground">
+                  No invitations sent yet. Click "Invite Member" above to invite collaborators via email or shareable link.
+                </div>
+              ) : (
+                invitations.map((inv) => {
+                  const isPending = inv.status === "pending";
+                  const isExpired = inv.status === "expired" || (isPending && new Date(inv.expiresAt) <= new Date());
+                  const isRevoked = inv.status === "revoked";
+                  const isAccepted = inv.status === "accepted";
+                  const isDeclined = inv.status === "declined";
+
+                  return (
+                    <div
+                      key={inv.id}
+                      className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="size-8 rounded-full bg-indigo-500/10 text-indigo-600 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                          <Mail className="size-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold text-foreground">{inv.recipientEmail}</span>
+                            <Badge variant="outline" className="text-[10px] capitalize font-medium">
+                              {inv.role}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-semibold ${
+                                isPending && !isExpired
+                                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                                  : isAccepted
+                                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                    : isRevoked
+                                      ? "bg-slate-500/15 text-slate-500 border-slate-500/30"
+                                      : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                              }`}
+                            >
+                              {isPending && !isExpired
+                                ? "Pending"
+                                : isAccepted
+                                  ? "Accepted"
+                                  : isRevoked
+                                    ? "Revoked"
+                                    : isDeclined
+                                      ? "Declined"
+                                      : "Expired"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1 flex-wrap">
+                            <span>
+                              Invited by <strong className="text-foreground">{inv.inviterName || "Lead"}</strong>
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Created {new Date(inv.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Expires {new Date(inv.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </span>
+                          </div>
+                          {inv.message && (
+                            <p className="text-[11px] text-muted-foreground italic mt-1 line-clamp-1">
+                              "{inv.message}"
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Invitation Actions */}
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        {isPending && !isExpired && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+                                // Note: token hash is in DB; resend button gives fresh raw token if needed
+                                toast.info("To generate a fresh active link, click Resend.");
+                              }}
+                              className="text-xs h-8 gap-1.5 cursor-pointer"
+                              title="Click Resend to generate and copy a fresh link"
+                            >
+                              <Copy className="size-3.5" /> Copy Link
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={actionInProgressId === inv.id}
+                              onClick={() => void handleResendInvitation(inv.id)}
+                              className="text-xs h-8 gap-1.5 cursor-pointer text-indigo-600 hover:text-indigo-700"
+                            >
+                              <RefreshCw className={`size-3.5 ${actionInProgressId === inv.id ? "animate-spin" : ""}`} /> Resend
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={actionInProgressId === inv.id}
+                              onClick={() => void handleRevokeInvitation(inv.id, inv.recipientEmail)}
+                              className="text-xs h-8 gap-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 cursor-pointer"
+                            >
+                              <XCircle className="size-3.5" /> Revoke
+                            </Button>
+                          </>
+                        )}
+                        {(isExpired || isRevoked) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={actionInProgressId === inv.id}
+                            onClick={() => void handleResendInvitation(inv.id)}
+                            className="text-xs h-8 gap-1.5 text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                          >
+                            <RefreshCw className={`size-3.5 ${actionInProgressId === inv.id ? "animate-spin" : ""}`} /> Reinstate & Resend
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </TabsContent>
       </Tabs>
@@ -691,7 +1031,10 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
       <Dialog open={addMemberModalOpen} onOpenChange={setAddMemberModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Member to Project</DialogTitle>
+            <DialogTitle>Add Existing Member to Project</DialogTitle>
+            <DialogDescription>
+              Assign an existing workspace member directly to this project.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddMember} className="space-y-4 pt-2">
             <div className="space-y-1.5">
@@ -734,6 +1077,198 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Invite Member Modal */}
+      <Dialog open={inviteModalOpen} onOpenChange={setInviteModalOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="size-4 text-indigo-500" /> Invite Collaborator to Project
+            </DialogTitle>
+            <DialogDescription>
+              Send an email invitation or generate a single-use shareable acceptance link.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSendInvitation} className="space-y-4 pt-2">
+            {/* Project Context */}
+            <div className="p-3 rounded-lg bg-muted/40 border flex items-center justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">
+                  Project Workspace
+                </span>
+                <span className="text-xs font-bold text-foreground">
+                  {project?.name || "Current Project"}
+                </span>
+              </div>
+              <Badge variant="outline" className="text-[10px] font-mono">
+                {project?.key || "KEY"}
+              </Badge>
+            </div>
+
+            {/* Recipient Email */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                <span>Recipient Email Address *</span>
+                <span className="text-[10px] text-muted-foreground font-normal">Must match recipient account</span>
+              </label>
+              <input
+                type="email"
+                required
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="colleague@company.com"
+                className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+              />
+            </div>
+
+            {/* Role Selection */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Offered Project Role *</label>
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value)}
+                className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs capitalize"
+              >
+                <option value="developer">Developer (Full task & code contribution)</option>
+                <option value="designer">Designer (Design systems & UI reviews)</option>
+                <option value="lead">Lead (Sprint management & assignments)</option>
+                <option value="reviewer">Reviewer (Sign-off & QA validation)</option>
+                <option value="viewer">Viewer (Read-only observation)</option>
+                <option value="member">General Member</option>
+                <option value="owner">Project Owner (Full administrative access)</option>
+              </select>
+            </div>
+
+            {/* Optional Personal Note */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Personal Message (Optional)</label>
+              <textarea
+                rows={3}
+                value={inviteMessage}
+                onChange={(e) => setInviteMessage(e.target.value)}
+                placeholder="e.g. Welcome! Please accept this invite to access the core sprint board and milestone roadmap."
+                className="w-full rounded-lg border border-input bg-card p-2 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setInviteModalOpen(false)}
+                disabled={isInviting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isInviting}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 shadow-xs shadow-indigo-600/30"
+              >
+                <Send className="size-3.5" />
+                {isInviting ? "Sending Invitation..." : "Send Invitation"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invitation Created & Shareable Link Modal */}
+      {inviteResult && (
+        <Dialog open={inviteResultModalOpen} onOpenChange={setInviteResultModalOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-foreground">
+                <Check className="size-4 text-emerald-500 stroke-[3]" /> Invitation Ready
+              </DialogTitle>
+              <DialogDescription>
+                Review invitation details and share the secure single-use acceptance link.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 pt-2">
+              {/* Delivery Notification Banner */}
+              {inviteResult.emailSent ? (
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs flex items-start gap-2.5">
+                  <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Email Invitation Dispatched</span>
+                    <span>An invitation email has been sent to <strong>{inviteResult.invitation.recipientEmail}</strong>.</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2.5">
+                  <Info className="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <span className="font-bold block">Email Service Not Configured</span>
+                    <span>
+                      {inviteResult.emailError || "SMTP / Resend provider is not active."} You can copy the generated secure acceptance link below and share it directly.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata summary */}
+              <div className="grid grid-cols-2 gap-2 text-xs p-3 rounded-lg bg-muted/40 border">
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Recipient</span>
+                  <span className="font-semibold text-foreground">{inviteResult.invitation.recipientEmail}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Role Offered</span>
+                  <Badge variant="outline" className="text-[10px] capitalize font-semibold mt-0.5">
+                    {inviteResult.invitation.role}
+                  </Badge>
+                </div>
+                <div className="mt-2">
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Status</span>
+                  <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-semibold mt-0.5">
+                    Pending Acceptance
+                  </Badge>
+                </div>
+                <div className="mt-2">
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Expires</span>
+                  <span className="text-muted-foreground">
+                    {new Date(inviteResult.invitation.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Shareable Link Box */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-foreground">Secure Shareable Link</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={inviteResult.invitationUrl}
+                    className="flex-1 h-9 rounded-lg border border-input bg-card px-3 text-xs font-mono text-muted-foreground select-all"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => handleCopyInviteLink(inviteResult.invitationUrl)}
+                    className="gap-1.5 shrink-0 bg-primary cursor-pointer text-xs"
+                  >
+                    <Copy className="size-3.5" /> Copy Link
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  The recipient must accept this link using an account matching <strong>{inviteResult.invitation.recipientEmail}</strong>.
+                </p>
+              </div>
+
+              <div className="flex justify-end pt-3 border-t">
+                <Button size="sm" onClick={() => setInviteResultModalOpen(false)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

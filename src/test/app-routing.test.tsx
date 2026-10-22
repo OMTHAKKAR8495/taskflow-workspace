@@ -62,6 +62,11 @@ describe("App routing - 8 Enterprise Workspace Routes", () => {
     const matches = router.matchRoutes("/tasks");
     expect(matches.at(-1)?.pathname).toMatch(/^\/tasks\/?$/);
   });
+
+  it("matches Invitation Acceptance Landing Route (/invitations/accept)", () => {
+    const matches = router.matchRoutes("/invitations/accept");
+    expect(matches.at(-1)?.pathname).toBe("/invitations/accept");
+  });
 });
 
 describe("Task business logic", () => {

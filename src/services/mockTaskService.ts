@@ -26,6 +26,8 @@ interface Store {
   team: TeamMember[];
   profile: Profile;
   activity: Activity[];
+  invitations?: any[];
+  rawTokens?: Record<string, string>;
 }
 
 const LATENCY_MS = 100;
@@ -605,6 +607,199 @@ export const mockTaskService: TaskService = {
   async getActivity() {
     await wait();
     return load().activity;
+  },
+
+  async getProjectInvitations(projectId: string) {
+    await wait();
+    const store = load();
+    const list = store.invitations || [];
+    return list.filter((i) => i.projectId === projectId);
+  },
+
+  async createProjectInvitation(projectId: string, data: { email: string; role: string; message?: string }) {
+    await wait();
+    const store = load();
+    if (!store.invitations) store.invitations = [];
+    if (!store.rawTokens) store.rawTokens = {};
+
+    const cleanEmail = data.email.trim().toLowerCase();
+    const existing = store.invitations.find(
+      (i) => i.projectId === projectId && i.recipientEmail.toLowerCase() === cleanEmail && i.status === "pending"
+    );
+    if (existing) {
+      throw new Error("A pending invitation already exists for this email address");
+    }
+
+    const project = store.projects.find((p) => p.id === projectId);
+    const user = getActiveUser();
+    const inviterName = user?.fullName || "Om Thakkar";
+    const inviteId = `inv-mock-${Date.now()}`;
+    const rawToken = `mock-token-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const invitation = {
+      id: inviteId,
+      projectId,
+      projectName: project?.name || "Project",
+      recipientEmail: cleanEmail,
+      role: data.role || "member",
+      status: "pending" as const,
+      message: data.message || "",
+      expiresAt,
+      createdAt: new Date().toISOString(),
+      inviterName,
+    };
+
+    store.invitations.push(invitation);
+    store.rawTokens[rawToken] = inviteId;
+    save(store);
+
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+    const invitationUrl = `${baseUrl}/invitations/accept?token=${rawToken}`;
+
+    return {
+      success: true,
+      invitation,
+      rawToken,
+      invitationUrl,
+      emailSent: false,
+      emailError: "Local development mode: Shareable link generated. Email dispatch unavailable.",
+    };
+  },
+
+  async resendProjectInvitation(invitationId: string) {
+    await wait();
+    const store = load();
+    if (!store.invitations) store.invitations = [];
+    if (!store.rawTokens) store.rawTokens = {};
+
+    const inv = store.invitations.find((i) => i.id === invitationId);
+    if (!inv) throw new Error("Invitation not found");
+
+    const rawToken = `mock-token-rotated-${Date.now()}`;
+    inv.status = "pending";
+    inv.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    store.rawTokens[rawToken] = invitationId;
+    save(store);
+
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+    const invitationUrl = `${baseUrl}/invitations/accept?token=${rawToken}`;
+
+    return {
+      success: true,
+      rawToken,
+      invitationUrl,
+      expiresAt: inv.expiresAt,
+      emailSent: false,
+      emailError: "Local development mode: Shareable link generated.",
+    };
+  },
+
+  async revokeProjectInvitation(invitationId: string) {
+    await wait();
+    const store = load();
+    if (!store.invitations) return;
+    const inv = store.invitations.find((i) => i.id === invitationId);
+    if (inv) {
+      inv.status = "revoked";
+      inv.revokedAt = new Date().toISOString();
+      save(store);
+    }
+  },
+
+  async validateInvitationToken(token: string) {
+    await wait();
+    const store = load();
+    const inviteId = store.rawTokens?.[token];
+    if (!inviteId) {
+      return { valid: false, reason: "not_found", error: "Invitation not found or invalid token." };
+    }
+    const inv = (store.invitations || []).find((i) => i.id === inviteId);
+    if (!inv) {
+      return { valid: false, reason: "not_found", error: "Invitation not found." };
+    }
+    if (inv.status === "accepted") {
+      return { valid: false, reason: "already_accepted", error: "This invitation has already been accepted." };
+    }
+    if (inv.status === "revoked") {
+      return { valid: false, reason: "revoked", error: "This invitation has been revoked." };
+    }
+    if (new Date(inv.expiresAt) <= new Date()) {
+      inv.status = "expired";
+      save(store);
+      return { valid: false, reason: "expired", error: "This invitation has expired." };
+    }
+    const proj = store.projects.find((p) => p.id === inv.projectId);
+    return {
+      valid: true,
+      invitation: {
+        id: inv.id,
+        projectId: inv.projectId,
+        projectName: proj?.name || inv.projectName || "Project",
+        projectKey: proj?.key || "PRJ",
+        projectDescription: proj?.description || "",
+        projectColor: proj?.color || "#4f46e5",
+        recipientEmail: inv.recipientEmail,
+        role: inv.role,
+        message: inv.message || "",
+        expiresAt: inv.expiresAt,
+        inviterName: inv.inviterName || "A Project Manager",
+      },
+    };
+  },
+
+  async acceptProjectInvitation(token: string) {
+    await wait();
+    const store = load();
+    const inviteId = store.rawTokens?.[token];
+    if (!inviteId) throw new Error("Invalid token");
+    const inv = (store.invitations || []).find((i) => i.id === inviteId);
+    if (!inv || inv.status !== "pending") throw new Error("Invitation is not valid or already used");
+
+    const user = getActiveUser();
+    if (user && user.email.toLowerCase() !== inv.recipientEmail.toLowerCase()) {
+      throw new Error(`Email mismatch: signed in as ${user.email}, but invite is for ${inv.recipientEmail}`);
+    }
+
+    inv.status = "accepted";
+    inv.acceptedAt = new Date().toISOString();
+
+    const proj = store.projects.find((p) => p.id === inv.projectId);
+    if (proj) {
+      if (!proj.members) proj.members = [];
+      const memId = user?.id || `user-${Date.now()}`;
+      if (!proj.members.some((m) => m.id === memId)) {
+        proj.members.push({
+          id: memId,
+          membershipId: `pm-${Date.now()}`,
+          name: user?.fullName || "New Member",
+          email: inv.recipientEmail,
+          role: inv.role,
+          initials: (user?.fullName || "NM").slice(0, 2).toUpperCase(),
+          joinedAt: new Date().toISOString(),
+        });
+      }
+    }
+    save(store);
+    return {
+      success: true,
+      projectId: inv.projectId,
+      projectName: proj?.name || "Project",
+      role: inv.role,
+    };
+  },
+
+  async declineProjectInvitation(token: string) {
+    await wait();
+    const store = load();
+    const inviteId = store.rawTokens?.[token];
+    if (!inviteId) throw new Error("Invalid token");
+    const inv = (store.invitations || []).find((i) => i.id === inviteId);
+    if (inv) {
+      inv.status = "declined";
+      save(store);
+    }
+    return { success: true, message: "Invitation declined" };
   },
 };
 

@@ -137,6 +137,30 @@ export const apiTaskService: TaskService = {
   removeProjectMember: (projectId, userId) =>
     request(`/projects/${projectId}/members/${userId}`, { method: "DELETE" }),
 
+  // Project Invitations
+  getProjectInvitations: (projectId) => request(`/projects/${projectId}/invitations`),
+  createProjectInvitation: (projectId, data) =>
+    request(`/projects/${projectId}/invitations`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  resendProjectInvitation: (invitationId) =>
+    request(`/invitations/${invitationId}/resend`, { method: "POST" }),
+  revokeProjectInvitation: (invitationId) =>
+    request(`/invitations/${invitationId}/revoke`, { method: "POST" }),
+  validateInvitationToken: (token) =>
+    request(`/invitations/validate?token=${encodeURIComponent(token)}`),
+  acceptProjectInvitation: (token) =>
+    request("/invitations/accept", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  declineProjectInvitation: (token) =>
+    request("/invitations/decline", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
   // Milestones & Dependencies
   createMilestone: (projectId, data) =>
     request(`/projects/${projectId}/milestones`, { method: "POST", body: JSON.stringify(data) }),

@@ -11,12 +11,14 @@
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
+    "@types/nodemailer": "^8.0.2",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.2.0",
     "pg": "^8.13.3"
   },
   "devDependencies": {
