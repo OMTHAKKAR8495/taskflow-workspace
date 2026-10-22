@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Server,
+  Mail,
 } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { useAuth } from "@/context/AuthContext";
@@ -62,8 +63,40 @@ export function SettingsView() {
     }
   };
 
+  const [emailStatus, setEmailStatus] = useState<{
+    configured: boolean;
+    provider: string | null;
+    appBaseUrl: string;
+  } | null>(null);
+  const [loadingEmailStatus, setLoadingEmailStatus] = useState(false);
+
+  const fetchEmailStatus = async () => {
+    setLoadingEmailStatus(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/settings/email-status`);
+      if (res.ok) {
+        const data = await res.json();
+        setEmailStatus(data);
+      } else {
+        // Fallback to taskService
+        if (taskService.getEmailStatus) {
+          const fallback = await taskService.getEmailStatus();
+          setEmailStatus(fallback);
+        }
+      }
+    } catch {
+      if (taskService.getEmailStatus) {
+        const fallback = await taskService.getEmailStatus().catch(() => null);
+        if (fallback) setEmailStatus(fallback);
+      }
+    } finally {
+      setLoadingEmailStatus(false);
+    }
+  };
+
   useEffect(() => {
     void handleCheckHealth();
+    void fetchEmailStatus();
   }, []);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -218,6 +251,78 @@ export function SettingsView() {
             </p>
             <p>
               • <strong>Resilience Mode:</strong> Transparently switches between PostgreSQL and in-memory mock store on server downtime without data loss.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Email Delivery Service */}
+      <div className="rounded-xl border bg-card p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b pb-3">
+          <div className="flex items-center gap-2">
+            <Mail className="size-4 text-primary" />
+            <h2 className="text-sm font-bold text-foreground">Email Delivery Status</h2>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={fetchEmailStatus}
+            disabled={loadingEmailStatus}
+            className="text-xs gap-1.5 cursor-pointer h-8"
+          >
+            <RefreshCw className={`size-3 ${loadingEmailStatus ? "animate-spin" : ""}`} /> Check Status
+          </Button>
+        </div>
+
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/20 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`size-2.5 rounded-full ${
+                  emailStatus?.configured ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                }`}
+              />
+              <div>
+                <span className="font-semibold text-foreground">Email delivery: </span>
+                <span className="font-medium text-foreground">
+                  {emailStatus?.configured ? "Configured" : "Not configured"}
+                </span>
+              </div>
+            </div>
+            <Badge
+              variant="outline"
+              className={`text-[10px] font-bold ${
+                emailStatus?.configured
+                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                  : "bg-amber-500/10 text-amber-600 border-amber-500/20"
+              }`}
+            >
+              {emailStatus?.configured
+                ? `Active (${emailStatus.provider?.toUpperCase() || "PROVIDER"})`
+                : "Fallback Mode (Copy Link)"}
+            </Badge>
+          </div>
+
+          <div className="text-xs text-muted-foreground space-y-1.5 pt-1">
+            <p>
+              • <strong>Provider:</strong>{" "}
+              {emailStatus?.provider ? (
+                <span className="capitalize text-foreground font-semibold">
+                  {emailStatus.provider}
+                </span>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400 font-medium">
+                  None (RESEND_API_KEY or SMTP_HOST not set)
+                </span>
+              )}
+            </p>
+            <p>
+              • <strong>Base URL:</strong>{" "}
+              <code>{emailStatus?.appBaseUrl || "https://taskflow-workspace-seven.vercel.app"}</code>
+            </p>
+            <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+              When email delivery is not configured, team invitation links are still generated
+              cryptographically and can be copied and shared directly with team members.
             </p>
           </div>
         </div>

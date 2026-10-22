@@ -33,26 +33,23 @@ __export(index_exports, {
   default: () => index_default
 });
 module.exports = __toCommonJS(index_exports);
-var import_express9 = __toESM(require("express"), 1);
-var import_cors = __toESM(require("cors"), 1);
-var import_cookie_parser = __toESM(require("cookie-parser"), 1);
-var import_dotenv2 = __toESM(require("dotenv"), 1);
+var import_express9 = __toESM(require("express"));
+var import_cors = __toESM(require("cors"));
+var import_cookie_parser = __toESM(require("cookie-parser"));
+var import_dotenv2 = __toESM(require("dotenv"));
 
 // src/routes/auth.ts
 var import_express = require("express");
 
 // src/db.ts
-var import_pg = __toESM(require("pg"), 1);
-var import_dotenv = __toESM(require("dotenv"), 1);
-var import_path = __toESM(require("path"), 1);
-var import_url = require("url");
-var import_meta = {};
+var import_pg = __toESM(require("pg"));
+var import_dotenv = __toESM(require("dotenv"));
+var import_path = __toESM(require("path"));
 var getDirname = () => {
-  try {
-    return import_path.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
-  } catch {
-    return process.cwd();
+  if (typeof __dirname !== "undefined") {
+    return __dirname;
   }
+  return process.cwd();
 };
 var currentDir = getDirname();
 import_dotenv.default.config({ path: import_path.default.resolve(currentDir, "../.env") });
@@ -90,8 +87,8 @@ async function query(text, params) {
 }
 
 // src/auth.ts
-var import_bcryptjs = __toESM(require("bcryptjs"), 1);
-var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
+var import_bcryptjs = __toESM(require("bcryptjs"));
+var import_jsonwebtoken = __toESM(require("jsonwebtoken"));
 var JWT_SECRET = process.env["JWT_SECRET"] || "taskflow-super-secret-key-2026";
 async function hashPassword(plainText) {
   return import_bcryptjs.default.hash(plainText, 10);
@@ -1311,6 +1308,7 @@ var profile_default = router3;
 var import_express4 = require("express");
 var router4 = (0, import_express4.Router)();
 function getUserId3(req) {
+  if (req.userId) return req.userId;
   const custom = req.headers["x-user-id"];
   return custom && custom.trim() ? custom.trim() : "user-om";
 }
@@ -1318,7 +1316,10 @@ router4.get("/", async (req, res) => {
   try {
     const userId = getUserId3(req);
     const result = await query(
-      "SELECT * FROM activities WHERE user_id = $1 ORDER BY at DESC LIMIT 30",
+      `SELECT DISTINCT a.* FROM activities a
+       LEFT JOIN project_members pm ON a.project_id = pm.project_id AND pm.user_id = $1
+       WHERE a.user_id = $1 OR pm.user_id = $1
+       ORDER BY a.at DESC LIMIT 50`,
       [userId]
     );
     const activities = result.rows.map((row) => ({
@@ -2083,10 +2084,10 @@ var notifications_default = router7;
 
 // src/routes/invitations.ts
 var import_express8 = require("express");
-var import_crypto = __toESM(require("crypto"), 1);
+var import_crypto = __toESM(require("crypto"));
 
 // src/email.ts
-var import_nodemailer = __toESM(require("nodemailer"), 1);
+var import_nodemailer = __toESM(require("nodemailer"));
 function isEmailConfigured() {
   if (process.env.RESEND_API_KEY) return true;
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) return true;
@@ -2443,6 +2444,48 @@ invitationsRouter.get(
   }
 );
 invitationsRouter.get(
+  "/invitations",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      await query(
+        `UPDATE project_invitations
+         SET status = 'expired', updated_at = NOW()
+         WHERE status = 'pending' AND expires_at <= NOW()`
+      );
+      const userRes = await query("SELECT role FROM users WHERE id = $1", [userId]);
+      const isAdmin = userRes.rows.length > 0 && userRes.rows[0].role === "admin";
+      let sql = `
+        SELECT pi.id, pi.project_id, pi.recipient_email, pi.role, pi.status, pi.message,
+               pi.expires_at, pi.accepted_at, pi.revoked_at, pi.created_at, pi.updated_at,
+               p.name as project_name, p.color as project_color,
+               u.full_name as inviter_name, u.email as inviter_email
+        FROM project_invitations pi
+        JOIN projects p ON pi.project_id = p.id
+        LEFT JOIN users u ON pi.inviter_id = u.id
+      `;
+      const params = [];
+      if (!isAdmin) {
+        sql += `
+          WHERE pi.project_id IN (
+            SELECT id FROM projects WHERE owner_id = $1
+            UNION
+            SELECT project_id FROM project_members WHERE user_id = $1
+          )
+        `;
+        params.push(userId);
+      }
+      sql += ` ORDER BY pi.created_at DESC`;
+      const result = await query(sql, params);
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error listing workspace invitations:", err);
+      res.status(500).json({ error: "Failed to fetch workspace invitations" });
+    }
+  }
+);
+invitationsRouter.get(
   "/invitations/validate",
   invitationValidateLimiter,
   async (req, res) => {
@@ -2635,6 +2678,20 @@ invitationsRouter.post(
           inv.project_id
         ]
       );
+      const welcomeNotifId = `notif-${Date.now()}-${import_crypto.default.randomBytes(3).toString("hex")}`;
+      await client.query(
+        `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
+         VALUES ($1, $2, $3, $4, 'system', $5, $6, 'project', $7, FALSE, NOW())`,
+        [
+          welcomeNotifId,
+          user.id,
+          inv.inviter_id,
+          inv.inviter_name || "Project Lead",
+          `Welcome to ${inv.project_name}`,
+          `You have joined ${inv.project_name} as ${inv.role}. You can now view sprint boards, tasks, and project updates.`,
+          inv.project_id
+        ]
+      );
       await client.query("COMMIT");
       res.json({
         success: true,
@@ -2777,17 +2834,14 @@ invitationsRouter.post(
 );
 
 // src/seed.ts
-var import_fs = __toESM(require("fs"), 1);
-var import_path2 = __toESM(require("path"), 1);
-var import_url2 = require("url");
-var import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
-var import_meta2 = {};
+var import_fs = __toESM(require("fs"));
+var import_path2 = __toESM(require("path"));
+var import_bcryptjs2 = __toESM(require("bcryptjs"));
 var getDirname2 = () => {
-  try {
-    return import_path2.default.dirname((0, import_url2.fileURLToPath)(import_meta2.url));
-  } catch {
-    return process.cwd();
+  if (typeof __dirname !== "undefined") {
+    return __dirname;
   }
+  return process.cwd();
 };
 var seedDirname = getDirname2();
 function iso(daysFromNow, hour = 10) {
@@ -3589,8 +3643,19 @@ var handleHealth = async (req, res) => {
     });
   }
 };
+var handleEmailStatus = (req, res) => {
+  const configured = isEmailConfigured();
+  const provider = process.env.RESEND_API_KEY ? "resend" : process.env.SMTP_HOST ? "smtp" : null;
+  res.json({
+    configured,
+    provider,
+    appBaseUrl: getAppBaseUrl()
+  });
+};
 app.get("/api/health", handleHealth);
 app.get("/health", handleHealth);
+app.get("/api/settings/email-status", handleEmailStatus);
+app.get("/settings/email-status", handleEmailStatus);
 app.get("/", (req, res) => res.json({ name: "TaskFlow Nexus Enterprise API", status: "ok" }));
 app.use(["/api/auth", "/auth"], auth_default);
 app.use(["/api/tasks", "/tasks"], tasks_default);

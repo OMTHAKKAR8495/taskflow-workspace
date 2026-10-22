@@ -648,6 +648,20 @@ export const mockTaskService: TaskService = {
     return load().activity;
   },
 
+  async getAllInvitations(): Promise<any[]> {
+    await wait();
+    const store = load();
+    return store.invitations || [];
+  },
+
+  async getEmailStatus(): Promise<{ configured: boolean; provider: string | null; appBaseUrl: string }> {
+    return {
+      configured: false,
+      provider: null,
+      appBaseUrl: typeof window !== "undefined" ? window.location.origin : "http://localhost:3000",
+    };
+  },
+
   async getProjectInvitations(projectId: string) {
     await wait();
     const store = load();

@@ -285,6 +285,61 @@ invitationsRouter.get(
 );
 
 /**
+ * GET /api/invitations
+ * Lists all invitations for the workspace across projects accessible by the user
+ */
+invitationsRouter.get(
+  "/invitations",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+
+      // Auto-expire pending invitations that passed expiration
+      await query(
+        `UPDATE project_invitations
+         SET status = 'expired', updated_at = NOW()
+         WHERE status = 'pending' AND expires_at <= NOW()`,
+      );
+
+      // Check if user is admin
+      const userRes = await query("SELECT role FROM users WHERE id = $1", [userId]);
+      const isAdmin = userRes.rows.length > 0 && userRes.rows[0].role === "admin";
+
+      let sql = `
+        SELECT pi.id, pi.project_id, pi.recipient_email, pi.role, pi.status, pi.message,
+               pi.expires_at, pi.accepted_at, pi.revoked_at, pi.created_at, pi.updated_at,
+               p.name as project_name, p.color as project_color,
+               u.full_name as inviter_name, u.email as inviter_email
+        FROM project_invitations pi
+        JOIN projects p ON pi.project_id = p.id
+        LEFT JOIN users u ON pi.inviter_id = u.id
+      `;
+      const params: any[] = [];
+
+      if (!isAdmin) {
+        sql += `
+          WHERE pi.project_id IN (
+            SELECT id FROM projects WHERE owner_id = $1
+            UNION
+            SELECT project_id FROM project_members WHERE user_id = $1
+          )
+        `;
+        params.push(userId);
+      }
+
+      sql += ` ORDER BY pi.created_at DESC`;
+
+      const result = await query(sql, params);
+      res.json(result.rows);
+    } catch (err: any) {
+      console.error("Error listing workspace invitations:", err);
+      res.status(500).json({ error: "Failed to fetch workspace invitations" });
+    }
+  },
+);
+
+/**
  * GET /api/invitations/validate?token=...
  * Validates an invitation token (Public, rate-limited)
  */
@@ -518,6 +573,22 @@ invitationsRouter.post(
           user.full_name,
           "Invitation Accepted",
           `${user.full_name} (${user.email}) accepted the invitation to join ${inv.project_name} as ${inv.role}.`,
+          inv.project_id,
+        ],
+      );
+
+      // 7b. Dispatch in-app welcome notification to invitee
+      const welcomeNotifId = `notif-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+      await client.query(
+        `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
+         VALUES ($1, $2, $3, $4, 'system', $5, $6, 'project', $7, FALSE, NOW())`,
+        [
+          welcomeNotifId,
+          user.id,
+          inv.inviter_id,
+          inv.inviter_name || "Project Lead",
+          `Welcome to ${inv.project_name}`,
+          `You have joined ${inv.project_name} as ${inv.role}. You can now view sprint boards, tasks, and project updates.`,
           inv.project_id,
         ],
       );

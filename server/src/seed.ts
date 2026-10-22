@@ -5,11 +5,10 @@ import bcrypt from "bcryptjs";
 import { pool, query } from "./db.js";
 
 const getDirname = (): string => {
-  try {
-    return path.dirname(fileURLToPath(import.meta.url));
-  } catch {
-    return process.cwd();
+  if (typeof __dirname !== "undefined") {
+    return __dirname;
   }
+  return process.cwd();
 };
 const seedDirname = getDirname();
 

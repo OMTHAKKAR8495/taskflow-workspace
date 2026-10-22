@@ -10,6 +10,7 @@ import projectsRouter from "./routes/projects.js";
 import teamRouter from "./routes/team.js";
 import notificationsRouter from "./routes/notifications.js";
 import { invitationsRouter } from "./routes/invitations.js";
+import { isEmailConfigured, getAppBaseUrl } from "./email.js";
 import { pool, query } from "./db.js";
 import { seedDatabase } from "./seed.js";
 
@@ -60,8 +61,24 @@ const handleHealth = async (req: express.Request, res: express.Response) => {
   }
 };
 
+const handleEmailStatus = (req: express.Request, res: express.Response) => {
+  const configured = isEmailConfigured();
+  const provider = process.env.RESEND_API_KEY
+    ? "resend"
+    : process.env.SMTP_HOST
+      ? "smtp"
+      : null;
+  res.json({
+    configured,
+    provider,
+    appBaseUrl: getAppBaseUrl(),
+  });
+};
+
 app.get("/api/health", handleHealth);
 app.get("/health", handleHealth);
+app.get("/api/settings/email-status", handleEmailStatus);
+app.get("/settings/email-status", handleEmailStatus);
 app.get("/", (req, res) => res.json({ name: "TaskFlow Nexus Enterprise API", status: "ok" }));
 
 // Mount Routes (supporting both /api/* and root /* for flexible reverse-proxy / serverless rewrites)

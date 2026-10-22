@@ -138,6 +138,8 @@ export const apiTaskService: TaskService = {
     request(`/projects/${projectId}/members/${userId}`, { method: "DELETE" }),
 
   // Project Invitations
+  getAllInvitations: () => request("/invitations"),
+  getEmailStatus: () => request("/settings/email-status"),
   getProjectInvitations: (projectId) => request(`/projects/${projectId}/invitations`),
   createProjectInvitation: (projectId, data) =>
     request(`/projects/${projectId}/invitations`, {

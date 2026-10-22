@@ -177,6 +177,70 @@ class ResilientTaskService implements TaskService {
     );
   }
 
+  // Invitations
+  getAllInvitations(params?: { status?: string }) {
+    return this.execute(
+      () => apiTaskService.getAllInvitations!(),
+      () => mockTaskService.getAllInvitations!(),
+    );
+  }
+
+  getEmailStatus() {
+    return this.execute(
+      () => apiTaskService.getEmailStatus!(),
+      () => mockTaskService.getEmailStatus!(),
+    );
+  }
+
+  getProjectInvitations(projectId: string) {
+    return this.execute(
+      () => apiTaskService.getProjectInvitations!(projectId),
+      () => mockTaskService.getProjectInvitations!(projectId),
+    );
+  }
+
+  createProjectInvitation(projectId: string, data: any) {
+    return this.execute(
+      () => apiTaskService.createProjectInvitation!(projectId, data),
+      () => mockTaskService.createProjectInvitation!(projectId, data),
+    );
+  }
+
+  resendProjectInvitation(invitationId: string) {
+    return this.execute(
+      () => apiTaskService.resendProjectInvitation!(invitationId),
+      () => mockTaskService.resendProjectInvitation!(invitationId),
+    );
+  }
+
+  revokeProjectInvitation(invitationId: string) {
+    return this.execute(
+      () => apiTaskService.revokeProjectInvitation!(invitationId),
+      () => mockTaskService.revokeProjectInvitation!(invitationId),
+    );
+  }
+
+  validateInvitationToken(token: string) {
+    return this.execute(
+      () => apiTaskService.validateInvitationToken!(token),
+      () => mockTaskService.validateInvitationToken!(token),
+    );
+  }
+
+  acceptProjectInvitation(token: string) {
+    return this.execute(
+      () => apiTaskService.acceptProjectInvitation!(token),
+      () => mockTaskService.acceptProjectInvitation!(token),
+    );
+  }
+
+  declineProjectInvitation(token: string) {
+    return this.execute(
+      () => apiTaskService.declineProjectInvitation!(token),
+      () => mockTaskService.declineProjectInvitation!(token),
+    );
+  }
+
   createMilestone(projectId: string, data: any) {
     return this.execute(
       () => apiTaskService.createMilestone!(projectId, data),

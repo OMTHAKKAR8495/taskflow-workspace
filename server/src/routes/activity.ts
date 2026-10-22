@@ -3,7 +3,8 @@ import { query } from "../db.js";
 
 const router = Router();
 
-function getUserId(req: Request): string {
+function getUserId(req: any): string {
+  if (req.userId) return req.userId;
   const custom = req.headers["x-user-id"] as string;
   return custom && custom.trim() ? custom.trim() : "user-om";
 }
@@ -13,7 +14,10 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
     const result = await query(
-      "SELECT * FROM activities WHERE user_id = $1 ORDER BY at DESC LIMIT 30",
+      `SELECT DISTINCT a.* FROM activities a
+       LEFT JOIN project_members pm ON a.project_id = pm.project_id AND pm.user_id = $1
+       WHERE a.user_id = $1 OR pm.user_id = $1
+       ORDER BY a.at DESC LIMIT 50`,
       [userId],
     );
 
