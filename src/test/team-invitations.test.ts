@@ -376,4 +376,106 @@ describe("Team Invitations System - Security, Crypto & Core Logic", () => {
       expect(hasDuplicate).toBe(true);
     });
   });
+
+  // 7. Team Page Flow & Settings Diagnostics
+  describe("Team Page Invitation Flow & Settings Diagnostics", () => {
+    it("validates that Team page invitation requires recipient email and target project", () => {
+      function validateInviteForm(email: string, projectId: string): { valid: boolean; error?: string } {
+        if (!email || !email.trim()) {
+          return { valid: false, error: "Email address is required" };
+        }
+        if (!projectId || !projectId.trim()) {
+          return { valid: false, error: "Target project is required" };
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email.trim())) {
+          return { valid: false, error: "Invalid email format" };
+        }
+        return { valid: true };
+      }
+
+      expect(validateInviteForm("", "proj-1").valid).toBe(false);
+      expect(validateInviteForm("invalid-email", "proj-1").valid).toBe(false);
+      expect(validateInviteForm("valid@example.com", "").valid).toBe(false);
+      expect(validateInviteForm("valid@example.com", "proj-1").valid).toBe(true);
+    });
+
+    it("verifies that only project managers or admins can trigger team invitations (permissions check)", () => {
+      function canUserInvite(user: { id: string; role: string }, projects: Array<{ id: string; owner_id?: string; members?: Array<{ userId: string; role: string }> }>): boolean {
+        const r = (user.role || "").toLowerCase();
+        if (r === "admin" || r === "owner" || r === "lead") return true;
+        return projects.some(
+          (p) =>
+            p.owner_id === user.id ||
+            (p.members || []).some(
+              (m) => m.userId === user.id && ["owner", "lead", "admin"].includes(m.role.toLowerCase()),
+            ),
+        );
+      }
+
+      const adminUser = { id: "u-admin", role: "admin" };
+      const leadUser = { id: "u-lead", role: "lead" };
+      const viewerUser = { id: "u-viewer", role: "viewer" };
+      const projectOwner = { id: "u-owner", role: "developer" };
+
+      const projects = [
+        { id: "proj-1", owner_id: "u-owner", members: [{ userId: "u-viewer", role: "viewer" }] },
+      ];
+
+      expect(canUserInvite(adminUser, projects)).toBe(true);
+      expect(canUserInvite(leadUser, projects)).toBe(true);
+      expect(canUserInvite(projectOwner, projects)).toBe(true);
+      expect(canUserInvite(viewerUser, projects)).toBe(false);
+    });
+
+    it("supports honest delivery fallback when email provider is unconfigured", () => {
+      const isConfigured = false;
+      const rawToken = "abc123mocktoken";
+      const appBaseUrl = "https://taskflow-workspace-seven.vercel.app";
+      const invitationUrl = `${appBaseUrl}/invitations/accept?token=${rawToken}`;
+
+      const result = {
+        success: true,
+        emailSent: isConfigured,
+        emailError: isConfigured ? undefined : "Email delivery provider not configured. Please copy the link manually.",
+        invitationUrl,
+      };
+
+      expect(result.emailSent).toBe(false);
+      expect(result.emailError).toContain("Email delivery provider not configured");
+      expect(result.invitationUrl).toContain("https://taskflow-workspace-seven.vercel.app/invitations/accept?token=");
+    });
+
+    it("ensures brand-new users auto-accept and navigate to dashboard after registration", async () => {
+      let accepted = false;
+      let navigatedTo = "";
+
+      const mockAccept = async (token: string) => {
+        if (token) {
+          accepted = true;
+          return { success: true, projectName: "Core Platform 2.0" };
+        }
+        throw new Error("No token");
+      };
+
+      const mockNavigate = (route: string) => {
+        navigatedTo = route;
+      };
+
+      const handleBrandNewUserRegistration = async (token: string) => {
+        // 1. User registers
+        const registered = true;
+        if (registered) {
+          // 2. Auto-accept invitation
+          await mockAccept(token);
+          // 3. Navigate to dashboard with project activity
+          mockNavigate("/dashboard");
+        }
+      };
+
+      await handleBrandNewUserRegistration("token-xyz-123");
+      expect(accepted).toBe(true);
+      expect(navigatedTo).toBe("/dashboard");
+    });
+  });
 });

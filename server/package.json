@@ -2,7 +2,6 @@
   "name": "taskflow-backend",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node dist/index.js",

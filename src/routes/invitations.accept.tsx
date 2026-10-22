@@ -109,7 +109,7 @@ function InvitationAcceptPage() {
       }
       const res = await taskService.acceptProjectInvitation(token);
       toast.success(res.projectName ? `Welcome to ${res.projectName}!` : "Invitation accepted successfully!");
-      navigate({ to: "/projects/$id", params: { id: res.projectId } });
+      navigate({ to: "/dashboard" });
     } catch (err: any) {
       toast.error(err.message || "Failed to accept invitation");
     } finally {
@@ -145,6 +145,8 @@ function InvitationAcceptPage() {
         const ok = await login(authEmail, authPassword);
         if (ok) {
           toast.success("Signed in successfully!");
+          // Auto-accept the invitation and redirect
+          await handleAccept();
         } else {
           toast.error("Invalid credentials. Please verify your email/username and password.");
         }
@@ -157,6 +159,8 @@ function InvitationAcceptPage() {
         );
         if (ok) {
           toast.success("Account created successfully!");
+          // Auto-accept the invitation and redirect
+          await handleAccept();
         } else {
           toast.error("Registration failed. Email or username might already be in use.");
         }

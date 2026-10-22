@@ -42,6 +42,8 @@ export interface TaskService {
   removeProjectMember?(projectId: string, userId: string): Promise<void>;
 
   // Project Invitations
+  getAllInvitations?(params?: { status?: string }): Promise<ProjectInvitation[]>;
+  getEmailStatus?(): Promise<{ configured: boolean; provider: string | null; appBaseUrl: string }>;
   getProjectInvitations?(projectId: string): Promise<ProjectInvitation[]>;
   createProjectInvitation?(
     projectId: string,
