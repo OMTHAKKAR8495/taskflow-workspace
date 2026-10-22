@@ -18,6 +18,7 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TeamRouteImport } from './routes/team'
+import { Route as InvitationsAcceptRouteImport } from './routes/invitations.accept'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
 import { Route as TasksIndexRouteImport } from './routes/tasks.index'
@@ -70,6 +71,11 @@ const TeamRoute = TeamRouteImport.update({
   path: '/team',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvitationsAcceptRoute = InvitationsAcceptRouteImport.update({
+  id: '/invitations/accept',
+  path: '/invitations/accept',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
   id: '/projects/',
   path: '/projects/',
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/team': typeof TeamRoute
+  '/invitations/accept': typeof InvitationsAcceptRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/tasks/$id': typeof TasksIdRouteWithChildren
   '/tasks/new': typeof TasksNewRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/team': typeof TeamRoute
+  '/invitations/accept': typeof InvitationsAcceptRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/tasks/$id': typeof TasksIdRouteWithChildren
   '/tasks/new': typeof TasksNewRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/team': typeof TeamRoute
+  '/invitations/accept': typeof InvitationsAcceptRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/tasks/$id': typeof TasksIdRouteWithChildren
   '/tasks/new': typeof TasksNewRoute
@@ -165,6 +174,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/team'
+    | '/invitations/accept'
     | '/projects/$id'
     | '/tasks/$id'
     | '/tasks/new'
@@ -182,6 +192,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/team'
+    | '/invitations/accept'
     | '/projects/$id'
     | '/tasks/$id'
     | '/tasks/new'
@@ -199,6 +210,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/team'
+    | '/invitations/accept'
     | '/projects/$id'
     | '/tasks/$id'
     | '/tasks/new'
@@ -217,6 +229,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   TeamRoute: typeof TeamRoute
+  InvitationsAcceptRoute: typeof InvitationsAcceptRoute
   ProjectsIdRoute: typeof ProjectsIdRoute
   TasksIdRoute: typeof TasksIdRouteWithChildren
   TasksNewRoute: typeof TasksNewRoute
@@ -289,6 +302,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TeamRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invitations/accept': {
+      id: '/invitations/accept'
+      path: '/invitations/accept'
+      fullPath: '/invitations/accept'
+      preLoaderRoute: typeof InvitationsAcceptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/': {
       id: '/projects/'
       path: '/projects'
@@ -355,6 +375,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   TeamRoute: TeamRoute,
+  InvitationsAcceptRoute: InvitationsAcceptRoute,
   ProjectsIdRoute: ProjectsIdRoute,
   TasksIdRoute: TasksIdRouteWithChildren,
   TasksNewRoute: TasksNewRoute,

@@ -6,6 +6,9 @@ import type {
   Profile,
   ProfileInput,
   Project,
+  ProjectInvitation,
+  ProjectInvitationInput,
+  CreateInvitationResponse,
   Task,
   TaskInput,
   TaskStatus,
@@ -35,9 +38,37 @@ export interface TaskService {
   createProject(data: Partial<Project>): Promise<Project>;
   updateProject(id: string, data: Partial<Project>): Promise<Project>;
   archiveProject(id: string): Promise<Project>;
-  deleteProject(id: string): Promise<void>;
   addProjectMember?(projectId: string, userId: string, role: string): Promise<void>;
   removeProjectMember?(projectId: string, userId: string): Promise<void>;
+
+  // Project Invitations
+  getProjectInvitations?(projectId: string): Promise<ProjectInvitation[]>;
+  createProjectInvitation?(
+    projectId: string,
+    data: ProjectInvitationInput,
+  ): Promise<CreateInvitationResponse>;
+  resendProjectInvitation?(invitationId: string): Promise<{
+    success: boolean;
+    rawToken: string;
+    invitationUrl: string;
+    expiresAt: string;
+    emailSent: boolean;
+    emailError?: string;
+  }>;
+  revokeProjectInvitation?(invitationId: string): Promise<void>;
+  validateInvitationToken?(token: string): Promise<{
+    valid: boolean;
+    reason?: string;
+    error?: string;
+    invitation?: any;
+  }>;
+  acceptProjectInvitation?(token: string): Promise<{
+    success: boolean;
+    projectId: string;
+    projectName: string;
+    role: string;
+  }>;
+  declineProjectInvitation?(token: string): Promise<{ success: boolean; message?: string }>;
 
   // Milestones & Dependencies
   createMilestone?(projectId: string, data: Partial<Milestone>): Promise<Milestone>;

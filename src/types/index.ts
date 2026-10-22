@@ -77,6 +77,38 @@ export interface Milestone {
   createdAt?: string | undefined;
 }
 
+export interface ProjectInvitation {
+  id: string;
+  projectId: string;
+  projectName?: string;
+  recipientEmail: string;
+  role: string;
+  status: "pending" | "accepted" | "declined" | "revoked" | "expired";
+  message?: string;
+  expiresAt: string;
+  acceptedAt?: string;
+  revokedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+  inviterName?: string;
+  inviterEmail?: string;
+}
+
+export interface ProjectInvitationInput {
+  email: string;
+  role: string;
+  message?: string;
+}
+
+export interface CreateInvitationResponse {
+  success: boolean;
+  invitation: ProjectInvitation;
+  rawToken: string;
+  invitationUrl: string;
+  emailSent: boolean;
+  emailError?: string;
+}
+
 export interface Project {
   id: string;
   name: string;

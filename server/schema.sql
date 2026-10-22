@@ -40,6 +40,31 @@ CREATE TABLE IF NOT EXISTS project_members (
   CONSTRAINT uq_project_member UNIQUE (project_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS project_invitations (
+  id VARCHAR(255) PRIMARY KEY,
+  project_id VARCHAR(255) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  inviter_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_email VARCHAR(255) NOT NULL,
+  role VARCHAR(50) NOT NULL DEFAULT 'member', -- owner, lead, developer, designer, reviewer, viewer
+  token_hash VARCHAR(255) NOT NULL UNIQUE,
+  status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, accepted, declined, revoked, expired
+  message TEXT DEFAULT '',
+  expires_at TIMESTAMPTZ NOT NULL,
+  accepted_at TIMESTAMPTZ,
+  accepted_user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_project_invite
+ON project_invitations (project_id, LOWER(recipient_email))
+WHERE status = 'pending';
+
+CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON project_invitations(token_hash);
+CREATE INDEX IF NOT EXISTS idx_invitations_project_id ON project_invitations(project_id);
+CREATE INDEX IF NOT EXISTS idx_invitations_recipient ON project_invitations(LOWER(recipient_email));
+
 CREATE TABLE IF NOT EXISTS milestones (
   id VARCHAR(255) PRIMARY KEY,
   project_id VARCHAR(255) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
