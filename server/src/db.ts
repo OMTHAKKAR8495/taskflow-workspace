@@ -23,8 +23,14 @@ function getNormalizedDatabaseUrl(): string | undefined {
   if (url.includes("db.ciqhtdrunnnwsiyobtvp.supabase.co")) {
     url = url
       .replace("postgres:", "postgres.ciqhtdrunnnwsiyobtvp:")
-      .replace("db.ciqhtdrunnnwsiyobtvp.supabase.co:5432", "aws-0-ap-northeast-1.pooler.supabase.com:5432")
-      .replace("db.ciqhtdrunnnwsiyobtvp.supabase.co", "aws-0-ap-northeast-1.pooler.supabase.com:5432");
+      .replace("db.ciqhtdrunnnwsiyobtvp.supabase.co:5432", "aws-0-ap-northeast-1.pooler.supabase.com:6543")
+      .replace("db.ciqhtdrunnnwsiyobtvp.supabase.co", "aws-0-ap-northeast-1.pooler.supabase.com:6543");
+  }
+
+  // Switch Supavisor pooler from session mode (port 5432) to transaction mode (port 6543)
+  // to prevent EMAXCONNSESSION errors in serverless environments
+  if (url.includes("pooler.supabase.com:5432")) {
+    url = url.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543");
   }
 
   return url;
@@ -47,8 +53,8 @@ export const pool = new Pool({
       process.env.PGHOST || "localhost"
     }:${process.env.PGPORT || 5432}/${process.env.PGDATABASE || "taskflow_db"}`,
   ssl: isRemoteDb ? { rejectUnauthorized: false } : undefined,
-  max: 20,
-  idleTimeoutMillis: 30000,
+  max: process.env.VERCEL ? 3 : 10,
+  idleTimeoutMillis: 10000,
   connectionTimeoutMillis: 10000,
 });
 
