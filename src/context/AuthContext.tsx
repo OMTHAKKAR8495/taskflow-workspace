@@ -33,7 +33,7 @@ const REGISTERED_USERS_KEY = "taskflow:users_db";
 const LAST_USER_KEY = "taskflow:last_username";
 const TOKEN_STORAGE_KEY = "taskflow:jwt_token";
 
-const BASE = getApiBaseUrl();
+const getBase = () => getApiBaseUrl();
 
 const DEFAULT_ACCOUNTS: StoredAccount[] = [
   {
@@ -41,6 +41,7 @@ const DEFAULT_ACCOUNTS: StoredAccount[] = [
     username: "omthakkar",
     fullName: "Om Thakkar",
     email: "omthakkar@example.com",
+    role: "lead",
   },
 ];
 
@@ -70,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const token = localStorage.getItem(TOKEN_STORAGE_KEY);
         if (token) {
           try {
-            const res = await fetch(`${BASE}/auth/me`, {
+            const res = await fetch(`${getBase()}/auth/me`, {
               headers: { Authorization: `Bearer ${token}` },
               credentials: "include",
             });
@@ -124,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // 1. Try real backend API with bcrypt
     try {
-      const res = await fetch(`${BASE}/auth/login`, {
+      const res = await fetch(`${getBase()}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -182,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // 1. Try real backend API
     try {
-      const res = await fetch(`${BASE}/auth/register`, {
+      const res = await fetch(`${getBase()}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -265,7 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch(`${BASE}/auth/logout`, { method: "POST", credentials: "include" });
+      await fetch(`${getBase()}/auth/logout`, { method: "POST", credentials: "include" });
     } catch {}
     setUser(null);
     localStorage.removeItem(AUTH_STORAGE_KEY);
