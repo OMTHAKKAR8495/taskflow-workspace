@@ -32850,7 +32850,10 @@ function getNormalizedDatabaseUrl() {
   let url = process.env.DATABASE_URL;
   if (!url) return void 0;
   if (url.includes("db.your-project-ref.supabase.co")) {
-    url = url.replace("postgres:", "postgres.your-project-ref:").replace("db.your-project-ref.supabase.co:5432", "aws-0-ap-northeast-1.pooler.supabase.com:5432").replace("db.your-project-ref.supabase.co", "aws-0-ap-northeast-1.pooler.supabase.com:5432");
+    url = url.replace("postgres:", "postgres.your-project-ref:").replace("db.your-project-ref.supabase.co:5432", "aws-0-ap-northeast-1.pooler.supabase.com:6543").replace("db.your-project-ref.supabase.co", "aws-0-ap-northeast-1.pooler.supabase.com:6543");
+  }
+  if (url.includes("pooler.supabase.com:5432")) {
+    url = url.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543");
   }
   return url;
 }
@@ -32861,8 +32864,8 @@ var isRemoteDb = Boolean(
 var pool = new Pool2({
   connectionString: resolvedDbUrl || `postgresql://${process.env.PGUSER || process.env.USER || "postgres"}:${process.env.PGPASSWORD || ""}@${process.env.PGHOST || "localhost"}:${process.env.PGPORT || 5432}/${process.env.PGDATABASE || "taskflow_db"}`,
   ssl: isRemoteDb ? { rejectUnauthorized: false } : void 0,
-  max: 20,
-  idleTimeoutMillis: 3e4,
+  max: process.env.VERCEL ? 3 : 10,
+  idleTimeoutMillis: 1e4,
   connectionTimeoutMillis: 1e4
 });
 pool.on("error", (err) => {
