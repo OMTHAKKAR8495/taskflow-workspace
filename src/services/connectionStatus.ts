@@ -25,7 +25,7 @@ export const connectionStatus = {
       const res = await fetch(`${base}/health`, {
 
         method: "GET",
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(8000),
       });
       if (res.ok) {
         connectionStatus.setMode("connected");

@@ -2,7 +2,6 @@ import type { TaskService } from "./taskService.types";
 import type { Milestone, NotificationItem, Project, Task, TaskStatus } from "@/types";
 import { getApiBaseUrl } from "@/lib/api-config";
 
-const BASE = getApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;
@@ -35,10 +34,11 @@ function getStoredToken(): string | null {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const userId = getActiveUserId();
   const token = getStoredToken();
+  const base = getApiBaseUrl();
 
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    res = await fetch(`${base}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
