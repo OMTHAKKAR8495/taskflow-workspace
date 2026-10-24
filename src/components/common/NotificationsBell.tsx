@@ -81,7 +81,7 @@ export function NotificationsBell() {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 p-2 shadow-xl">
+      <DropdownMenuContent align="end" className="w-[calc(100vw-2rem)] sm:w-80 p-2 shadow-xl max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between px-2 py-1.5">
           <DropdownMenuLabel className="p-0 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
             Reminders & Alerts

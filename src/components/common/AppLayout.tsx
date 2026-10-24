@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Search,
   ExternalLink,
+  X,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -325,6 +326,14 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
             </span>
           </div>
         </Link>
+        <button
+          type="button"
+          onClick={() => setMobileOpen(false)}
+          className="lg:hidden text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-900 cursor-pointer"
+          aria-label="Close menu"
+        >
+          <X className="size-5" />
+        </button>
       </div>
 
       {/* Nav Body */}
@@ -546,6 +555,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
         <Link
           to="/profile"
           preload="intent"
+          onClick={() => setMobileOpen(false)}
           className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-slate-900"
         >
           <Avatar className="size-8 border border-slate-700">
@@ -668,7 +678,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
             </DropdownMenu>
 
             {/* Role Switcher Toggle */}
-            <div className="flex items-center rounded-lg border bg-muted/40 p-0.5 text-xs">
+            <div className="flex items-center rounded-lg border bg-muted/40 p-0.5 text-xs shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -676,14 +686,15 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                   toast.success("Switched to Team Leader View");
                 }}
                 className={cn(
-                  "px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
+                  "px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
                   user?.role !== "member"
                     ? "bg-indigo-600 text-white shadow-xs"
                     : "text-muted-foreground hover:text-foreground",
                 )}
                 title="Switch view & permissions to Team Leader"
               >
-                <span>👑 Leader</span>
+                <span>👑</span>
+                <span className="hidden sm:inline">Leader</span>
               </button>
               <button
                 type="button"
@@ -692,14 +703,15 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                   toast.success("Switched to Team Member View");
                 }}
                 className={cn(
-                  "px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
+                  "px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
                   user?.role === "member"
                     ? "bg-blue-600 text-white shadow-xs"
                     : "text-muted-foreground hover:text-foreground",
                 )}
                 title="Switch view & permissions to Team Member"
               >
-                <span>👤 Member</span>
+                <span>👤</span>
+                <span className="hidden sm:inline">Member</span>
               </button>
             </div>
 
@@ -708,7 +720,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               variant="ghost"
               size="icon"
               onClick={toggleTheme}
-              className="size-9 text-muted-foreground hover:text-foreground cursor-pointer"
+              className="size-9 text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
               aria-label="Toggle theme"
             >
               {resolvedTheme === "dark" ? (
@@ -724,7 +736,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
             {/* Profile Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative size-9 rounded-full p-0 cursor-pointer">
+                <Button variant="ghost" className="relative size-9 rounded-full p-0 cursor-pointer shrink-0">
                   <Avatar className="size-8 border">
                     <AvatarImage src={profile?.avatarUrl} alt={displayName} />
                     <AvatarFallback className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs">
@@ -771,7 +783,155 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 pb-24 lg:pb-8 min-w-0 max-w-full overflow-x-hidden">
+          {children}
+        </main>
+
+        {/* Mobile Bottom Navigation Bar */}
+        <nav
+          aria-label="Mobile Bottom Navigation"
+          className="fixed bottom-0 inset-x-0 z-30 flex h-16 items-center justify-around border-t bg-card/95 backdrop-blur-md px-2 shadow-lg lg:hidden"
+          style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+        >
+          {isLeader ? (
+            <>
+              <Link
+                to="/dashboard"
+                preload="intent"
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium transition-colors min-h-[44px]",
+                  pathname === "/dashboard" || pathname === "/"
+                    ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <LayoutDashboard className="size-5 mb-0.5" />
+                <span>Overview</span>
+              </Link>
+              <Link
+                to="/projects"
+                preload="intent"
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium transition-colors relative min-h-[44px]",
+                  pathname.startsWith("/projects")
+                    ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <FolderKanban className="size-5 mb-0.5" />
+                <span>Projects</span>
+                {activeProjectsCount > 0 && (
+                  <span className="absolute top-1.5 right-[20%] size-2 rounded-full bg-indigo-600 ring-2 ring-background" />
+                )}
+              </Link>
+              <Link
+                to="/tasks"
+                preload="intent"
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium transition-colors min-h-[44px]",
+                  pathname.startsWith("/tasks")
+                    ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <ListTodo className="size-5 mb-0.5" />
+                <span>Tasks</span>
+              </Link>
+              <Link
+                to="/team"
+                preload="intent"
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium transition-colors min-h-[44px]",
+                  pathname.startsWith("/team")
+                    ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Users className="size-5 mb-0.5" />
+                <span>Team</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                className="flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors min-h-[44px] cursor-pointer"
+              >
+                <Menu className="size-5 mb-0.5" />
+                <span>Menu</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/dashboard"
+                preload="intent"
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium transition-colors min-h-[44px]",
+                  pathname === "/dashboard" && (!searchStr || searchStr.includes("tab=overview") || searchStr === "")
+                    ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <LayoutDashboard className="size-5 mb-0.5" />
+                <span>Dashboard</span>
+              </Link>
+              <Link
+                to="/dashboard"
+                search={{ tab: "tasks" }}
+                preload="intent"
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium transition-colors relative min-h-[44px]",
+                  (pathname === "/dashboard" && searchStr.includes("tab=tasks")) || pathname === "/my-work"
+                    ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <CheckSquare className="size-5 mb-0.5" />
+                <span>My Tasks</span>
+                {overdueCount > 0 && (
+                  <span className="absolute top-1.5 right-[20%] size-2 rounded-full bg-rose-500 ring-2 ring-background" />
+                )}
+              </Link>
+              <Link
+                to="/dashboard"
+                search={{ tab: "updates" }}
+                preload="intent"
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium transition-colors min-h-[44px]",
+                  pathname === "/dashboard" && searchStr.includes("tab=updates")
+                    ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Clock className="size-5 mb-0.5" />
+                <span>Updates</span>
+              </Link>
+              <Link
+                to="/notifications"
+                preload="intent"
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium transition-colors relative min-h-[44px]",
+                  pathname.startsWith("/notifications")
+                    ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Bell className="size-5 mb-0.5" />
+                <span>Alerts</span>
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute top-1.5 right-[20%] size-2 rounded-full bg-indigo-600 ring-2 ring-background" />
+                )}
+              </Link>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                className="flex flex-1 flex-col items-center justify-center py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors min-h-[44px] cursor-pointer"
+              >
+                <Menu className="size-5 mb-0.5" />
+                <span>Menu</span>
+              </button>
+            </>
+          )}
+        </nav>
       </div>
 
       {/* Quick Create Project Modal */}

@@ -626,28 +626,28 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
 
       {/* Workspace Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="bg-muted/60 p-1 flex-wrap">
-          <TabsTrigger value="overview" className="gap-2 text-xs">
+        <TabsList className="h-auto bg-muted/60 p-1 w-full justify-start overflow-x-auto no-scrollbar -mx-2 sm:mx-0 px-2 sm:px-0 flex-nowrap sm:flex-wrap">
+          <TabsTrigger value="overview" className="gap-2 text-xs shrink-0">
             <FolderKanban className="size-3.5" />
             Overview
           </TabsTrigger>
-          <TabsTrigger value="members" className="gap-2 text-xs">
+          <TabsTrigger value="members" className="gap-2 text-xs shrink-0">
             <Users className="size-3.5" />
             Members ({(projectDetail?.members || []).length})
           </TabsTrigger>
-          <TabsTrigger value="tasks" className="gap-2 text-xs">
+          <TabsTrigger value="tasks" className="gap-2 text-xs shrink-0">
             <ListTodo className="size-3.5" />
             Tasks ({projectTasks.length})
           </TabsTrigger>
-          <TabsTrigger value="submissions" className="gap-2 text-xs">
+          <TabsTrigger value="submissions" className="gap-2 text-xs shrink-0">
             <FileCheck2 className="size-3.5" />
             Submissions ({submissions.length})
           </TabsTrigger>
-          <TabsTrigger value="activity" className="gap-2 text-xs">
+          <TabsTrigger value="activity" className="gap-2 text-xs shrink-0">
             <History className="size-3.5" />
             Activity
           </TabsTrigger>
-          <TabsTrigger value="settings" className="gap-2 text-xs">
+          <TabsTrigger value="settings" className="gap-2 text-xs shrink-0">
             <Settings className="size-3.5" />
             Settings
           </TabsTrigger>

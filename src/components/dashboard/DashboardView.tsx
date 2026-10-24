@@ -386,7 +386,7 @@ export function DashboardView() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Weekly Completion & Velocity Chart */}
         <div className="rounded-xl border bg-card p-5 shadow-xs lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-foreground">Weekly Completion Velocity</h2>
               <p className="text-xs text-muted-foreground">

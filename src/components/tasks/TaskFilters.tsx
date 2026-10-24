@@ -112,14 +112,14 @@ export function TaskFilters({
       </div>
 
       {/* Filter Selectors Bar */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
         {/* Project Filter */}
         <Select
           value={filters.projectId || "all"}
           onValueChange={(v) => onChange({ ...filters, projectId: v })}
         >
           <SelectTrigger
-            className="h-9 bg-card sm:w-44 text-xs font-medium"
+            className="h-9 bg-card w-full sm:w-44 text-xs font-medium"
             aria-label="Filter by project"
           >
             <SelectValue placeholder="All Projects" />
@@ -143,7 +143,7 @@ export function TaskFilters({
           onValueChange={(v) => onChange({ ...filters, assigneeId: v })}
         >
           <SelectTrigger
-            className="h-9 bg-card sm:w-40 text-xs font-medium"
+            className="h-9 bg-card w-full sm:w-40 text-xs font-medium"
             aria-label="Filter by assignee"
           >
             <SelectValue placeholder="All Assignees" />
@@ -165,7 +165,7 @@ export function TaskFilters({
           onValueChange={(v) => onChange({ ...filters, status: v as TaskStatus | "all" })}
         >
           <SelectTrigger
-            className="h-9 bg-card sm:w-36 text-xs font-medium"
+            className="h-9 bg-card w-full sm:w-36 text-xs font-medium"
             aria-label="Filter by status"
           >
             <SelectValue />
@@ -185,7 +185,7 @@ export function TaskFilters({
           onValueChange={(v) => onChange({ ...filters, priority: v as TaskPriority | "all" })}
         >
           <SelectTrigger
-            className="h-9 bg-card sm:w-32 text-xs font-medium"
+            className="h-9 bg-card w-full sm:w-32 text-xs font-medium"
             aria-label="Filter by priority"
           >
             <SelectValue />
@@ -204,7 +204,7 @@ export function TaskFilters({
           onValueChange={(v) => onChange({ ...filters, sort: v as SortKey })}
         >
           <SelectTrigger
-            className="h-9 bg-card sm:w-36 text-xs font-medium"
+            className="h-9 bg-card w-full sm:w-36 text-xs font-medium"
             aria-label="Sort tasks"
           >
             <SelectValue />
@@ -222,7 +222,7 @@ export function TaskFilters({
           variant={filters.bookmarkedOnly ? "default" : "outline"}
           size="sm"
           onClick={() => onChange({ ...filters, bookmarkedOnly: !filters.bookmarkedOnly })}
-          className="h-9 text-xs font-medium"
+          className="h-9 text-xs font-medium col-span-2 sm:col-span-1 w-full sm:w-auto"
         >
           ★ Bookmarked
         </Button>

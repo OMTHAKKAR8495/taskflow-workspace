@@ -283,11 +283,11 @@ export function ReportsView() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={selectedProjectId}
             onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-card px-3 text-xs font-medium shadow-xs focus:ring-1 focus:ring-primary"
+            className="w-full sm:w-auto h-9 rounded-lg border border-input bg-card px-3 text-xs font-medium shadow-xs focus:ring-1 focus:ring-primary"
           >
             <option value="all">All Projects</option>
             {projects.map((p) => (
@@ -301,15 +301,15 @@ export function ReportsView() {
             size="sm"
             variant="outline"
             onClick={handleExportTasksCSV}
-            className="h-9 text-xs gap-1.5 cursor-pointer shadow-xs"
+            className="flex-1 sm:flex-initial h-9 text-xs gap-1.5 cursor-pointer shadow-xs"
           >
-            <Download className="size-3.5" /> Export Tasks CSV
+            <Download className="size-3.5" /> Tasks CSV
           </Button>
 
           <Button
             size="sm"
             onClick={handleExportSummaryCSV}
-            className="h-9 text-xs gap-1.5 cursor-pointer shadow-xs shadow-primary/25"
+            className="flex-1 sm:flex-initial h-9 text-xs gap-1.5 cursor-pointer shadow-xs shadow-primary/25"
           >
             <FileSpreadsheet className="size-3.5" /> Project Summary CSV
           </Button>

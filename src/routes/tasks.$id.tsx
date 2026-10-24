@@ -177,7 +177,7 @@ function TaskDetailsPage() {
         </div>
 
         {/* Task Details Card */}
-        <div className="rounded-xl border bg-card p-6 shadow-card space-y-6">
+        <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-card space-y-6">
           {/* Top Info Bar: Status, Priority, Project, ID */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
             <div className="flex flex-wrap items-center gap-2">

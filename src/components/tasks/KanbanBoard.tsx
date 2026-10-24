@@ -109,16 +109,39 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
   };
 
   return (
-    <div className="space-y-4">
-      {/* 6-Column Responsive Kanban View with Horizontal Scroll */}
-      <div className="flex gap-4 overflow-x-auto pb-6 pt-1 min-h-[600px] scrollbar-thin scrollbar-thumb-muted-foreground/20">
+    <div className="space-y-3">
+      {/* Mobile Column Quick Switcher */}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:hidden -mx-2 px-2">
+        {COLUMNS.map((col) => {
+          const colTasks = tasks.filter((t) => normalizeStatus(t.status) === col.status);
+          return (
+            <button
+              key={col.status}
+              type="button"
+              onClick={() => {
+                const el = document.getElementById(`kanban-col-${col.status}`);
+                el?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-muted/60 text-muted-foreground hover:text-foreground shrink-0 border"
+            >
+              <span className={cn("size-2 rounded-full", col.dotColor)} />
+              <span>{col.title}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">({colTasks.length})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 6-Column Responsive Kanban View with Horizontal Scroll & Touch Snap */}
+      <div className="flex gap-4 overflow-x-auto pb-6 pt-1 min-h-[500px] snap-x snap-mandatory scrollbar-thin scrollbar-thumb-muted-foreground/20 -mx-3.5 sm:mx-0 px-3.5 sm:px-0">
         {COLUMNS.map((col) => {
           const colTasks = tasks.filter((t) => normalizeStatus(t.status) === col.status);
 
           return (
             <div
               key={col.status}
-              className="flex w-72 shrink-0 flex-col rounded-xl border bg-card/60 p-3 shadow-xs backdrop-blur-sm"
+              id={`kanban-col-${col.status}`}
+              className="flex w-[82vw] max-w-xs sm:w-72 shrink-0 snap-center flex-col rounded-xl border bg-card/60 p-3 shadow-xs backdrop-blur-sm"
             >
               {/* Column Header */}
               <div className="mb-3 flex items-center justify-between border-b pb-2.5">

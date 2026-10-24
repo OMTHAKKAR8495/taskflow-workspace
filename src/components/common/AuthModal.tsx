@@ -62,8 +62,8 @@ export function AuthModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4">
-      <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-3 sm:p-4">
+      <div className="w-full max-w-md rounded-2xl border bg-card p-5 sm:p-8 shadow-xl max-h-[92vh] overflow-y-auto">
         <div className="text-center mb-6">
           <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md shadow-primary/25">
             <Sparkles className="size-6" />
