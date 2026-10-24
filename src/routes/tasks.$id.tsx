@@ -20,6 +20,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AppLayout } from "@/components/common/AppLayout";
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
 import { PriorityBadge, TaskStatusBadge } from "@/components/tasks/badges";
+import { TaskProgressTimeline } from "@/components/tasks/TaskProgressTimeline";
 import { DeleteConfirmationDialog } from "@/components/tasks/DeleteConfirmationDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -458,6 +459,19 @@ function TaskDetailsPage() {
               <p className="text-[11px] text-muted-foreground">{fmtRelative(task.updatedAt)}</p>
             </div>
           </div>
+        </div>
+
+        {/* Daily Progress & Leader Review Section */}
+        <div className="rounded-xl border bg-card p-6 shadow-card space-y-4">
+          <div className="border-b pb-3">
+            <h2 className="text-base font-semibold text-foreground">
+              Daily Progress Tracking & Review Decisions
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Review completed work deliverables, blocker reports, and team leader evaluation.
+            </p>
+          </div>
+          <TaskProgressTimeline task={task} onRefresh={() => reload()} />
         </div>
 
         {/* Task Comments Section */}

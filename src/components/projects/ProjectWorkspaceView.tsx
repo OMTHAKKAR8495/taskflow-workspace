@@ -81,8 +81,11 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
   const [invitations, setInvitations] = useState<ProjectInvitation[]>([]);
   const [loadingInvitations, setLoadingInvitations] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteFullName, setInviteFullName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("developer");
+  const [inviteSkills, setInviteSkills] = useState("");
+  const [inviteDesignation, setInviteDesignation] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
   const [isInviting, setIsInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState<CreateInvitationResponse | null>(null);
@@ -152,14 +155,20 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
       if (!taskService.createProjectInvitation) throw new Error("Service unavailable");
       const res = await taskService.createProjectInvitation(projectId, {
         email: cleanEmail,
+        fullName: inviteFullName.trim() || undefined,
         role: inviteRole,
+        skills: inviteSkills.trim() || undefined,
+        designation: inviteDesignation.trim() || undefined,
         message: inviteMessage.trim() || undefined,
       });
 
       setInviteResult(res);
       setInviteModalOpen(false);
       setInviteResultModalOpen(true);
+      setInviteFullName("");
       setInviteEmail("");
+      setInviteSkills("");
+      setInviteDesignation("");
       setInviteMessage("");
       void loadInvitations();
 
@@ -1106,6 +1115,18 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
               </Badge>
             </div>
 
+            {/* Full Name */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Full Name (Optional)</label>
+              <input
+                type="text"
+                value={inviteFullName}
+                onChange={(e) => setInviteFullName(e.target.value)}
+                placeholder="e.g. Alex Morgan"
+                className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+              />
+            </div>
+
             {/* Recipient Email */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground flex items-center justify-between">
@@ -1124,7 +1145,7 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
 
             {/* Role Selection */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Offered Project Role *</label>
+              <label className="text-xs font-semibold text-foreground">Offered Project Role or Responsibility *</label>
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value)}
@@ -1138,6 +1159,30 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                 <option value="member">General Member</option>
                 <option value="owner">Project Owner (Full administrative access)</option>
               </select>
+            </div>
+
+            {/* Skills & Designation Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Skills (Optional)</label>
+                <input
+                  type="text"
+                  value={inviteSkills}
+                  onChange={(e) => setInviteSkills(e.target.value)}
+                  placeholder="e.g. React, PostgreSQL"
+                  className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Designation (Optional)</label>
+                <input
+                  type="text"
+                  value={inviteDesignation}
+                  onChange={(e) => setInviteDesignation(e.target.value)}
+                  placeholder="e.g. Sr. Full-stack Dev"
+                  className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
+                />
+              </div>
             </div>
 
             {/* Optional Personal Note */}

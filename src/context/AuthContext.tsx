@@ -7,6 +7,7 @@ export interface AuthUser {
   fullName: string;
   email: string;
   avatarUrl?: string;
+  role?: "leader" | "member" | "admin";
 }
 
 export interface StoredAccount {
@@ -15,6 +16,7 @@ export interface StoredAccount {
   fullName: string;
   email: string;
   passwordHash?: string;
+  role?: "leader" | "member" | "admin";
 }
 
 interface AuthContextType {
@@ -23,7 +25,8 @@ interface AuthContextType {
   isInitialized: boolean;
   login: (username: string, pass: string) => Promise<boolean>;
   register: (fullName: string, email: string, username: string, pass: string) => Promise<boolean>;
-  updateCurrentUser: (updates: { fullName?: string; email?: string }) => void;
+  updateCurrentUser: (updates: { fullName?: string; email?: string; role?: "leader" | "member" | "admin" }) => void;
+  switchRole: (role: "leader" | "member") => Promise<void>;
   getRegisteredAccounts: () => StoredAccount[];
   logout: () => Promise<void>;
 }
@@ -238,15 +241,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
-  const updateCurrentUser = (updates: { fullName?: string; email?: string }) => {
+  const updateCurrentUser = (updates: { fullName?: string; email?: string; role?: "leader" | "member" | "admin" }) => {
     if (!user) return;
     const nextFullName = updates.fullName?.trim() || user.fullName;
     const nextEmail = updates.email?.trim() || user.email;
+    const nextRole = updates.role || user.role;
 
     const updatedUser: AuthUser = {
       ...user,
       fullName: nextFullName,
       email: nextEmail,
+      role: nextRole,
     };
     setUser(updatedUser);
 
@@ -258,10 +263,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ...a,
             fullName: nextFullName,
             email: nextEmail,
+            role: nextRole,
           }
         : a,
     );
     localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(updatedAccounts));
+  };
+
+  const switchRole = async (targetRole: "leader" | "member") => {
+    if (!user) return;
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    try {
+      const res = await fetch(`${getBase()}/auth/role`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: "include",
+        body: JSON.stringify({ role: targetRole }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) {
+          localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
+        }
+        if (data.user) {
+          setUser(data.user);
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
+          return;
+        }
+      }
+    } catch {}
+
+    // Offline / fallback role switch
+    updateCurrentUser({ role: targetRole });
   };
 
   const logout = async () => {
@@ -282,6 +318,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         updateCurrentUser,
+        switchRole,
         getRegisteredAccounts: getAccounts,
         logout,
       }}

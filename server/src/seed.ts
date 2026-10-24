@@ -799,6 +799,92 @@ export async function seedDatabase(force = false) {
     );
   }
 
+  // 10. Seed Progress Updates & Reviews
+  console.log("📊 Seeding progress updates & reviews...");
+  const sampleProgressUpdates = [
+    {
+      id: "prog-seed-1",
+      taskId: "task-3",
+      userId: "team-alex",
+      userName: "Alex Rivera",
+      status: "in_review",
+      progressPercent: 85,
+      workCompleted: "Implemented strict JWT token signature validation, httpOnly cookie rotation, and memory sliding-window rate limiters on all authentication endpoints.",
+      workRemaining: "Add automated integration tests simulating brute-force password attacks.",
+      blockers: "",
+      nextSteps: "Awaiting architectural sign-off and review from Om Thakkar.",
+      timeSpentHours: 6.5,
+      evidenceUrl: "https://github.com/taskflow/core/pull/204",
+    },
+    {
+      id: "prog-seed-2",
+      taskId: "task-5",
+      userId: "team-sarah",
+      userName: "Sarah Chen",
+      status: "in_progress",
+      progressPercent: 70,
+      workCompleted: "Built responsive TaskDrawer with Radix sheet, inline status switching, and acceptance criteria toggle state.",
+      workRemaining: "Polish keyboard navigation and ESC trap for accessibility.",
+      blockers: "",
+      nextSteps: "Add ARIA live regions for screen readers.",
+      timeSpentHours: 4.0,
+      evidenceUrl: "",
+    },
+    {
+      id: "prog-seed-3",
+      taskId: "task-2",
+      userId: defaultUserId,
+      userName: "Om Thakkar",
+      status: "completed",
+      progressPercent: 100,
+      workCompleted: "Configured PostgreSQL relational schema, indexes on foreign keys, and idempotency migrations.",
+      workRemaining: "None - all tables verified.",
+      blockers: "",
+      nextSteps: "Deploy to staging environment.",
+      timeSpentHours: 8.0,
+      evidenceUrl: "https://neon.tech/console/projects/taskflow",
+    },
+  ];
+
+  for (const p of sampleProgressUpdates) {
+    await query(
+      `INSERT INTO task_progress_updates
+       (id, task_id, user_id, user_name, status, progress_percent, work_completed, work_remaining, blockers, next_steps, time_spent_hours, evidence_url, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW() - INTERVAL '1 day')
+       ON CONFLICT (id) DO NOTHING`,
+      [p.id, p.taskId, p.userId, p.userName, p.status, p.progressPercent, p.workCompleted, p.workRemaining, p.blockers, p.nextSteps, p.timeSpentHours, p.evidenceUrl],
+    );
+
+    await query(
+      `UPDATE tasks
+       SET progress_percent = $1, last_progress_update_at = NOW() - INTERVAL '1 day'
+       WHERE id = $2`,
+      [p.progressPercent, p.taskId],
+    );
+  }
+
+  const sampleReviews = [
+    {
+      id: "rev-seed-1",
+      taskId: "task-2",
+      reviewerId: "team-alex",
+      reviewerName: "Alex Rivera",
+      progressUpdateId: "prog-seed-3",
+      decision: "approved",
+      feedback: "PostgreSQL schema structure is enterprise grade. Foreign keys, indexes, and CASCADE constraints are spot on.",
+    },
+  ];
+
+  for (const r of sampleReviews) {
+    await query(
+      `INSERT INTO task_reviews
+       (id, task_id, reviewer_id, reviewer_name, progress_update_id, decision, feedback, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() - INTERVAL '12 hours')
+       ON CONFLICT (id) DO NOTHING`,
+      [r.id, r.taskId, r.reviewerId, r.reviewerName, r.progressUpdateId, r.decision, r.feedback],
+    );
+  }
+
   console.log("✅ TaskFlow Nexus Enterprise database ready!");
 }
 

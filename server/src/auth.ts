@@ -7,6 +7,7 @@ const JWT_SECRET = process.env["JWT_SECRET"] || "taskflow-super-secret-key-2026"
 export interface AuthenticatedUser {
   userId: string;
   username: string;
+  role?: string;
 }
 
 export interface AuthenticatedRequest extends Request {

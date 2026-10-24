@@ -78,7 +78,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
     unreadNotificationCount,
     createProject,
   } = useTasks();
-  const { user, logout } = useAuth();
+  const { user, logout, switchRole } = useAuth();
   const { resolvedTheme, toggleTheme } = useTheme();
 
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -133,53 +133,41 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
     return projects.filter((p) => p.status === "active").length;
   }, [projects]);
 
-  // Main 8 Enterprise Navigation items
-  const mainNav = [
+  const isLeader = user?.role === "leader" || user?.role === "admin";
+  const searchStr = typeof window !== "undefined" ? window.location.search : "";
+
+  // Team Member navigation:
+  // My Dashboard · My Tasks · My Updates · My Feedback · Notifications · My Profile
+  const memberNav = [
     {
-      id: "overview",
-      label: "Overview",
+      id: "my-dashboard",
+      label: "My Dashboard",
       href: "/dashboard",
       icon: LayoutDashboard,
-      active: pathname === "/dashboard" || pathname === "/",
+      active: pathname === "/dashboard" && (!searchStr || searchStr.includes("tab=overview") || searchStr === ""),
     },
     {
-      id: "my-work",
-      label: "My Work",
-      href: "/my-work",
+      id: "my-tasks",
+      label: "My Tasks",
+      href: "/dashboard?tab=tasks",
       icon: CheckSquare,
-      active: pathname.startsWith("/my-work"),
-      badge: needsReviewCount > 0 ? `${needsReviewCount} review` : overdueCount > 0 ? `${overdueCount} due` : undefined,
-      badgeColor: needsReviewCount > 0 ? "bg-purple-500/20 text-purple-300 border-purple-500/30" : "bg-rose-500/20 text-rose-300 border-rose-500/30",
+      active: (pathname === "/dashboard" && searchStr.includes("tab=tasks")) || pathname === "/my-work",
+      badge: overdueCount > 0 ? `${overdueCount} due` : undefined,
+      badgeColor: "bg-rose-500/20 text-rose-300 border-rose-500/30",
     },
     {
-      id: "projects",
-      label: "Projects",
-      href: "/projects",
-      icon: FolderKanban,
-      active: pathname.startsWith("/projects"),
-      badge: activeProjectsCount > 0 ? `${activeProjectsCount}` : undefined,
+      id: "my-updates",
+      label: "My Updates",
+      href: "/dashboard?tab=updates",
+      icon: Clock,
+      active: pathname === "/dashboard" && searchStr.includes("tab=updates"),
     },
     {
-      id: "team",
-      label: "Team",
-      href: "/team",
-      icon: Users,
-      active: pathname.startsWith("/team"),
-      badge: team.length > 0 ? `${team.length}` : undefined,
-    },
-    {
-      id: "calendar",
-      label: "Calendar",
-      href: "/calendar",
-      icon: Calendar,
-      active: pathname.startsWith("/calendar"),
-    },
-    {
-      id: "reports",
-      label: "Reports & Analytics",
-      href: "/reports",
-      icon: BarChart3,
-      active: pathname.startsWith("/reports"),
+      id: "my-feedback",
+      label: "My Feedback",
+      href: "/dashboard?tab=feedback",
+      icon: AlertTriangle,
+      active: pathname === "/dashboard" && searchStr.includes("tab=feedback"),
     },
     {
       id: "notifications",
@@ -191,6 +179,71 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
       badgeColor: "bg-indigo-500 text-white font-bold",
     },
     {
+      id: "my-profile",
+      label: "My Profile",
+      href: "/profile",
+      icon: User,
+      active: pathname.startsWith("/profile"),
+    },
+  ];
+
+  // Team Leader navigation:
+  // Overview · Projects · All Tasks · Team Members · Reviews · Activity · Reports · Settings
+  const leaderNav = [
+    {
+      id: "overview",
+      label: "Overview",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+      active: pathname === "/dashboard" || pathname === "/",
+    },
+    {
+      id: "projects",
+      label: "Projects",
+      href: "/projects",
+      icon: FolderKanban,
+      active: pathname.startsWith("/projects"),
+      badge: activeProjectsCount > 0 ? `${activeProjectsCount}` : undefined,
+    },
+    {
+      id: "all-tasks",
+      label: "All Tasks",
+      href: "/tasks",
+      icon: ListTodo,
+      active: pathname.startsWith("/tasks"),
+    },
+    {
+      id: "team",
+      label: "Team Members",
+      href: "/team",
+      icon: Users,
+      active: pathname.startsWith("/team"),
+      badge: team.length > 0 ? `${team.length}` : undefined,
+    },
+    {
+      id: "reviews",
+      label: "Reviews",
+      href: "/my-work?tab=reviews",
+      icon: CheckSquare,
+      active: pathname.startsWith("/my-work"),
+      badge: needsReviewCount > 0 ? `${needsReviewCount}` : undefined,
+      badgeColor: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+    },
+    {
+      id: "activity",
+      label: "Activity",
+      href: "/dashboard#activity",
+      icon: Clock,
+      active: false,
+    },
+    {
+      id: "reports",
+      label: "Reports",
+      href: "/reports",
+      icon: BarChart3,
+      active: pathname.startsWith("/reports"),
+    },
+    {
       id: "settings",
       label: "Settings",
       href: "/settings",
@@ -198,6 +251,8 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
       active: pathname.startsWith("/settings"),
     },
   ];
+
+  const currentNav = isLeader ? leaderNav : memberNav;
 
   const handleTestConnection = async () => {
     setTestingConnection(true);
@@ -286,9 +341,9 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
         {/* Core Workspace Routes */}
         <div className="space-y-1">
           <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Main Navigation
+            {isLeader ? "Team Leader Navigation" : "My Workspace"}
           </div>
-          {mainNav.map((item) => {
+          {currentNav.map((item) => {
             const Icon = item.icon;
             return (
               <Link
@@ -330,137 +385,142 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
           })}
         </div>
 
-        {/* Active Projects Quick Access */}
-        <div className="space-y-1 border-t border-slate-800/80 pt-4">
-          <div className="flex items-center justify-between px-3 pb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Active Projects
-            </span>
-            <button
-              type="button"
-              onClick={() => setCreateProjectModalOpen(true)}
-              className="text-slate-400 hover:text-indigo-400 cursor-pointer p-0.5"
-              title="Create new project"
-            >
-              <Plus className="size-3.5" />
-            </button>
-          </div>
-
-          <div className="space-y-0.5">
-            {projects.slice(0, 6).map((proj) => {
-              const isCurrent = pathname === `/projects/${proj.id}`;
-              return (
-                <Link
-                  key={proj.id}
-                  to="/projects/$id"
-                  params={{ id: proj.id }}
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    "flex items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-all group",
-                    isCurrent
-                      ? "bg-slate-800 text-white font-semibold"
-                      : "text-slate-300 hover:bg-slate-900 hover:text-white",
-                  )}
+        {/* Team Leader Only Management Sections */}
+        {isLeader && (
+          <>
+            {/* Active Projects Quick Access */}
+            <div className="space-y-1 border-t border-slate-800/80 pt-4">
+              <div className="flex items-center justify-between px-3 pb-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Active Projects
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCreateProjectModalOpen(true)}
+                  className="text-slate-400 hover:text-indigo-400 cursor-pointer p-0.5"
+                  title="Create new project"
                 >
-                  <div className="flex items-center gap-2.5 truncate">
-                    <span
-                      className="size-2 rounded-full shrink-0 ring-1 ring-white/20"
-                      style={{ backgroundColor: proj.color || "#6366f1" }}
-                    />
-                    <span className="truncate">{proj.name}</span>
-                  </div>
-                  {proj.key && (
-                    <span className="text-[10px] text-slate-400 font-mono group-hover:text-slate-300">
-                      {proj.key}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-            {projects.length > 6 && (
-              <Link
-                to="/projects"
-                onClick={() => setMobileOpen(false)}
-                className="block px-3 py-1 text-[11px] font-medium text-indigo-400 hover:underline"
-              >
-                + {projects.length - 6} more projects
-              </Link>
-            )}
-          </div>
-        </div>
+                  <Plus className="size-3.5" />
+                </button>
+              </div>
 
-        {/* Task Views & Custom Lists */}
-        <div className="space-y-1 border-t border-slate-800/80 pt-4">
-          <button
-            type="button"
-            onClick={() => setTaskViewsCollapsed(!taskViewsCollapsed)}
-            className="flex w-full items-center justify-between px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 cursor-pointer"
-          >
-            <span>Task Backlog & Lists</span>
-            {taskViewsCollapsed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
-          </button>
-
-          {!taskViewsCollapsed && (
-            <div className="space-y-0.5">
-              <Link
-                to="/tasks"
-                onClick={() => {
-                  setActiveFilter("all");
-                  setMobileOpen(false);
-                }}
-                className={cn(
-                  "flex items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-                  pathname === "/tasks" && activeFilter === "all"
-                    ? "bg-slate-800 text-white"
-                    : "text-slate-300 hover:bg-slate-900 hover:text-white",
+              <div className="space-y-0.5">
+                {projects.slice(0, 6).map((proj) => {
+                  const isCurrent = pathname === `/projects/${proj.id}`;
+                  return (
+                    <Link
+                      key={proj.id}
+                      to="/projects/$id"
+                      params={{ id: proj.id }}
+                      onClick={() => setMobileOpen(false)}
+                      className={cn(
+                        "flex items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-all group",
+                        isCurrent
+                          ? "bg-slate-800 text-white font-semibold"
+                          : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <span
+                          className="size-2 rounded-full shrink-0 ring-1 ring-white/20"
+                          style={{ backgroundColor: proj.color || "#6366f1" }}
+                        />
+                        <span className="truncate">{proj.name}</span>
+                      </div>
+                      {proj.key && (
+                        <span className="text-[10px] text-slate-400 font-mono group-hover:text-slate-300">
+                          {proj.key}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+                {projects.length > 6 && (
+                  <Link
+                    to="/projects"
+                    onClick={() => setMobileOpen(false)}
+                    className="block px-3 py-1 text-[11px] font-medium text-indigo-400 hover:underline"
+                  >
+                    + {projects.length - 6} more projects
+                  </Link>
                 )}
-              >
-                <div className="flex items-center gap-2">
-                  <ListTodo className="size-3.5 text-slate-400" />
-                  <span>All Tasks Board</span>
-                </div>
-                <span className="text-[10px] text-slate-400">{tasks.filter((t) => !t.isTrash).length}</span>
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => handleSmartSelect("overdue")}
-                className={cn(
-                  "flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
-                  pathname.startsWith("/tasks") && activeFilter === "overdue"
-                    ? "bg-rose-500/20 text-rose-300"
-                    : "text-slate-300 hover:bg-slate-900 hover:text-white",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="size-3.5 text-rose-400" />
-                  <span>Overdue Tasks</span>
-                </div>
-                {overdueCount > 0 && (
-                  <span className="rounded-full bg-rose-500/20 px-1.5 py-0.2 text-[10px] font-semibold text-rose-300">
-                    {overdueCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSmartSelect("trash")}
-                className={cn(
-                  "flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
-                  pathname.startsWith("/tasks") && activeFilter === "trash"
-                    ? "bg-slate-800 text-rose-400"
-                    : "text-slate-300 hover:bg-slate-900 hover:text-white",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Trash2 className="size-3.5 text-slate-400" />
-                  <span>Trash</span>
-                </div>
-              </button>
+              </div>
             </div>
-          )}
-        </div>
+
+            {/* Task Views & Custom Lists */}
+            <div className="space-y-1 border-t border-slate-800/80 pt-4">
+              <button
+                type="button"
+                onClick={() => setTaskViewsCollapsed(!taskViewsCollapsed)}
+                className="flex w-full items-center justify-between px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                <span>Task Backlog & Lists</span>
+                {taskViewsCollapsed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
+              </button>
+
+              {!taskViewsCollapsed && (
+                <div className="space-y-0.5">
+                  <Link
+                    to="/tasks"
+                    onClick={() => {
+                      setActiveFilter("all");
+                      setMobileOpen(false);
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                      pathname === "/tasks" && activeFilter === "all"
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ListTodo className="size-3.5 text-slate-400" />
+                      <span>All Tasks Board</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">{tasks.filter((t) => !t.isTrash).length}</span>
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSmartSelect("overdue")}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                      pathname.startsWith("/tasks") && activeFilter === "overdue"
+                        ? "bg-rose-500/20 text-rose-300"
+                        : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="size-3.5 text-rose-400" />
+                      <span>Overdue Tasks</span>
+                    </div>
+                    {overdueCount > 0 && (
+                      <span className="rounded-full bg-rose-500/20 px-1.5 py-0.2 text-[10px] font-semibold text-rose-300">
+                        {overdueCount}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSmartSelect("trash")}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                      pathname.startsWith("/tasks") && activeFilter === "trash"
+                        ? "bg-slate-800 text-rose-400"
+                        : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Trash2 className="size-3.5 text-slate-400" />
+                      <span>Trash</span>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Sidebar Footer with PostgreSQL Live Status & Profile */}
@@ -610,6 +670,42 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Role Switcher Toggle */}
+            <div className="flex items-center rounded-lg border bg-muted/40 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  void switchRole("leader");
+                  toast.success("Switched to Team Leader View");
+                }}
+                className={cn(
+                  "px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
+                  user?.role !== "member"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                title="Switch view & permissions to Team Leader"
+              >
+                <span>👑 Leader</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void switchRole("member");
+                  toast.success("Switched to Team Member View");
+                }}
+                className={cn(
+                  "px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
+                  user?.role === "member"
+                    ? "bg-blue-600 text-white shadow-xs"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                title="Switch view & permissions to Team Member"
+              >
+                <span>👤 Member</span>
+              </button>
+            </div>
 
             {/* Theme Toggle */}
             <Button

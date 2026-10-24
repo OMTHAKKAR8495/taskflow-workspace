@@ -854,6 +854,94 @@ export const mockTaskService: TaskService = {
     }
     return { success: true, message: "Invitation declined" };
   },
+
+  async submitProgressUpdate(taskId: string, data: any) {
+    await wait();
+    const store = load();
+    const task = store.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error("Task not found");
+    const user = getActiveUser();
+    const updateId = `prog-${Date.now()}`;
+    const newUpdate = {
+      id: updateId,
+      taskId,
+      userId: user?.id || "user-om",
+      userName: user?.fullName || "Om Thakkar",
+      status: data.status || task.status,
+      progressPercent: data.progressPercent || 0,
+      workCompleted: data.workCompleted,
+      workRemaining: data.workRemaining || "",
+      blockers: data.blockers || "",
+      nextSteps: data.nextSteps || "",
+      timeSpentHours: data.timeSpentHours || 0,
+      evidenceUrl: data.evidenceUrl || "",
+      createdAt: new Date().toISOString(),
+    };
+
+    if (!(store as any).progressUpdates) (store as any).progressUpdates = [];
+    (store as any).progressUpdates.push(newUpdate);
+
+    task.status = data.status || task.status;
+    task.progressPercent = data.progressPercent;
+    task.lastProgressUpdateAt = new Date().toISOString();
+    if (data.blockers) task.blockedReason = data.blockers;
+    if (task.status === "completed") task.completedAt = new Date().toISOString();
+
+    save(store);
+    return { success: true, task, progressUpdate: newUpdate };
+  },
+
+  async getTaskProgressUpdates(taskId: string) {
+    await wait();
+    const store = load();
+    return ((store as any).progressUpdates || []).filter((p: any) => p.taskId === taskId);
+  },
+
+  async submitTaskReview(taskId: string, data: any) {
+    await wait();
+    const store = load();
+    const task = store.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error("Task not found");
+    const user = getActiveUser();
+    const reviewId = `rev-${Date.now()}`;
+    const newReview = {
+      id: reviewId,
+      taskId,
+      reviewerId: user?.id || "user-om",
+      reviewerName: user?.fullName || "Team Leader",
+      progressUpdateId: data.progressUpdateId,
+      decision: data.decision,
+      feedback: data.feedback,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (!(store as any).reviews) (store as any).reviews = [];
+    (store as any).reviews.push(newReview);
+
+    if (data.decision === "approved") {
+      task.status = "completed";
+      task.progressPercent = 100;
+      task.completedAt = new Date().toISOString();
+    } else {
+      task.status = "in_progress";
+      task.completedAt = undefined;
+    }
+
+    save(store);
+    return { success: true, task, review: newReview };
+  },
+
+  async getTaskReviews(taskId: string) {
+    await wait();
+    const store = load();
+    return ((store as any).reviews || []).filter((r: any) => r.taskId === taskId);
+  },
+
+  async getReviewQueue() {
+    await wait();
+    const store = load();
+    return store.tasks.filter((t) => !t.isTrash && t.status === "in_review");
+  },
 };
 
 export function resetMockData() {

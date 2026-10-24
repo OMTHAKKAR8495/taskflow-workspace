@@ -1,6 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AppLayout } from "@/components/common/AppLayout";
 import { TeamView } from "@/components/team/TeamView";
+import { useAuth } from "@/context/AuthContext";
 
 export const Route = createFileRoute("/team")({
   head: () => ({
@@ -21,6 +23,19 @@ export const Route = createFileRoute("/team")({
 });
 
 function TeamPage() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user?.role === "member") {
+      navigate({ to: "/dashboard" });
+    }
+  }, [user?.role, navigate]);
+
+  if (user?.role === "member") {
+    return null;
+  }
+
   return (
     <AppLayout title="Team" breadcrumb={[{ label: "Workspace" }, { label: "Team" }]}>
       <TeamView />

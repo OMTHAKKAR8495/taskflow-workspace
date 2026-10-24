@@ -179,6 +179,33 @@ CREATE TABLE IF NOT EXISTS activities (
   at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS task_progress_updates (
+  id VARCHAR(255) PRIMARY KEY,
+  task_id VARCHAR(255) NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_name VARCHAR(255) NOT NULL,
+  status VARCHAR(50) NOT NULL,
+  progress_percent INTEGER NOT NULL DEFAULT 0,
+  work_completed TEXT NOT NULL,
+  work_remaining TEXT DEFAULT '',
+  blockers TEXT DEFAULT '',
+  next_steps TEXT DEFAULT '',
+  time_spent_hours NUMERIC DEFAULT 0,
+  evidence_url TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS task_reviews (
+  id VARCHAR(255) PRIMARY KEY,
+  task_id VARCHAR(255) NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  reviewer_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reviewer_name VARCHAR(255) NOT NULL,
+  progress_update_id VARCHAR(255) REFERENCES task_progress_updates(id) ON DELETE SET NULL,
+  decision VARCHAR(50) NOT NULL, -- 'approved', 'changes_requested'
+  feedback TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Idempotent schema migrations for existing databases
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'member';
 
@@ -209,6 +236,12 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS list_id VARCHAR(255);
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS list_name VARCHAR(255);
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS list_color VARCHAR(50);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS progress_percent INTEGER DEFAULT 0;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_progress_update_at TIMESTAMPTZ;
+
+ALTER TABLE project_invitations ADD COLUMN IF NOT EXISTS recipient_name VARCHAR(255) DEFAULT '';
+ALTER TABLE project_invitations ADD COLUMN IF NOT EXISTS skills JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE project_invitations ADD COLUMN IF NOT EXISTS designation VARCHAR(255) DEFAULT '';
 
 ALTER TABLE task_comments ADD COLUMN IF NOT EXISTS user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE task_comments ADD COLUMN IF NOT EXISTS mentions JSONB DEFAULT '[]'::jsonb;
@@ -233,4 +266,8 @@ CREATE INDEX IF NOT EXISTS idx_task_deps_target ON task_dependencies(depends_on_
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id);
 CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_progress_task ON task_progress_updates(task_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_progress_user ON task_progress_updates(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_reviews_task ON task_reviews(task_id, created_at DESC);
+
 

@@ -1,21 +1,38 @@
 import { Router, type Response } from "express";
 import { query } from "../db.js";
-import { requireAuth, optionalAuth, type AuthenticatedRequest } from "../auth.js";
+import { requireAuth, optionalAuth, extractToken, verifyToken, type AuthenticatedRequest } from "../auth.js";
+import { isWorkspaceAdminOrLead, isProjectLeader, isProjectMember } from "../permissions.js";
 
 const router = Router();
 
 function getUserId(req: AuthenticatedRequest): string {
+  if (req.user?.userId) return req.user.userId;
   if (req.userId) return req.userId;
-  return "user-om";
+  const token = extractToken(req);
+  if (token) {
+    const decoded = verifyToken(token);
+    if (decoded?.userId) return decoded.userId;
+  }
+  const custom = req.headers["x-user-id"] as string;
+  return custom && custom.trim() ? custom.trim() : "user-om";
 }
 
 // 1. GET /api/projects - List all projects with aggregated statistics
 router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
     const { status, search } = req.query;
+
+    const isLead = await isWorkspaceAdminOrLead(userId);
 
     let sql = "SELECT * FROM projects WHERE 1=1";
     const params: any[] = [];
+
+    // Data isolation: non-leaders only see projects they own or are assigned members of
+    if (!isLead) {
+      params.push(userId);
+      sql += ` AND (owner_id = $${params.length} OR id IN (SELECT project_id FROM project_members WHERE user_id = $${params.length}))`;
+    }
 
     if (status && status !== "all") {
       if (status === "archived") {
@@ -146,6 +163,12 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+
+    const isLead = await isWorkspaceAdminOrLead(userId);
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only team leaders and administrators can create projects" });
+    }
+
     const {
       name,
       key,
@@ -248,6 +271,7 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
 router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = getUserId(req);
     const projectRes = await query("SELECT * FROM projects WHERE id = $1", [id]);
 
     if (!projectRes.rowCount || projectRes.rowCount === 0) {
@@ -255,6 +279,14 @@ router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response
     }
 
     const p = projectRes.rows[0];
+
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isProjLead = isGlobalLead || (await isProjectLeader(userId, String(id)));
+    const isMember = isProjLead || (await isProjectMember(userId, String(id)));
+
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
 
     // Fetch members
     const membersRes = await query(
@@ -278,14 +310,22 @@ router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response
       [id],
     );
 
-    // Fetch tasks summary
-    const tasksRes = await query(
-      `SELECT id, identifier, title, status, priority, due_date, assignee_id, assignee_name
-       FROM tasks
-       WHERE project_id = $1 AND is_trash = FALSE
-       ORDER BY created_at DESC`,
-      [id],
-    );
+    // Fetch tasks summary (leaders see all project tasks, members see only their assigned/reviewed tasks)
+    const tasksRes = isProjLead
+      ? await query(
+          `SELECT id, identifier, title, status, priority, due_date, assignee_id, assignee_name
+           FROM tasks
+           WHERE project_id = $1 AND is_trash = FALSE
+           ORDER BY created_at DESC`,
+          [id],
+        )
+      : await query(
+          `SELECT id, identifier, title, status, priority, due_date, assignee_id, assignee_name
+           FROM tasks
+           WHERE project_id = $1 AND is_trash = FALSE AND (assignee_id = $2 OR user_id = $2 OR reviewer_id = $2)
+           ORDER BY created_at DESC`,
+          [id, userId],
+        );
 
     // Fetch recent activities
     const activitiesRes = await query(
@@ -494,6 +534,13 @@ router.get("/:id/members", async (req: AuthenticatedRequest, res: Response) => {
 router.post("/:id/members", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const currentUserId = getUserId(req);
+
+    const isLead = await isProjectLeader(currentUserId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can add members to a project" });
+    }
+
     const { userId, role = "member" } = req.body;
 
     if (!userId) {
@@ -518,6 +565,13 @@ router.post("/:id/members", requireAuth, async (req: AuthenticatedRequest, res: 
 router.delete("/:id/members/:userId", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id, userId } = req.params;
+    const currentUserId = getUserId(req);
+
+    const isLead = await isProjectLeader(currentUserId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can remove project members" });
+    }
+
     await query("DELETE FROM project_members WHERE project_id = $1 AND user_id = $2", [id, userId]);
     res.json({ success: true });
   } catch (err: any) {

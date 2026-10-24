@@ -2,6 +2,13 @@ import { Router, type Response } from "express";
 import { query } from "../db.js";
 import { extractToken, verifyToken, optionalAuth, requireAuth, type AuthenticatedRequest } from "../auth.js";
 import { wouldCreateCycle } from "../dependencies.js";
+import {
+  canUserEditTask,
+  canUserReviewTask,
+  canUserViewTask,
+  isWorkspaceAdminOrLead,
+  isProjectLeader,
+} from "../permissions.js";
 
 const router = Router();
 
@@ -17,6 +24,8 @@ export const VALID_STATUSES = [
 export const VALID_PRIORITIES = ["critical", "high", "medium", "low"];
 
 function getUserId(req: AuthenticatedRequest): string {
+  if (req.user?.userId) return req.user.userId;
+  if (req.userId) return req.userId;
   const token = extractToken(req);
   if (token) {
     const decoded = verifyToken(token);
@@ -26,7 +35,13 @@ function getUserId(req: AuthenticatedRequest): string {
   return custom && custom.trim() ? custom.trim() : "user-om";
 }
 
-function formatTask(row: any, comments: any[] = [], dependencies: any[] = []) {
+function formatTask(
+  row: any,
+  comments: any[] = [],
+  dependencies: any[] = [],
+  progressUpdates: any[] = [],
+  reviews: any[] = [],
+) {
   let tags: string[] = [];
   try {
     tags = typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags || [];
@@ -85,6 +100,13 @@ function formatTask(row: any, comments: any[] = [], dependencies: any[] = []) {
     estimatedHours: parseFloat(row.estimated_hours || "0") || 0,
     actualHours: parseFloat(row.actual_hours || "0") || 0,
     estimate: row.estimate || "3 pts",
+    progressPercent:
+      row.progress_percent !== null && row.progress_percent !== undefined
+        ? parseInt(row.progress_percent, 10)
+        : 0,
+    lastProgressUpdateAt: row.last_progress_update_at
+      ? new Date(row.last_progress_update_at).toISOString()
+      : null,
     tags,
     subtasks,
     acceptanceCriteria,
@@ -112,6 +134,31 @@ function formatTask(row: any, comments: any[] = [], dependencies: any[] = []) {
       dependsOnTaskStatus: d.depends_on_status || "backlog",
       dependencyType: d.dependency_type,
     })),
+    progressUpdates: progressUpdates.map((p) => ({
+      id: p.id,
+      taskId: p.task_id,
+      userId: p.user_id,
+      userName: p.user_name,
+      status: p.status,
+      progressPercent: parseInt(p.progress_percent || "0", 10),
+      workCompleted: p.work_completed,
+      workRemaining: p.work_remaining || "",
+      blockers: p.blockers || "",
+      nextSteps: p.next_steps || "",
+      timeSpentHours: parseFloat(p.time_spent_hours || "0") || 0,
+      evidenceUrl: p.evidence_url || "",
+      createdAt: new Date(p.created_at).toISOString(),
+    })),
+    reviews: reviews.map((r) => ({
+      id: r.id,
+      taskId: r.task_id,
+      reviewerId: r.reviewer_id,
+      reviewerName: r.reviewer_name,
+      progressUpdateId: r.progress_update_id || undefined,
+      decision: r.decision,
+      feedback: r.feedback,
+      createdAt: new Date(r.created_at).toISOString(),
+    })),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };
@@ -120,10 +167,25 @@ function formatTask(row: any, comments: any[] = [], dependencies: any[] = []) {
 // 1. GET /tasks/stats - Get dashboard statistics
 router.get("/stats", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
     const { projectId } = req.query;
+
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    let isProjLead = false;
+    if (projectId && typeof projectId === "string" && projectId !== "all") {
+      isProjLead = await isProjectLeader(userId, projectId);
+    }
+    const isAuthorizedLead = isGlobalLead || isProjLead;
 
     let sql = "SELECT * FROM tasks WHERE is_trash = FALSE";
     const params: any[] = [];
+
+    // Members only see stats for tasks assigned to them, created by them, or reviewed by them
+    if (!isAuthorizedLead) {
+      params.push(userId);
+      sql += ` AND (assignee_id = $${params.length} OR user_id = $${params.length} OR reviewer_id = $${params.length})`;
+    }
+
     if (projectId && typeof projectId === "string" && projectId !== "all") {
       params.push(projectId);
       sql += ` AND project_id = $${params.length}`;
@@ -197,17 +259,45 @@ router.get("/my-work", optionalAuth, async (req: AuthenticatedRequest, res: Resp
     const now = new Date();
     const tasks = userTasksRes.rows.map((row) => formatTask(row));
 
-    const assignedToMe = tasks.filter((t) => t.assignee?.id === userId && t.status !== "completed");
+    const allAssigned = tasks.filter((t) => t.assignee?.id === userId || t.userId === userId);
+    const assignedToMe = tasks.filter((t) => (t.assignee?.id === userId || (!t.assignee?.id && t.userId === userId)) && t.status !== "completed");
+    const notStarted = assignedToMe.filter((t) => t.status === "ready" || t.status === "backlog" || t.status === "pending");
+    const inProgress = assignedToMe.filter((t) => t.status === "in_progress");
+    const inReview = assignedToMe.filter((t) => t.status === "in_review");
+    const blocked = assignedToMe.filter((t) => t.status === "blocked");
     const reviewing = tasks.filter((t) => t.reviewer?.id === userId && t.status === "in_review");
     const createdByMe = tasks.filter((t) => t.userId === userId && t.status !== "completed");
     const overdue = assignedToMe.filter((t) => t.dueDate && new Date(t.dueDate) < now);
-    const completedRecently = tasks.filter((t) => t.status === "completed");
+    const completed = tasks.filter((t) => (t.assignee?.id === userId || t.userId === userId) && t.status === "completed");
+    const completedRecently = completed.slice(0, 15);
+
+    // Upcoming deadlines in the next 14 days
+    const upcomingLimit = new Date();
+    upcomingLimit.setDate(now.getDate() + 14);
+    const upcomingDeadlines = assignedToMe
+      .filter((t) => t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= upcomingLimit)
+      .sort((a, b) => (new Date(a.dueDate!).getTime()) - (new Date(b.dueDate!).getTime()));
 
     res.json({
+      stats: {
+        totalAssigned: allAssigned.length,
+        notStarted: notStarted.length,
+        inProgress: inProgress.length,
+        inReview: inReview.length,
+        blocked: blocked.length,
+        completed: completed.length,
+        overdue: overdue.length,
+        upcomingCount: upcomingDeadlines.length,
+      },
       assignedToMe,
+      notStarted,
+      inProgress,
+      inReview,
+      blocked,
       reviewing,
       createdByMe,
       overdue,
+      upcomingDeadlines,
       completedRecently,
       totalActive: assignedToMe.length + reviewing.length,
     });
@@ -217,10 +307,66 @@ router.get("/my-work", optionalAuth, async (req: AuthenticatedRequest, res: Resp
   }
 });
 
+// 2b. GET /tasks/review-queue - Tasks awaiting team leader review
+router.get("/review-queue", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const isLead = await isWorkspaceAdminOrLead(userId);
+
+    let sql = `SELECT t.*,
+              (SELECT json_build_object(
+                 'id', pu.id,
+                 'workCompleted', pu.work_completed,
+                 'workRemaining', pu.work_remaining,
+                 'progressPercent', pu.progress_percent,
+                 'timeSpentHours', pu.time_spent_hours,
+                 'evidenceUrl', pu.evidence_url,
+                 'userName', pu.user_name,
+                 'createdAt', pu.created_at
+               ) FROM task_progress_updates pu WHERE pu.task_id = t.id ORDER BY pu.created_at DESC LIMIT 1) as latest_progress
+       FROM tasks t
+       WHERE t.is_trash = FALSE AND t.status = 'in_review'`;
+    const params: any[] = [];
+
+    if (!isLead) {
+      const ledProjectsRes = await query("SELECT id FROM projects WHERE owner_id = $1", [userId]);
+      const ledProjectIds = ledProjectsRes.rows.map((r) => r.id);
+      if (ledProjectIds.length > 0) {
+        params.push(ledProjectIds, userId);
+        sql += ` AND (t.project_id = ANY($1) OR t.reviewer_id = $2)`;
+      } else {
+        params.push(userId);
+        sql += ` AND t.reviewer_id = $1`;
+      }
+    }
+
+    sql += ` ORDER BY t.updated_at DESC`;
+    const result = await query(sql, params);
+
+    res.json(
+      result.rows.map((r) => ({
+        ...formatTask(r),
+        latestProgress: r.latest_progress || null,
+      })),
+    );
+  } catch (err: any) {
+    console.error("Error fetching review queue:", err);
+    res.status(500).json({ error: "Failed to fetch review queue" });
+  }
+});
+
 // 3. GET /tasks - List tasks with project, status, and search filters
 router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
     const { projectId, status, priority, assigneeId, search, isTrash } = req.query;
+
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    let isProjLead = false;
+    if (projectId && typeof projectId === "string" && projectId !== "all") {
+      isProjLead = await isProjectLeader(userId, projectId);
+    }
+    const isAuthorizedLead = isGlobalLead || isProjLead;
 
     let sql = "SELECT * FROM tasks WHERE 1=1";
     const params: any[] = [];
@@ -229,6 +375,13 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
       sql += " AND is_trash = TRUE";
     } else {
       sql += " AND is_trash = FALSE";
+    }
+
+    // Role-based data isolation for members:
+    // Non-leaders can only see tasks assigned to them, created by them, or designated for their review
+    if (!isAuthorizedLead) {
+      params.push(userId);
+      sql += ` AND (assignee_id = $${params.length} OR user_id = $${params.length} OR reviewer_id = $${params.length})`;
     }
 
     if (projectId && typeof projectId === "string" && projectId !== "all") {
@@ -297,10 +450,17 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = getUserId(req);
 
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
       return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
     }
 
     const commentsRes = await query(
@@ -316,7 +476,25 @@ router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response
       [id],
     );
 
-    res.json(formatTask(taskRes.rows[0], commentsRes.rows, depsRes.rows));
+    const progressRes = await query(
+      "SELECT * FROM task_progress_updates WHERE task_id = $1 ORDER BY created_at DESC",
+      [id],
+    );
+
+    const reviewsRes = await query(
+      "SELECT * FROM task_reviews WHERE task_id = $1 ORDER BY created_at DESC",
+      [id],
+    );
+
+    res.json(
+      formatTask(
+        task,
+        commentsRes.rows,
+        depsRes.rows,
+        progressRes.rows,
+        reviewsRes.rows,
+      ),
+    );
   } catch (err: any) {
     console.error("Error fetching task:", err);
     res.status(500).json({ error: "Failed to fetch task" });
@@ -360,6 +538,18 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
       return res
         .status(400)
         .json({ error: `Invalid priority. Must be one of: ${VALID_PRIORITIES.join(", ")}` });
+    }
+
+    // Role-based authorization: Only team leaders can assign tasks to other members
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    let isProjLead = false;
+    if (projectId) {
+      isProjLead = await isProjectLeader(userId, projectId);
+    }
+    if (!isGlobalLead && !isProjLead) {
+      if (assigneeId && assigneeId !== userId) {
+        return res.status(403).json({ error: "Unauthorized: Only team leaders can assign tasks to other team members" });
+      }
     }
 
     // Lookup Project info and auto-generate identifier (e.g. CORE-101)
@@ -512,6 +702,26 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
       return res.status(404).json({ error: "Task not found" });
     }
     const current = currentRes.rows[0];
+    const taskId = String(id);
+
+    const perm = await canUserEditTask(userId, taskId, current);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to update this task" });
+    }
+
+    if (!perm.isLeader) {
+      if (req.body.assigneeId !== undefined && req.body.assigneeId !== current.assignee_id) {
+        return res.status(403).json({ error: "Unauthorized: Team members cannot reassign tasks to other members" });
+      }
+      if (req.body.projectId !== undefined && req.body.projectId !== current.project_id) {
+        return res.status(403).json({ error: "Unauthorized: Team members cannot move tasks between projects" });
+      }
+      if (req.body.status === "completed" && current.reviewer_id && current.reviewer_id !== userId && current.status !== "completed") {
+        return res.status(400).json({
+          error: "This task requires leader/reviewer sign-off. Please submit your work for review instead.",
+        });
+      }
+    }
 
     // Validate fields if provided
     if (req.body.title !== undefined) {
@@ -561,6 +771,8 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
       req.body.isBookmarked !== undefined ? req.body.isBookmarked : current.is_bookmarked;
     const milestoneId =
       req.body.milestoneId !== undefined ? req.body.milestoneId : current.milestone_id;
+    const progressPercent =
+      req.body.progressPercent !== undefined ? Math.max(0, Math.min(100, parseInt(req.body.progressPercent, 10) || 0)) : (current.progress_percent || 0);
 
     const tags = req.body.tags !== undefined ? JSON.stringify(req.body.tags) : current.tags;
     const subtasks =
@@ -647,8 +859,8 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
            assignee_id = $15, assignee_name = $16, assignee_role = $17, assignee_initials = $18,
            reviewer_id = $19, reviewer_name = $20, milestone_id = $21,
            tags = $22, subtasks = $23, acceptance_criteria = $24, is_bookmarked = $25,
-           completed_at = $26, updated_at = $27
-       WHERE id = $28
+           completed_at = $26, progress_percent = $27, updated_at = $28
+       WHERE id = $29
        RETURNING *`,
       [
         title,
@@ -677,6 +889,7 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
         acceptanceCriteria,
         isBookmarked,
         completedAt,
+        progressPercent,
         now,
         id,
       ],
@@ -762,6 +975,16 @@ router.post("/:id/status", requireAuth, async (req: AuthenticatedRequest, res: R
     }
     const current = currentRes.rows[0];
 
+    const perm = await canUserEditTask(userId, String(id), current);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to update this task" });
+    }
+    if (status === "completed" && !perm.isLeader && current.reviewer_id && current.reviewer_id !== userId) {
+      return res.status(400).json({
+        error: "This task requires leader/reviewer approval. Submit for review instead.",
+      });
+    }
+
     // If moving to completed, verify if this task has unresolved blocking tasks
     if (status === "completed") {
       const blockersRes = await query(
@@ -812,10 +1035,384 @@ router.post("/:id/status", requireAuth, async (req: AuthenticatedRequest, res: R
   }
 });
 
-// 8. Task Dependencies API with Circular Dependency Prevention
-router.get("/:id/dependencies", async (req: AuthenticatedRequest, res: Response) => {
+// 7b. POST /tasks/:id/progress - Submit formal task progress update
+router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const {
+      status,
+      progressPercent,
+      workCompleted,
+      workRemaining = "",
+      blockers = "",
+      nextSteps = "",
+      timeSpentHours = 0,
+      evidenceUrl = "",
+    } = req.body;
+
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to update this task" });
+    }
+
+    if (!workCompleted || typeof workCompleted !== "string" || !workCompleted.trim()) {
+      return res.status(400).json({ error: "Work completed description is required" });
+    }
+
+    const pct = parseInt(progressPercent !== undefined ? progressPercent : (task.progress_percent || 0), 10);
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      return res.status(400).json({ error: "Progress percentage must be an integer between 0 and 100" });
+    }
+
+    const validProgressStatuses = ["ready", "in_progress", "in_review", "blocked", "completed", "backlog"];
+    const targetStatus = status && validProgressStatuses.includes(status) ? status : task.status;
+
+    if (targetStatus === "blocked" && (!blockers || !blockers.trim())) {
+      return res.status(400).json({ error: "A blocker or issue reason is required when marking a task as Blocked" });
+    }
+
+    if (targetStatus === "completed" && !perm.isLeader && task.reviewer_id && task.reviewer_id !== userId) {
+      return res.status(400).json({
+        error: "This task requires leader/reviewer approval. Please submit for review instead.",
+      });
+    }
+
+    const userRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
+    const userName = userRes.rows[0]?.full_name || userRes.rows[0]?.username || "Team Member";
+
+    const updateId = `prog-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const now = new Date().toISOString();
+    const completedAt = targetStatus === "completed" ? now : null;
+    const cleanBlockedReason = targetStatus === "blocked" ? blockers.trim() : (task.status === "blocked" && targetStatus !== "blocked" ? "" : task.blocked_reason);
+    const addedHours = parseFloat(timeSpentHours) || 0;
+    const newActualHours = (parseFloat(task.actual_hours) || 0) + addedHours;
+
+    const progInsert = await query(
+      `INSERT INTO task_progress_updates
+       (id, task_id, user_id, user_name, status, progress_percent, work_completed, work_remaining, blockers, next_steps, time_spent_hours, evidence_url, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+       RETURNING *`,
+      [
+        updateId,
+        id,
+        userId,
+        userName,
+        targetStatus,
+        pct,
+        workCompleted.trim(),
+        workRemaining ? workRemaining.trim() : "",
+        blockers ? blockers.trim() : "",
+        nextSteps ? nextSteps.trim() : "",
+        addedHours,
+        evidenceUrl ? evidenceUrl.trim() : "",
+      ],
+    );
+
+    const taskUpdateRes = await query(
+      `UPDATE tasks
+       SET status = $1,
+           progress_percent = $2,
+           blocked_reason = $3,
+           actual_hours = $4,
+           last_progress_update_at = NOW(),
+           completed_at = COALESCE($5, completed_at),
+           updated_at = NOW()
+       WHERE id = $6
+       RETURNING *`,
+      [targetStatus, pct, cleanBlockedReason, newActualHours, completedAt, id],
+    );
+
+    const actType = targetStatus === "in_review"
+      ? "review_requested"
+      : targetStatus === "blocked"
+        ? "task_blocked"
+        : targetStatus === "completed"
+          ? "task_completed"
+          : "progress_updated";
+
+    await query(
+      `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+      [
+        `act-${Date.now()}`,
+        userId,
+        task.project_id,
+        id,
+        task.title,
+        actType,
+        JSON.stringify({
+          status: targetStatus,
+          progressPercent: pct,
+          workCompleted: workCompleted.trim(),
+          userName,
+        }),
+      ],
+    );
+
+    const recipientId = task.reviewer_id || (task.project_id ? (await query("SELECT owner_id FROM projects WHERE id = $1", [task.project_id])).rows[0]?.owner_id : "user-om") || "user-om";
+
+    if (recipientId && recipientId !== userId) {
+      let notifTitle = `Progress Update: ${task.identifier || task.title}`;
+      let notifMessage = `${userName} updated progress to ${pct}%: ${workCompleted.trim().slice(0, 100)}`;
+      let notifType = "system";
+
+      if (targetStatus === "in_review") {
+        notifTitle = `Review Requested: ${task.identifier || task.title}`;
+        notifMessage = `${userName} submitted work for review (${pct}% complete).`;
+        notifType = "review";
+      } else if (targetStatus === "blocked") {
+        notifTitle = `Task Blocked: ${task.identifier || task.title}`;
+        notifMessage = `${userName} reported a blocker: ${blockers.trim().slice(0, 100)}`;
+        notifType = "system";
+      }
+
+      await query(
+        `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'task', $8, FALSE, NOW())`,
+        [`notif-${Date.now()}`, recipientId, userId, userName, notifType, notifTitle, notifMessage, id],
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      task: formatTask(taskUpdateRes.rows[0]),
+      progressUpdate: {
+        id: progInsert.rows[0].id,
+        taskId: id,
+        userId,
+        userName,
+        status: targetStatus,
+        progressPercent: pct,
+        workCompleted: workCompleted.trim(),
+        workRemaining: workRemaining.trim(),
+        blockers: blockers.trim(),
+        nextSteps: nextSteps.trim(),
+        timeSpentHours: addedHours,
+        evidenceUrl: evidenceUrl.trim(),
+        createdAt: new Date(progInsert.rows[0].created_at).toISOString(),
+      },
+    });
+  } catch (err: any) {
+    console.error("Error submitting progress update:", err);
+    res.status(500).json({ error: "Failed to submit progress update: " + err.message });
+  }
+});
+
+// 7c. GET /tasks/:id/progress - Historical progress update log
+router.get("/:id/progress", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = getUserId(req);
+
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
+    }
+
+    const result = await query(
+      "SELECT * FROM task_progress_updates WHERE task_id = $1 ORDER BY created_at DESC",
+      [id],
+    );
+    res.json(
+      result.rows.map((p) => ({
+        id: p.id,
+        taskId: p.task_id,
+        userId: p.user_id,
+        userName: p.user_name,
+        status: p.status,
+        progressPercent: parseInt(p.progress_percent || "0", 10),
+        workCompleted: p.work_completed,
+        workRemaining: p.work_remaining || "",
+        blockers: p.blockers || "",
+        nextSteps: p.next_steps || "",
+        timeSpentHours: parseFloat(p.time_spent_hours || "0") || 0,
+        evidenceUrl: p.evidence_url || "",
+        createdAt: new Date(p.created_at).toISOString(),
+      })),
+    );
+  } catch (err: any) {
+    console.error("Error fetching progress updates:", err);
+    res.status(500).json({ error: "Failed to fetch progress updates" });
+  }
+});
+
+// 7d. POST /tasks/:id/review - Review submission (Approve or Request Changes)
+router.post("/:id/review", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const { decision, feedback, progressUpdateId } = req.body;
+
+    if (!decision || (decision !== "approved" && decision !== "changes_requested")) {
+      return res.status(400).json({ error: "Decision must be either 'approved' or 'changes_requested'" });
+    }
+    if (!feedback || typeof feedback !== "string" || !feedback.trim()) {
+      return res.status(400).json({ error: "Written feedback is required for review decisions" });
+    }
+
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const authCheck = await canUserReviewTask(userId, String(id), task);
+    if (!authCheck.allowed) {
+      return res.status(403).json({ error: authCheck.reason || "Unauthorized to review this task" });
+    }
+
+    const reviewerRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
+    const reviewerName = reviewerRes.rows[0]?.full_name || reviewerRes.rows[0]?.username || "Team Leader";
+
+    const reviewId = `rev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const now = new Date().toISOString();
+
+    const revInsert = await query(
+      `INSERT INTO task_reviews (id, task_id, reviewer_id, reviewer_name, progress_update_id, decision, feedback, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       RETURNING *`,
+      [reviewId, id, userId, reviewerName, progressUpdateId || null, decision, feedback.trim()],
+    );
+
+    let newStatus = task.status;
+    let completedAt = task.completed_at;
+    let progressPercent = task.progress_percent;
+
+    if (decision === "approved") {
+      newStatus = "completed";
+      completedAt = now;
+      progressPercent = 100;
+    } else {
+      newStatus = "in_progress";
+      completedAt = null;
+    }
+
+    const taskUpdateRes = await query(
+      `UPDATE tasks
+       SET status = $1, completed_at = $2, progress_percent = $3, updated_at = NOW()
+       WHERE id = $4
+       RETURNING *`,
+      [newStatus, completedAt, progressPercent, id],
+    );
+
+    await query(
+      `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+      [
+        `act-${Date.now()}`,
+        userId,
+        task.project_id,
+        id,
+        task.title,
+        decision === "approved" ? "task_approved" : "changes_requested",
+        JSON.stringify({ decision, reviewerName, feedback: feedback.trim() }),
+      ],
+    );
+
+    if (task.assignee_id && task.assignee_id !== userId) {
+      const notifTitle = decision === "approved"
+        ? `Task Approved: ${task.identifier || task.title}`
+        : `Changes Requested: ${task.identifier || task.title}`;
+      const notifMessage = decision === "approved"
+        ? `${reviewerName} approved your work: "${feedback.trim().slice(0, 100)}"`
+        : `${reviewerName} requested changes: "${feedback.trim().slice(0, 100)}"`;
+
+      await query(
+        `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
+         VALUES ($1, $2, $3, $4, 'review', $5, $6, 'task', $7, FALSE, NOW())`,
+        [`notif-${Date.now()}`, task.assignee_id, userId, reviewerName, notifTitle, notifMessage, id],
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      task: formatTask(taskUpdateRes.rows[0]),
+      review: {
+        id: revInsert.rows[0].id,
+        taskId: id,
+        reviewerId: userId,
+        reviewerName,
+        progressUpdateId: progressUpdateId || undefined,
+        decision,
+        feedback: feedback.trim(),
+        createdAt: new Date(revInsert.rows[0].created_at).toISOString(),
+      },
+    });
+  } catch (err: any) {
+    console.error("Error submitting review:", err);
+    res.status(500).json({ error: "Failed to submit review: " + err.message });
+  }
+});
+
+// 7e. GET /tasks/:id/reviews - Review decision history
+router.get("/:id/reviews", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = getUserId(req);
+
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
+    }
+
+    const result = await query(
+      "SELECT * FROM task_reviews WHERE task_id = $1 ORDER BY created_at DESC",
+      [id],
+    );
+    res.json(
+      result.rows.map((r) => ({
+        id: r.id,
+        taskId: r.task_id,
+        reviewerId: r.reviewer_id,
+        reviewerName: r.reviewer_name,
+        progressUpdateId: r.progress_update_id || undefined,
+        decision: r.decision,
+        feedback: r.feedback,
+        createdAt: new Date(r.created_at).toISOString(),
+      })),
+    );
+  } catch (err: any) {
+    console.error("Error fetching reviews:", err);
+    res.status(500).json({ error: "Failed to fetch reviews" });
+  }
+});
+
+// 8. Task Dependencies API with Circular Dependency Prevention
+router.get("/:id/dependencies", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = getUserId(req);
+
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
+    }
+
     const depsRes = await query(
       `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
        FROM task_dependencies td
@@ -1009,6 +1606,17 @@ router.post("/:id/comments", requireAuth, async (req: AuthenticatedRequest, res:
       return res.status(400).json({ error: "Comment content is required" });
     }
 
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
+    }
+
     // Extract @mentions if any
     const mentionsMatch = content.match(/@(\w+)/g);
     const mentions = mentionsMatch ? mentionsMatch.map((m: string) => m.substring(1)) : [];
@@ -1050,8 +1658,8 @@ router.post("/:id/comments", requireAuth, async (req: AuthenticatedRequest, res:
       "SELECT * FROM task_comments WHERE task_id = $1 ORDER BY created_at ASC",
       [id],
     );
-    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
-    res.json(formatTask(taskRes.rows[0], commentsRes.rows));
+    const freshTaskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    res.json(formatTask(freshTaskRes.rows[0] || task, commentsRes.rows));
   } catch (err: any) {
     console.error("Error adding comment:", err);
     res.status(500).json({ error: "Failed to add comment" });

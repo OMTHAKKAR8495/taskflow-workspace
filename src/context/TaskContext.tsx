@@ -18,9 +18,15 @@ import type {
   Profile,
   ProfileInput,
   Project,
+  ProjectInvitation,
+  ProjectInvitationInput,
   Task,
   TaskInput,
   TaskList,
+  TaskProgressUpdate,
+  TaskProgressUpdateInput,
+  TaskReview,
+  TaskReviewInput,
   TaskStatus,
   TeamMember,
 } from "@/types";
@@ -49,10 +55,20 @@ interface TaskContextValue {
   setActiveFilter: (filter: string) => void;
   notifications: NotificationItem[];
   unreadNotificationCount: number;
+  reviewQueue: Task[];
+  loadReviewQueue: () => Promise<Task[]>;
   reload: () => Promise<void>;
   createTask: (data: TaskInput) => Promise<Task>;
   updateTask: (id: string, data: Partial<TaskInput & { isBookmarked?: boolean }>) => Promise<Task>;
   updateTaskStatus: (taskId: string, status: TaskStatus, blockedReason?: string) => Promise<Task>;
+  submitProgressUpdate: (taskId: string, data: TaskProgressUpdateInput) => Promise<{ task: Task; progressUpdate: TaskProgressUpdate }>;
+  getTaskProgressUpdates: (taskId: string) => Promise<TaskProgressUpdate[]>;
+  submitTaskReview: (taskId: string, data: TaskReviewInput) => Promise<{ task: Task; review: TaskReview }>;
+  getTaskReviews: (taskId: string) => Promise<TaskReview[]>;
+  createInvitation: (projectId: string, data: ProjectInvitationInput) => Promise<any>;
+  resendInvitation: (invitationId: string) => Promise<any>;
+  revokeInvitation: (invitationId: string) => Promise<void>;
+  getProjectInvitations: (projectId: string) => Promise<ProjectInvitation[]>;
   deleteTask: (id: string) => Promise<void>;
   restoreTask: (id: string) => Promise<Task>;
   permanentDeleteTask: (id: string) => Promise<void>;
@@ -84,6 +100,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<Activity[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0);
+  const [reviewQueue, setReviewQueue] = useState<Task[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [selectedProjectId, setSelectedProjectIdState] = useState<string | "all">("all");
   const [activeFilter, setActiveFilter] = useState<string>("all");
@@ -97,6 +114,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
     return DEFAULT_LISTS;
   });
+
+  const loadReviewQueue = useCallback(async () => {
+    if (taskService.getReviewQueue) {
+      try {
+        const queue = await taskService.getReviewQueue();
+        setReviewQueue(queue);
+        return queue;
+      } catch (err) {
+        console.error("Failed to load review queue", err);
+      }
+    }
+    return [];
+  }, []);
 
   const addList = useCallback((name: string, color: string) => {
     const newList: TaskList = {
@@ -162,6 +192,14 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           const notifs = await taskService.getNotifications();
           setNotifications(notifs.notifications || []);
           setUnreadNotificationCount(notifs.unreadCount || 0);
+        } catch {}
+      }
+
+      // Review Queue
+      if (taskService.getReviewQueue) {
+        try {
+          const queue = await taskService.getReviewQueue();
+          setReviewQueue(queue);
         } catch {}
       }
 
@@ -361,6 +399,82 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const submitProgressUpdate = useCallback(
+    async (taskId: string, data: TaskProgressUpdateInput) => {
+      if (!taskService.submitProgressUpdate) throw new Error("Progress updates not supported");
+      const result = await taskService.submitProgressUpdate(taskId, data);
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? result.task : t)));
+      void refreshActivity();
+      void loadReviewQueue();
+      toast.success("Progress update submitted");
+      return result;
+    },
+    [refreshActivity, loadReviewQueue],
+  );
+
+  const getTaskProgressUpdates = useCallback(async (taskId: string) => {
+    if (!taskService.getTaskProgressUpdates) return [];
+    return await taskService.getTaskProgressUpdates(taskId);
+  }, []);
+
+  const submitTaskReview = useCallback(
+    async (taskId: string, data: TaskReviewInput) => {
+      if (!taskService.submitTaskReview) throw new Error("Task review not supported");
+      const result = await taskService.submitTaskReview(taskId, data);
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? result.task : t)));
+      void refreshActivity();
+      void loadReviewQueue();
+      if (data.decision === "approved") {
+        toast.success("Task approved & completed!");
+      } else {
+        toast.info("Changes requested. Assignee has been notified.");
+      }
+      return result;
+    },
+    [refreshActivity, loadReviewQueue],
+  );
+
+  const getTaskReviews = useCallback(async (taskId: string) => {
+    if (!taskService.getTaskReviews) return [];
+    return await taskService.getTaskReviews(taskId);
+  }, []);
+
+  const createInvitation = useCallback(
+    async (projectId: string, data: ProjectInvitationInput) => {
+      if (!taskService.createProjectInvitation) throw new Error("Invitations not supported");
+      const res = await taskService.createProjectInvitation(projectId, data);
+      if (res.emailSent) {
+        toast.success(`Invitation email sent to ${data.email}`);
+      } else {
+        toast.info(`Invitation created! You can copy the invitation link.`);
+      }
+      return res;
+    },
+    [],
+  );
+
+  const resendInvitation = useCallback(async (invitationId: string) => {
+    if (!taskService.resendProjectInvitation) throw new Error("Resend invitation not supported");
+    const res = await taskService.resendProjectInvitation(invitationId);
+    if (res.emailSent) {
+      toast.success("Invitation email resent!");
+    } else {
+      toast.info("New invitation link generated.");
+    }
+    return res;
+  }, []);
+
+  const revokeInvitation = useCallback(async (invitationId: string) => {
+    if (!taskService.revokeProjectInvitation) throw new Error("Revoke invitation not supported");
+    await taskService.revokeProjectInvitation(invitationId);
+    toast.success("Invitation revoked");
+  }, []);
+
+  const getProjectInvitations = useCallback(async (projectId: string) => {
+    if (!taskService.getProjectInvitations) return [];
+    return await taskService.getProjectInvitations(projectId);
+  }, []);
+
   const value = useMemo<TaskContextValue>(
     () => ({
       tasks,
@@ -377,6 +491,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       setActiveFilter,
       notifications,
       unreadNotificationCount,
+      reviewQueue,
+      loadReviewQueue,
       reload,
       createTask: async (data) => {
         const t = await taskService.createTask(data);
@@ -387,6 +503,14 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       },
       updateTask,
       updateTaskStatus,
+      submitProgressUpdate,
+      getTaskProgressUpdates,
+      submitTaskReview,
+      getTaskReviews,
+      createInvitation,
+      resendInvitation,
+      revokeInvitation,
+      getProjectInvitations,
       deleteTask,
       restoreTask,
       permanentDeleteTask,
@@ -439,9 +563,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       setActiveFilter,
       notifications,
       unreadNotificationCount,
+      reviewQueue,
+      loadReviewQueue,
       reload,
       updateTask,
       updateTaskStatus,
+      submitProgressUpdate,
+      getTaskProgressUpdates,
+      submitTaskReview,
+      getTaskReviews,
+      createInvitation,
+      resendInvitation,
+      revokeInvitation,
+      getProjectInvitations,
       deleteTask,
       restoreTask,
       permanentDeleteTask,
