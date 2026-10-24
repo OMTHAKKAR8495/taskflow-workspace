@@ -65,10 +65,12 @@ export function GoogleSignInButton({ label = "Continue with Google" }: { label?:
 
         if (containerRef.current) {
           containerRef.current.innerHTML = "";
+          const parentWidth = containerRef.current.parentElement?.clientWidth || window.innerWidth;
+          const targetWidth = Math.max(220, Math.min(parentWidth - 32, 380));
           window.google.accounts.id.renderButton(containerRef.current, {
             theme: "outline",
             size: "large",
-            width: 380,
+            width: targetWidth,
             text: "continue_with",
             shape: "rectangular",
             logo_alignment: "left",

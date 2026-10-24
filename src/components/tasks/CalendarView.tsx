@@ -162,16 +162,17 @@ export function CalendarView({ tasks }: { tasks: Task[] }) {
       </div>
 
       {/* Calendar Grid */}
-      <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
-        {/* Days of week header */}
-        <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground py-2.5">
-          {daysOfWeek.map((d) => (
-            <div key={d}>{d}</div>
-          ))}
-        </div>
+      <div className="overflow-x-auto no-scrollbar -mx-3 sm:mx-0 px-3 sm:px-0 pb-2">
+        <div className="rounded-2xl border bg-card shadow-sm overflow-hidden min-w-[560px] sm:min-w-0">
+          {/* Days of week header */}
+          <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground py-2.5">
+            {daysOfWeek.map((d) => (
+              <div key={d}>{d}</div>
+            ))}
+          </div>
 
-        {/* Month Cells */}
-        <div className="grid grid-cols-7 divide-x divide-y divide-border">
+          {/* Month Cells */}
+          <div className="grid grid-cols-7 divide-x divide-y divide-border">
           {calendarCells.map(({ date, isCurrentMonth, key }) => {
             const dayTasks = tasksByDate[key] || [];
             const today = isToday(date);
@@ -233,5 +234,6 @@ export function CalendarView({ tasks }: { tasks: Task[] }) {
         </div>
       </div>
     </div>
+  </div>
   );
 }

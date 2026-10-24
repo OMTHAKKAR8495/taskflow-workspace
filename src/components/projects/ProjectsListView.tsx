@@ -232,8 +232,8 @@ export function ProjectsListView() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg border bg-card p-1 text-xs">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full sm:w-auto">
+          <div className="flex items-center gap-1 rounded-lg border bg-card p-1 text-xs shrink-0">
             {["active", "completed", "archived", "all"].map((s) => (
               <button
                 key={s}

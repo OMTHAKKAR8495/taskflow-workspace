@@ -445,7 +445,7 @@ export function MemberDashboardView() {
       </div>
 
       {/* 4. Dedicated Workspace Navigation Sub-Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto border-b pb-2">
+      <div className="flex items-center gap-1.5 overflow-x-auto border-b pb-2 no-scrollbar -mx-2 sm:mx-0 px-2 sm:px-0">
         {[
           { id: "all_tasks", label: "My Tasks", icon: ListTodo, count: stats.total },
           { id: "due_soon", label: "Due Soon", icon: Clock, count: stats.upcomingDeadlines },

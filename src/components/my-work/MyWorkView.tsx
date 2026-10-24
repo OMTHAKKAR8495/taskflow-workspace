@@ -167,23 +167,23 @@ export function MyWorkView() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="bg-muted/60 p-1">
-          <TabsTrigger value="assigned" className="gap-2 text-xs">
+        <TabsList className="bg-muted/60 p-1 w-full justify-start overflow-x-auto no-scrollbar -mx-2 sm:mx-0 px-2 sm:px-0 flex-nowrap">
+          <TabsTrigger value="assigned" className="gap-2 text-xs shrink-0">
             <ListTodo className="size-3.5" />
             Assigned to Me ({assignedToMe.length})
           </TabsTrigger>
-          <TabsTrigger value="review" className="gap-2 text-xs">
+          <TabsTrigger value="review" className="gap-2 text-xs shrink-0">
             <FileCheck2 className="size-3.5" />
             Needs Review ({reviewing.length})
           </TabsTrigger>
-          <TabsTrigger value="overdue" className="gap-2 text-xs">
+          <TabsTrigger value="overdue" className="gap-2 text-xs shrink-0">
             <AlertTriangle className="size-3.5" />
             Overdue ({overdueTasks.length})
           </TabsTrigger>
-          <TabsTrigger value="created" className="gap-2 text-xs">
+          <TabsTrigger value="created" className="gap-2 text-xs shrink-0">
             Created by Me ({createdByMe.length})
           </TabsTrigger>
-          <TabsTrigger value="completed" className="gap-2 text-xs">
+          <TabsTrigger value="completed" className="gap-2 text-xs shrink-0">
             Completed ({completedRecently.length})
           </TabsTrigger>
         </TabsList>
