@@ -252,6 +252,17 @@ ALTER TABLE task_comments ADD COLUMN IF NOT EXISTS mentions JSONB DEFAULT '[]'::
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS project_id VARCHAR(255) REFERENCES projects(id) ON DELETE SET NULL;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb;
 
+ALTER TABLE task_progress_updates ADD COLUMN IF NOT EXISTS github_url TEXT DEFAULT '';
+ALTER TABLE task_progress_updates ADD COLUMN IF NOT EXISTS deployment_url TEXT DEFAULT '';
+ALTER TABLE task_progress_updates ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE task_progress_updates ADD COLUMN IF NOT EXISTS submission_status VARCHAR(50) DEFAULT 'submitted';
+ALTER TABLE task_progress_updates ADD COLUMN IF NOT EXISTS project_id VARCHAR(255) REFERENCES projects(id) ON DELETE SET NULL;
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS submission_status VARCHAR(50) DEFAULT 'none';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_url TEXT DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deployment_url TEXT DEFAULT '';
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);

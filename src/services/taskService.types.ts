@@ -42,8 +42,10 @@ export interface TaskService {
   createProject(data: Partial<Project>): Promise<Project>;
   updateProject(id: string, data: Partial<Project>): Promise<Project>;
   archiveProject(id: string): Promise<Project>;
-  addProjectMember?(projectId: string, userId: string, role: string): Promise<void>;
+  addProjectMember?(projectId: string, userId: string | string[], role?: string): Promise<any>;
   removeProjectMember?(projectId: string, userId: string): Promise<void>;
+  getProjectSubmissions?(projectId: string): Promise<ProjectSubmission[]>;
+  getProjectActivity?(projectId: string): Promise<any[]>;
 
   // Project Invitations
   getAllInvitations?(params?: { status?: string }): Promise<ProjectInvitation[]>;

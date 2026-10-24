@@ -27,17 +27,36 @@ import {
   XCircle,
   Info,
   ShieldAlert,
+  ExternalLink,
+  Eye,
+  Paperclip,
+  ShieldCheck,
+  History,
+  Sparkles,
+  Github,
+  Globe,
+  Search,
+  FileText,
 } from "lucide-react";
 import { useTasks } from "@/context/TaskContext";
+import { useAuth } from "@/context/AuthContext";
 import { taskService } from "@/services";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { StatusBadge, PriorityBadge } from "@/components/tasks/badges";
 import { KanbanBoard } from "@/components/tasks/KanbanBoard";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
+import { AssignTaskModal } from "@/components/tasks/AssignTaskModal";
+import { TaskReviewModal } from "@/components/tasks/TaskReviewModal";
 import { toast } from "sonner";
 import type {
   Milestone,
@@ -47,6 +66,7 @@ import type {
   TaskStatus,
   ProjectInvitation,
   CreateInvitationResponse,
+  ProjectSubmission,
 } from "@/types";
 
 interface ProjectWorkspaceViewProps {
@@ -54,15 +74,23 @@ interface ProjectWorkspaceViewProps {
 }
 
 export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
-  const { tasks, projects, team, updateTask, updateProject, archiveProject, reload } = useTasks();
+  const { tasks, projects, team, updateTask, updateProject, deleteProject, archiveProject, reload } =
+    useTasks();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [addMemberModalOpen, setAddMemberModalOpen] = useState(false);
   const [addMilestoneModalOpen, setAddMilestoneModalOpen] = useState(false);
   const [quickTaskTitle, setQuickTaskTitle] = useState("");
+
+  // Assign Task modal state
+  const [assignTaskModalOpen, setAssignTaskModalOpen] = useState(false);
+  const [presetAssigneeId, setPresetAssigneeId] = useState<string | undefined>(undefined);
+
+  // Task review modal state
+  const [reviewingTask, setReviewingTask] = useState<Task | null>(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
 
   // Project details from API
   const [projectDetail, setProjectDetail] = useState<Project | null>(null);
@@ -73,9 +101,32 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
   const [milestoneDate, setMilestoneDate] = useState("");
   const [milestoneDesc, setMilestoneDesc] = useState("");
 
-  // Add Member state
-  const [selectedUserId, setSelectedUserId] = useState("");
+  // Add Member Multi-select state
+  const [addMemberModalOpen, setAddMemberModalOpen] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [selectedRole, setSelectedRole] = useState("developer");
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [isAddingMembers, setIsAddingMembers] = useState(false);
+
+  // Submissions state
+  const [submissions, setSubmissions] = useState<ProjectSubmission[]>([]);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+
+  // Activities state
+  const [activities, setActivities] = useState<any[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(false);
+
+  // Project Settings form state
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editPriority, setEditPriority] = useState<TaskPriority>("medium");
+  const [editColor, setEditColor] = useState("#4f46e5");
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editDeadline, setEditDeadline] = useState("");
+  const [editStatus, setEditStatus] = useState<"active" | "planning" | "completed" | "archived">(
+    "active",
+  );
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // Project Invitations state
   const [invitations, setInvitations] = useState<ProjectInvitation[]>([]);
@@ -92,6 +143,10 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
   const [inviteResultModalOpen, setInviteResultModalOpen] = useState(false);
   const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
 
+  // Task view mode inside Tasks tab
+  const [taskViewMode, setTaskViewMode] = useState<"list" | "board">("list");
+  const [taskFilterStatus, setTaskFilterStatus] = useState<string>("all");
+
   const project = useMemo(() => {
     return projects.find((p) => p.id === projectId) || projectDetail;
   }, [projects, projectId, projectDetail]);
@@ -100,7 +155,16 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
     try {
       setLoadingDetail(true);
       const res = await taskService.getProjectById(projectId);
-      if (res) setProjectDetail(res);
+      if (res) {
+        setProjectDetail(res);
+        setEditName(res.name || "");
+        setEditDescription(res.description || "");
+        setEditPriority((res.priority as TaskPriority) || "medium");
+        setEditColor(res.color || "#4f46e5");
+        setEditStartDate(res.startDate ? new Date(res.startDate).toISOString().slice(0, 10) : "");
+        setEditDeadline(res.deadline ? new Date(res.deadline).toISOString().slice(0, 10) : "");
+        setEditStatus(res.status || "active");
+      }
     } catch (err) {
       console.error("Error loading project detail:", err);
     } finally {
@@ -122,133 +186,94 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
     }
   };
 
+  const loadSubmissions = async () => {
+    try {
+      setLoadingSubmissions(true);
+      if (taskService.getProjectSubmissions) {
+        const list = await taskService.getProjectSubmissions(projectId);
+        setSubmissions(list || []);
+      }
+    } catch (err) {
+      console.error("Error loading project submissions:", err);
+    } finally {
+      setLoadingSubmissions(false);
+    }
+  };
+
+  const loadActivities = async () => {
+    try {
+      setLoadingActivities(true);
+      if (taskService.getProjectActivity) {
+        const list = await taskService.getProjectActivity(projectId);
+        setActivities(list || []);
+      }
+    } catch (err) {
+      console.error("Error loading project activities:", err);
+    } finally {
+      setLoadingActivities(false);
+    }
+  };
+
   useEffect(() => {
     void loadProjectDetail();
     void loadInvitations();
+    void loadSubmissions();
+    void loadActivities();
   }, [projectId]);
 
-  const handleSendInvitation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-
-    // Check if user is already an active member of this project
-    const cleanEmail = inviteEmail.trim().toLowerCase();
-    const isAlreadyMember = (projectDetail?.members || []).some(
-      (m) => m.email && m.email.toLowerCase() === cleanEmail,
-    );
-    if (isAlreadyMember) {
-      toast.error(`${cleanEmail} is already an active member of this project.`);
-      return;
+  // Sync settings when project updates
+  useEffect(() => {
+    if (project) {
+      setEditName(project.name || "");
+      setEditDescription(project.description || "");
+      setEditPriority((project.priority as TaskPriority) || "medium");
+      setEditColor(project.color || "#4f46e5");
+      setEditStartDate(
+        project.startDate ? new Date(project.startDate).toISOString().slice(0, 10) : "",
+      );
+      setEditDeadline(
+        project.deadline ? new Date(project.deadline).toISOString().slice(0, 10) : "",
+      );
+      setEditStatus(project.status || "active");
     }
+  }, [project]);
 
-    // Check if duplicate pending invite exists
-    const hasPendingInvite = invitations.some(
-      (inv) => inv.recipientEmail.toLowerCase() === cleanEmail && inv.status === "pending",
-    );
-    if (hasPendingInvite) {
-      toast.error(`A pending invitation already exists for ${cleanEmail}.`);
-      return;
-    }
-
-    setIsInviting(true);
-    try {
-      if (!taskService.createProjectInvitation) throw new Error("Service unavailable");
-      const res = await taskService.createProjectInvitation(projectId, {
-        email: cleanEmail,
-        fullName: inviteFullName.trim() || undefined,
-        role: inviteRole,
-        skills: inviteSkills.trim() || undefined,
-        designation: inviteDesignation.trim() || undefined,
-        message: inviteMessage.trim() || undefined,
-      });
-
-      setInviteResult(res);
-      setInviteModalOpen(false);
-      setInviteResultModalOpen(true);
-      setInviteFullName("");
-      setInviteEmail("");
-      setInviteSkills("");
-      setInviteDesignation("");
-      setInviteMessage("");
-      void loadInvitations();
-
-      if (res.emailSent) {
-        toast.success(`Invitation email sent to ${cleanEmail}`);
-      } else {
-        toast.info("Invitation created! Shareable link generated.");
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to create invitation");
-    } finally {
-      setIsInviting(false);
-    }
-  };
-
-  const handleCopyInviteLink = (url: string) => {
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(url);
-      toast.success("Invitation link copied to clipboard!");
-    } else {
-      toast.info("Could not access clipboard. Please copy manually.");
-    }
-  };
-
-  const handleResendInvitation = async (invitationId: string) => {
-    setActionInProgressId(invitationId);
-    try {
-      if (!taskService.resendProjectInvitation) throw new Error("Service unavailable");
-      const res = await taskService.resendProjectInvitation(invitationId);
-      void loadInvitations();
-      if (res.emailSent) {
-        toast.success("Invitation resent via email with a rotated token!");
-      } else {
-        toast.info("Invitation token rotated! Copy the updated link from the dialog.");
-        setInviteResult({
-          success: true,
-          invitation: invitations.find((i) => i.id === invitationId) as any,
-          rawToken: res.rawToken,
-          invitationUrl: res.invitationUrl,
-          emailSent: false,
-          emailError: res.emailError,
-        });
-        setInviteResultModalOpen(true);
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to resend invitation");
-    } finally {
-      setActionInProgressId(null);
-    }
-  };
-
-  const handleRevokeInvitation = async (invitationId: string, email: string) => {
-    if (!confirm(`Are you sure you want to revoke the invitation for ${email}? The link will immediately stop working.`)) {
-      return;
-    }
-    setActionInProgressId(invitationId);
-    try {
-      if (!taskService.revokeProjectInvitation) throw new Error("Service unavailable");
-      await taskService.revokeProjectInvitation(invitationId);
-      toast.success("Invitation revoked successfully");
-      void loadInvitations();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to revoke invitation");
-    } finally {
-      setActionInProgressId(null);
-    }
-  };
-
+  // Tasks belonging to this project
   const projectTasks = useMemo(() => {
     return tasks.filter((t) => t.projectId === projectId && !t.isTrash);
   }, [tasks, projectId]);
 
-  const completedCount = projectTasks.filter((t) => t.status === "completed").length;
-  const inProgressCount = projectTasks.filter((t) => t.status === "in_progress").length;
-  const blockedTasks = projectTasks.filter((t) => t.status === "blocked");
+  const completedCount = useMemo(() => {
+    return projectTasks.filter((t) => t.status === "completed").length;
+  }, [projectTasks]);
+
+  const inProgressCount = useMemo(() => {
+    return projectTasks.filter((t) => t.status === "in_progress" || t.status === "in_review").length;
+  }, [projectTasks]);
+
+  const blockedTasks = useMemo(() => {
+    return projectTasks.filter((t) => t.status === "blocked");
+  }, [projectTasks]);
+
   const calculatedProgress =
     projectTasks.length > 0
       ? Math.round((completedCount / projectTasks.length) * 100)
       : project?.progress || 0;
 
+  // Filtered tasks for Tasks tab
+  const filteredProjectTasks = useMemo(() => {
+    if (taskFilterStatus === "all") return projectTasks;
+    return projectTasks.filter((t) => t.status === taskFilterStatus);
+  }, [projectTasks, taskFilterStatus]);
+
+  // Check if current user is owner or leader
+  const isLeader =
+    user?.role === "leader" ||
+    user?.role === "admin" ||
+    user?.id === "user-om" ||
+    (project && project.ownerId && project.ownerId === user?.id);
+
+  // Handler for Quick Add Task
   const handleQuickAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickTaskTitle.trim() || !project) return;
@@ -269,6 +294,7 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
     }
   };
 
+  // Handler for Milestone Creation
   const handleCreateMilestone = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!milestoneTitle.trim() || !milestoneDate) return;
@@ -292,6 +318,7 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
     }
   };
 
+  // Handler for Milestone Toggle
   const handleToggleMilestone = async (m: Milestone) => {
     try {
       const nextStatus = m.status === "completed" ? "pending" : "completed";
@@ -305,18 +332,152 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
     }
   };
 
-  const handleAddMember = async (e: React.FormEvent) => {
+  // Handler for Adding Existing Members (Multi-select)
+  const handleAddMembersSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedUserId) return;
+    if (selectedMemberIds.length === 0) {
+      toast.error("Please select at least one team member.");
+      return;
+    }
+    setIsAddingMembers(true);
     try {
       if (taskService.addProjectMember) {
-        await taskService.addProjectMember(projectId, selectedUserId, selectedRole);
+        await taskService.addProjectMember(projectId, selectedMemberIds, selectedRole);
       }
-      toast.success("Member assigned to project");
+      toast.success(
+        `Added ${selectedMemberIds.length} member${selectedMemberIds.length > 1 ? "s" : ""} to project.`,
+      );
+      setSelectedMemberIds([]);
       setAddMemberModalOpen(false);
       void loadProjectDetail();
-    } catch {
-      toast.error("Failed to add member");
+      void loadActivities();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to add member(s) to project");
+    } finally {
+      setIsAddingMembers(false);
+    }
+  };
+
+  // Toggle member selection checkbox
+  const toggleMemberSelection = (id: string) => {
+    setSelectedMemberIds((prev) =>
+      prev.includes(id) ? prev.filter((mId) => mId !== id) : [...prev, id],
+    );
+  };
+
+  // Handler for Sending Invitation
+  const handleSendInvitation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+
+    const cleanEmail = inviteEmail.trim().toLowerCase();
+    const isAlreadyMember = (projectDetail?.members || []).some(
+      (m) => m.email && m.email.toLowerCase() === cleanEmail,
+    );
+    if (isAlreadyMember) {
+      toast.error(`${cleanEmail} is already an active member of this project.`);
+      return;
+    }
+
+    const hasPendingInvite = invitations.some(
+      (inv) => inv.recipientEmail.toLowerCase() === cleanEmail && inv.status === "pending",
+    );
+    if (hasPendingInvite) {
+      toast.error(`A pending invitation already exists for ${cleanEmail}.`);
+      return;
+    }
+
+    setIsInviting(true);
+    try {
+      const skillsArray = inviteSkills
+        ? inviteSkills.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+
+      const res = await taskService.createProjectInvitation(projectId, {
+        recipientEmail: cleanEmail,
+        recipientName: inviteFullName.trim() || undefined,
+        role: inviteRole,
+        designation: inviteDesignation.trim() || undefined,
+        skills: skillsArray.length > 0 ? skillsArray : undefined,
+        message: inviteMessage.trim() || undefined,
+      });
+
+      setInviteResult(res);
+      setInviteResultModalOpen(true);
+      setInviteModalOpen(false);
+      setInviteEmail("");
+      setInviteFullName("");
+      setInviteSkills("");
+      setInviteDesignation("");
+      setInviteMessage("");
+      void loadInvitations();
+      void loadActivities();
+      toast.success(
+        res.emailSent
+          ? `Invitation email dispatched to ${cleanEmail}`
+          : `Invitation created for ${cleanEmail}`,
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create invitation");
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  const handleResendInvitation = async (invitationId: string) => {
+    try {
+      setActionInProgressId(invitationId);
+      const res = await taskService.resendProjectInvitation(projectId, invitationId);
+      setInviteResult(res);
+      setInviteResultModalOpen(true);
+      void loadInvitations();
+      toast.success(res.emailSent ? "Invitation email resent!" : "Invitation link regenerated!");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to resend invitation");
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  const handleRevokeInvitation = async (invitationId: string, email: string) => {
+    if (!confirm(`Revoke pending invitation for ${email}?`)) return;
+    try {
+      setActionInProgressId(invitationId);
+      await taskService.revokeProjectInvitation(projectId, invitationId);
+      void loadInvitations();
+      toast.success(`Invitation for ${email} revoked.`);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to revoke invitation");
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  // Handler for Saving Project Settings
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editName.trim()) {
+      toast.error("Project name cannot be empty.");
+      return;
+    }
+    setIsSavingSettings(true);
+    try {
+      await updateProject(projectId, {
+        name: editName.trim(),
+        description: editDescription.trim(),
+        priority: editPriority,
+        color: editColor,
+        startDate: editStartDate ? new Date(editStartDate).toISOString() : null,
+        deadline: editDeadline ? new Date(editDeadline).toISOString() : null,
+        status: editStatus,
+      });
+      toast.success("Project settings saved successfully!");
+      void loadProjectDetail();
+      void reload();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update project settings");
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -350,29 +511,35 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
               <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
                 {project.key}
               </span>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">{project.name}</h1>
-              <Badge
-                variant="outline"
-                className={`text-[10px] uppercase font-semibold ${
-                  project.health === "at_risk"
-                    ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
-                    : project.health === "delayed"
-                      ? "bg-rose-500/10 text-rose-600 border-rose-500/30"
-                      : "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
-                }`}
-              >
-                {(project.health || "on_track").replace("_", " ")}
+              <h1 className="text-xl font-bold tracking-tight text-foreground">{project.name}</h1>
+              <Badge variant="outline" className="capitalize text-xs font-semibold">
+                {project.status || "active"}
               </Badge>
-              <Badge variant="outline" className="text-[10px] uppercase font-medium">
-                {project.priority || "medium"} priority
+              <Badge variant="secondary" className="capitalize text-xs font-medium">
+                {project.priority || "medium"}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground max-w-2xl">
-              {project.description || "No description provided."}
+
+            <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
+              {project.description || "No project description provided."}
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 pl-2 lg:pl-0">
+          {/* Quick Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {isLeader && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPresetAssigneeId(undefined);
+                  setAssignTaskModalOpen(true);
+                }}
+                className="text-xs gap-1.5 cursor-pointer bg-primary text-primary-foreground shadow-2xs font-semibold"
+              >
+                <Plus className="size-3.5" /> Assign Task
+              </Button>
+            )}
+
             <Button
               size="sm"
               variant="outline"
@@ -383,14 +550,6 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
               className="text-xs gap-1.5 cursor-pointer"
             >
               <Share2 className="size-3.5" /> Share
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => archiveProject(project.id)}
-              className="text-xs gap-1.5 cursor-pointer"
-            >
-              {project.status === "archived" ? "Restore" : "Archive"}
             </Button>
           </div>
         </div>
@@ -409,7 +568,7 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
             <Users className="size-4 text-muted-foreground" />
             <div>
               <span className="text-muted-foreground block text-[11px]">Project Lead</span>
-              <span className="font-medium text-foreground">{project.lead}</span>
+              <span className="font-medium text-foreground">{project.lead || "Unassigned"}</span>
             </div>
           </div>
 
@@ -443,26 +602,30 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
 
       {/* Workspace Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="bg-muted/60 p-1">
+        <TabsList className="bg-muted/60 p-1 flex-wrap">
           <TabsTrigger value="overview" className="gap-2 text-xs">
             <FolderKanban className="size-3.5" />
             Overview
           </TabsTrigger>
-          <TabsTrigger value="backlog" className="gap-2 text-xs">
-            <ListTodo className="size-3.5" />
-            Backlog & Tasks ({projectTasks.length})
-          </TabsTrigger>
-          <TabsTrigger value="board" className="gap-2 text-xs">
-            <Columns className="size-3.5" />
-            Kanban Board
-          </TabsTrigger>
-          <TabsTrigger value="milestones" className="gap-2 text-xs">
-            <Flag className="size-3.5" />
-            Milestones ({(projectDetail?.milestones || []).length})
-          </TabsTrigger>
-          <TabsTrigger value="team" className="gap-2 text-xs">
+          <TabsTrigger value="members" className="gap-2 text-xs">
             <Users className="size-3.5" />
-            Team & Roles ({(projectDetail?.members || []).length})
+            Members ({(projectDetail?.members || []).length})
+          </TabsTrigger>
+          <TabsTrigger value="tasks" className="gap-2 text-xs">
+            <ListTodo className="size-3.5" />
+            Tasks ({projectTasks.length})
+          </TabsTrigger>
+          <TabsTrigger value="submissions" className="gap-2 text-xs">
+            <FileCheck2 className="size-3.5" />
+            Submissions ({submissions.length})
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="gap-2 text-xs">
+            <History className="size-3.5" />
+            Activity
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="gap-2 text-xs">
+            <Settings className="size-3.5" />
+            Settings
           </TabsTrigger>
         </TabsList>
 
@@ -502,8 +665,12 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                     onClick={() => setSelectedTask(bt)}
                     className="py-2 flex items-center justify-between cursor-pointer hover:underline"
                   >
-                    <span className="font-medium text-foreground">{bt.identifier}: {bt.title}</span>
-                    <span className="text-rose-500 text-[11px]">{bt.blockedReason || "Blocked"}</span>
+                    <span className="font-medium text-foreground">
+                      {bt.identifier}: {bt.title}
+                    </span>
+                    <span className="text-rose-500 text-[11px]">
+                      {bt.blockedReason || "Blocked"}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -518,52 +685,57 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                 <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
                   <Flag className="size-3.5 text-primary" /> Key Milestones
                 </h3>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setAddMilestoneModalOpen(true)}
-                  className="size-7 p-0 cursor-pointer text-xs"
-                >
-                  <Plus className="size-3.5" />
-                </Button>
+                {isLeader && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setAddMilestoneModalOpen(true)}
+                    className="size-7 p-0 cursor-pointer text-xs"
+                  >
+                    <Plus className="size-3.5" />
+                  </Button>
+                )}
               </div>
 
               {(projectDetail?.milestones || []).length === 0 ? (
                 <p className="text-xs text-muted-foreground py-4 text-center">
-                  No milestones defined yet. Click + to add one.
+                  No roadmap milestones defined yet.
                 </p>
               ) : (
                 <div className="space-y-2">
                   {projectDetail?.milestones?.map((m) => (
                     <div
                       key={m.id}
-                      onClick={() => handleToggleMilestone(m)}
-                      className="flex items-center justify-between p-2.5 rounded-lg border bg-muted/20 hover:bg-muted/40 cursor-pointer text-xs"
+                      className="flex items-center justify-between p-2.5 rounded-lg border bg-muted/20 text-xs"
                     >
                       <div className="flex items-center gap-2">
-                        <div
-                          className={`size-4 rounded-sm border flex items-center justify-center ${
+                        <button
+                          type="button"
+                          onClick={() => handleToggleMilestone(m)}
+                          className={`size-4 rounded-sm border flex items-center justify-center cursor-pointer ${
                             m.status === "completed"
                               ? "bg-emerald-600 border-emerald-600 text-white"
                               : "border-input"
                           }`}
                         >
                           {m.status === "completed" && <Check className="size-3 stroke-[3]" />}
-                        </div>
+                        </button>
                         <span
                           className={`font-medium ${
-                            m.status === "completed" ? "line-through text-muted-foreground" : "text-foreground"
+                            m.status === "completed"
+                              ? "line-through text-muted-foreground"
+                              : "text-foreground"
                           }`}
                         >
                           {m.title}
                         </span>
                       </div>
-                      <span className="text-[11px] text-muted-foreground">
+                      <Badge variant="outline" className="text-[10px]">
                         {new Date(m.targetDate).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
                         })}
-                      </span>
+                      </Badge>
                     </div>
                   ))}
                 </div>
@@ -576,14 +748,16 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                 <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
                   <Users className="size-3.5 text-primary" /> Project Members
                 </h3>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setAddMemberModalOpen(true)}
-                  className="size-7 p-0 cursor-pointer text-xs"
-                >
-                  <UserPlus className="size-3.5" />
-                </Button>
+                {isLeader && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setAddMemberModalOpen(true)}
+                    className="size-7 p-0 cursor-pointer text-xs"
+                  >
+                    <UserPlus className="size-3.5" />
+                  </Button>
+                )}
               </div>
 
               {(projectDetail?.members || []).length === 0 ? (
@@ -592,172 +766,73 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {projectDetail?.members?.map((mem) => (
-                    <div
-                      key={mem.id}
-                      className="flex items-center justify-between p-2.5 rounded-lg border bg-muted/20 text-xs"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="size-6 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-[10px]">
-                          {mem.initials}
+                  {projectDetail?.members?.map((mem) => {
+                    const memberTaskCount = projectTasks.filter(
+                      (t) => t.assigneeId === mem.id || t.assignee?.id === mem.id,
+                    ).length;
+
+                    return (
+                      <div
+                        key={mem.id}
+                        className="flex items-center justify-between p-2.5 rounded-lg border bg-muted/20 text-xs"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="size-6 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-[10px]">
+                            {mem.initials}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-foreground">{mem.name}</span>
+                            <span className="text-[10px] text-muted-foreground block">
+                              {mem.email}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="font-semibold text-foreground">{mem.name}</span>
-                          <span className="text-[10px] text-muted-foreground block">{mem.email}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-muted-foreground font-mono">
+                            {memberTaskCount} tasks
+                          </span>
+                          <Badge variant="outline" className="text-[10px] capitalize">
+                            {mem.role}
+                          </Badge>
                         </div>
                       </div>
-                      <Badge variant="outline" className="text-[10px] capitalize">
-                        {mem.role}
-                      </Badge>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
         </TabsContent>
 
-        {/* Tab 2: Backlog & List */}
-        <TabsContent value="backlog" className="space-y-4">
-          {/* Quick Add input */}
-          <form onSubmit={handleQuickAddTask} className="flex gap-2">
-            <input
-              type="text"
-              value={quickTaskTitle}
-              onChange={(e) => setQuickTaskTitle(e.target.value)}
-              placeholder={`Add a new task to ${project.name} backlog... (press Enter)`}
-              className="flex-1 h-9 rounded-lg border border-input bg-card px-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
-            />
-            <Button type="submit" size="sm" className="h-9 text-xs gap-1 cursor-pointer">
-              <Plus className="size-3.5" /> Add Task
-            </Button>
-          </form>
-
-          {/* Task list */}
-          {projectTasks.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-10 text-center text-xs text-muted-foreground">
-              No tasks in this project yet. Use the input above to quickly add deliverables to the backlog.
-            </div>
-          ) : (
-            <div className="divide-y rounded-xl border bg-card shadow-xs">
-              {projectTasks.map((t) => (
-                <div
-                  key={t.id}
-                  onClick={() => setSelectedTask(t)}
-                  className="flex items-center justify-between p-3.5 hover:bg-muted/40 cursor-pointer transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs font-semibold text-primary">{t.identifier}</span>
-                    <span className="text-sm font-medium text-foreground">{t.title}</span>
-                  </div>
-
-                  <div className="flex items-center gap-2.5">
-                    <StatusBadge status={t.status} />
-                    <PriorityBadge priority={t.priority} />
-                    {t.dueDate && (
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Clock className="size-3" />
-                        {new Date(t.dueDate).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Tab 3: Kanban Board */}
-        <TabsContent value="board">
-          <div className="rounded-xl border bg-muted/10 p-4">
-            <KanbanBoard tasks={projectTasks} onTaskClick={(t) => setSelectedTask(t)} />
-          </div>
-        </TabsContent>
-
-        {/* Tab 4: Milestones */}
-        <TabsContent value="milestones" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <p className="text-xs text-muted-foreground">
-              Milestones represent critical delivery checkpoints and key dates on the project roadmap.
-            </p>
-            <Button size="sm" onClick={() => setAddMilestoneModalOpen(true)} className="text-xs gap-1.5 cursor-pointer">
-              <Plus className="size-3.5" /> New Milestone
-            </Button>
-          </div>
-
-          <div className="space-y-3">
-            {(projectDetail?.milestones || []).map((m) => (
-              <div
-                key={m.id}
-                className="flex items-center justify-between p-4 rounded-xl border bg-card shadow-xs"
-              >
-                <div className="flex items-start gap-3">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleMilestone(m)}
-                    className={`size-5 rounded-md border flex items-center justify-center mt-0.5 cursor-pointer ${
-                      m.status === "completed"
-                        ? "bg-emerald-600 border-emerald-600 text-white"
-                        : "border-input"
-                    }`}
-                  >
-                    {m.status === "completed" && <Check className="size-3.5 stroke-[3]" />}
-                  </button>
-                  <div>
-                    <h4
-                      className={`text-sm font-bold ${
-                        m.status === "completed" ? "line-through text-muted-foreground" : "text-foreground"
-                      }`}
-                    >
-                      {m.title}
-                    </h4>
-                    {m.description && <p className="text-xs text-muted-foreground mt-0.5">{m.description}</p>}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                    <Calendar className="size-3.5" />
-                    Target: {new Date(m.targetDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                  </span>
-                  <Badge variant="outline" className={`capitalize text-[10px] ${m.status === "completed" ? "bg-emerald-500/10 text-emerald-600" : ""}`}>
-                    {m.status}
-                  </Badge>
-                </div>
-              </div>
-            ))}
-          </div>
-        </TabsContent>
-
-        {/* Tab 5: Team & Roles */}
-        <TabsContent value="team" className="space-y-6">
+        {/* Tab 2: Members & Invitations */}
+        <TabsContent value="members" className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-foreground">Project Collaborators</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Manage active team memberships and pending email invitations for this workspace.
+                Manage active project memberships, assign tasks directly to collaborators, and track
+                pending invitations.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => setInviteModalOpen(true)}
-                className="text-xs gap-1.5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs shadow-indigo-600/30"
-              >
-                <Mail className="size-3.5" /> Invite Member
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setAddMemberModalOpen(true)}
-                className="text-xs gap-1.5 cursor-pointer"
-              >
-                <UserPlus className="size-3.5" /> Add Existing
-              </Button>
-            </div>
+            {isLeader && (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => setInviteModalOpen(true)}
+                  className="text-xs gap-1.5 cursor-pointer bg-primary text-primary-foreground shadow-2xs font-semibold"
+                >
+                  <Mail className="size-3.5" /> Invite Member
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setAddMemberModalOpen(true)}
+                  className="text-xs gap-1.5 cursor-pointer font-semibold"
+                >
+                  <UserPlus className="size-3.5" /> Add Existing
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Active Members Section */}
@@ -765,7 +840,7 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-foreground uppercase tracking-wider">
-                  Active Team Members
+                  Active Project Members
                 </span>
                 <Badge variant="outline" className="text-[10px] bg-muted">
                   {(projectDetail?.members || []).length}
@@ -775,47 +850,87 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
 
             <div className="divide-y rounded-xl border bg-card shadow-xs">
               {(projectDetail?.members || []).length === 0 ? (
-                <div className="p-6 text-center text-xs text-muted-foreground">
-                  No active members assigned yet.
+                <div className="p-8 text-center text-xs text-muted-foreground">
+                  No active members assigned yet. Click "Add Existing" or "Invite Member" above.
                 </div>
               ) : (
-                (projectDetail?.members || []).map((mem) => (
-                  <div key={mem.id} className="p-3.5 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs shadow-2xs">
-                        {mem.initials}
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold text-foreground">{mem.name}</h4>
-                        <span className="text-[11px] text-muted-foreground">{mem.email}</span>
-                      </div>
-                    </div>
+                (projectDetail?.members || []).map((mem) => {
+                  const memberTasks = projectTasks.filter(
+                    (t) => t.assigneeId === mem.id || t.assignee?.id === mem.id,
+                  );
+                  const memberCompleted = memberTasks.filter(
+                    (t) => t.status === "completed",
+                  ).length;
+                  const memberProgress =
+                    memberTasks.length > 0
+                      ? Math.round((memberCompleted / memberTasks.length) * 100)
+                      : 0;
 
-                    <div className="flex items-center gap-3">
-                      <Badge variant="outline" className="text-xs capitalize font-medium">
-                        {mem.role}
-                      </Badge>
-                      {mem.role !== "owner" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={async () => {
-                            if (confirm(`Remove ${mem.name} from this project?`)) {
-                              if (taskService.removeProjectMember) {
-                                await taskService.removeProjectMember(projectId, mem.id);
-                                void loadProjectDetail();
-                                toast.success("Member removed");
+                  return (
+                    <div
+                      key={mem.id}
+                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="size-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm shadow-2xs">
+                          {mem.initials}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-bold text-foreground">{mem.name}</h4>
+                            <Badge variant="outline" className="text-[10px] capitalize font-medium">
+                              {mem.role}
+                            </Badge>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">{mem.email}</span>
+                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                            <span className="font-medium text-foreground">
+                              {memberCompleted} / {memberTasks.length} tasks completed
+                            </span>
+                            <span>•</span>
+                            <span>{memberProgress}% velocity</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        {isLeader && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setPresetAssigneeId(mem.id);
+                              setAssignTaskModalOpen(true);
+                            }}
+                            className="text-xs h-8 gap-1.5 cursor-pointer font-semibold"
+                          >
+                            <Plus className="size-3 text-primary" /> Assign Task
+                          </Button>
+                        )}
+                        {isLeader && mem.role !== "owner" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={async () => {
+                              if (confirm(`Remove ${mem.name} from this project?`)) {
+                                if (taskService.removeProjectMember) {
+                                  await taskService.removeProjectMember(projectId, mem.id);
+                                  void loadProjectDetail();
+                                  void loadActivities();
+                                  toast.success("Member removed");
+                                }
                               }
-                            }
-                          }}
-                          className="text-rose-500 hover:text-rose-600 size-7 p-0 cursor-pointer"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      )}
+                            }}
+                            className="text-rose-500 hover:text-rose-600 size-8 p-0 cursor-pointer"
+                            title="Remove from project"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -825,7 +940,7 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-foreground uppercase tracking-wider">
-                  Pending & Recent Invitations
+                  Pending & Recent Project Invitations
                 </span>
                 <Badge
                   variant="outline"
@@ -845,19 +960,23 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                 disabled={loadingInvitations}
                 className="text-[11px] h-7 gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
               >
-                <RefreshCw className={`size-3 ${loadingInvitations ? "animate-spin" : ""}`} /> Refresh
+                <RefreshCw className={`size-3 ${loadingInvitations ? "animate-spin" : ""}`} />{" "}
+                Refresh
               </Button>
             </div>
 
             <div className="divide-y rounded-xl border bg-card shadow-xs">
               {invitations.length === 0 ? (
                 <div className="p-6 text-center text-xs text-muted-foreground">
-                  No invitations sent yet. Click "Invite Member" above to invite collaborators via email or shareable link.
+                  No project invitations sent yet. Click "Invite Member" above to invite
+                  collaborators via email or secure shareable link.
                 </div>
               ) : (
                 invitations.map((inv) => {
                   const isPending = inv.status === "pending";
-                  const isExpired = inv.status === "expired" || (isPending && new Date(inv.expiresAt) <= new Date());
+                  const isExpired =
+                    inv.status === "expired" ||
+                    (isPending && new Date(inv.expiresAt) <= new Date());
                   const isRevoked = inv.status === "revoked";
                   const isAccepted = inv.status === "accepted";
                   const isDeclined = inv.status === "declined";
@@ -868,12 +987,14 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                       className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="size-8 rounded-full bg-indigo-500/10 text-indigo-600 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                        <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
                           <Mail className="size-4" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-bold text-foreground">{inv.recipientEmail}</span>
+                            <span className="text-xs font-bold text-foreground">
+                              {inv.recipientEmail}
+                            </span>
                             <Badge variant="outline" className="text-[10px] capitalize font-medium">
                               {inv.role}
                             </Badge>
@@ -883,90 +1004,87 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                                 isPending && !isExpired
                                   ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
                                   : isAccepted
-                                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                                    : isRevoked
-                                      ? "bg-slate-500/15 text-slate-500 border-slate-500/30"
-                                      : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                  : isRevoked
+                                  ? "bg-slate-500/15 text-slate-500 border-slate-500/30"
+                                  : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
                               }`}
                             >
                               {isPending && !isExpired
                                 ? "Pending"
                                 : isAccepted
-                                  ? "Accepted"
-                                  : isRevoked
-                                    ? "Revoked"
-                                    : isDeclined
-                                      ? "Declined"
-                                      : "Expired"}
+                                ? "Accepted"
+                                : isRevoked
+                                ? "Revoked"
+                                : isDeclined
+                                ? "Declined"
+                                : "Expired"}
                             </Badge>
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1 flex-wrap">
                             <span>
-                              Invited by <strong className="text-foreground">{inv.inviterName || "Lead"}</strong>
+                              Invited by{" "}
+                              <strong className="text-foreground">
+                                {inv.inviterName || "Project Lead"}
+                              </strong>
                             </span>
                             <span>•</span>
                             <span>
-                              Created {new Date(inv.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                            </span>
-                            <span>•</span>
-                            <span>
-                              Expires {new Date(inv.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              Expires{" "}
+                              {new Date(inv.expiresAt).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                              })}
                             </span>
                           </div>
-                          {inv.message && (
-                            <p className="text-[11px] text-muted-foreground italic mt-1 line-clamp-1">
-                              "{inv.message}"
-                            </p>
-                          )}
                         </div>
                       </div>
 
                       {/* Invitation Actions */}
                       <div className="flex items-center gap-2 self-end sm:self-center">
-                        {isPending && !isExpired && (
+                        {isPending && !isExpired && isLeader && (
                           <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-                                // Note: token hash is in DB; resend button gives fresh raw token if needed
-                                toast.info("To generate a fresh active link, click Resend.");
-                              }}
-                              className="text-xs h-8 gap-1.5 cursor-pointer"
-                              title="Click Resend to generate and copy a fresh link"
-                            >
-                              <Copy className="size-3.5" /> Copy Link
-                            </Button>
                             <Button
                               size="sm"
                               variant="outline"
                               disabled={actionInProgressId === inv.id}
                               onClick={() => void handleResendInvitation(inv.id)}
-                              className="text-xs h-8 gap-1.5 cursor-pointer text-indigo-600 hover:text-indigo-700"
+                              className="text-xs h-8 gap-1.5 cursor-pointer text-primary hover:text-primary"
                             >
-                              <RefreshCw className={`size-3.5 ${actionInProgressId === inv.id ? "animate-spin" : ""}`} /> Resend
+                              <RefreshCw
+                                className={`size-3.5 ${
+                                  actionInProgressId === inv.id ? "animate-spin" : ""
+                                }`}
+                              />{" "}
+                              Resend
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
                               disabled={actionInProgressId === inv.id}
-                              onClick={() => void handleRevokeInvitation(inv.id, inv.recipientEmail)}
+                              onClick={() =>
+                                void handleRevokeInvitation(inv.id, inv.recipientEmail)
+                              }
                               className="text-xs h-8 gap-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 cursor-pointer"
                             >
                               <XCircle className="size-3.5" /> Revoke
                             </Button>
                           </>
                         )}
-                        {(isExpired || isRevoked) && (
+                        {(isExpired || isRevoked) && isLeader && (
                           <Button
                             size="sm"
                             variant="outline"
                             disabled={actionInProgressId === inv.id}
                             onClick={() => void handleResendInvitation(inv.id)}
-                            className="text-xs h-8 gap-1.5 text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                            className="text-xs h-8 gap-1.5 text-primary hover:text-primary cursor-pointer"
                           >
-                            <RefreshCw className={`size-3.5 ${actionInProgressId === inv.id ? "animate-spin" : ""}`} /> Reinstate & Resend
+                            <RefreshCw
+                              className={`size-3.5 ${
+                                actionInProgressId === inv.id ? "animate-spin" : ""
+                              }`}
+                            />{" "}
+                            Reinstate & Resend
                           </Button>
                         )}
                       </div>
@@ -977,6 +1095,510 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
             </div>
           </div>
         </TabsContent>
+
+        {/* Tab 3: Tasks & Backlog */}
+        <TabsContent value="tasks" className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={taskViewMode === "list" ? "default" : "outline"}
+                onClick={() => setTaskViewMode("list")}
+                className="text-xs gap-1.5 cursor-pointer h-8"
+              >
+                <ListTodo className="size-3.5" /> List View
+              </Button>
+              <Button
+                size="sm"
+                variant={taskViewMode === "board" ? "default" : "outline"}
+                onClick={() => setTaskViewMode("board")}
+                className="text-xs gap-1.5 cursor-pointer h-8"
+              >
+                <Columns className="size-3.5" /> Kanban Board
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={taskFilterStatus}
+                onChange={(e) => setTaskFilterStatus(e.target.value)}
+                className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs font-medium"
+              >
+                <option value="all">All Statuses ({projectTasks.length})</option>
+                <option value="backlog">Backlog</option>
+                <option value="ready">Ready</option>
+                <option value="in_progress">In Progress</option>
+                <option value="in_review">In Review</option>
+                <option value="blocked">Blocked</option>
+                <option value="completed">Completed</option>
+              </select>
+
+              {isLeader && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setPresetAssigneeId(undefined);
+                    setAssignTaskModalOpen(true);
+                  }}
+                  className="text-xs h-8 gap-1.5 cursor-pointer bg-primary font-semibold"
+                >
+                  <Plus className="size-3.5" /> Assign Task
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Add Form */}
+          {isLeader && (
+            <form onSubmit={handleQuickAddTask} className="flex gap-2">
+              <input
+                type="text"
+                value={quickTaskTitle}
+                onChange={(e) => setQuickTaskTitle(e.target.value)}
+                placeholder={`Quickly add a task to ${project.name}... (press Enter)`}
+                className="flex-1 h-9 rounded-lg border border-input bg-card px-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+              />
+              <Button type="submit" size="sm" className="h-9 text-xs gap-1 cursor-pointer">
+                <Plus className="size-3.5" /> Add Task
+              </Button>
+            </form>
+          )}
+
+          {taskViewMode === "list" ? (
+            filteredProjectTasks.length === 0 ? (
+              <div className="rounded-xl border border-dashed p-10 text-center text-xs text-muted-foreground">
+                No tasks match the filter criteria. Use "Assign Task" or the input above to add
+                deliverables.
+              </div>
+            ) : (
+              <div className="divide-y rounded-xl border bg-card shadow-xs">
+                {filteredProjectTasks.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => setSelectedTask(t)}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 hover:bg-muted/40 cursor-pointer transition-colors gap-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-xs font-semibold text-primary">
+                        {t.identifier}
+                      </span>
+                      <div>
+                        <span className="text-sm font-medium text-foreground">{t.title}</span>
+                        {t.assignee && (
+                          <span className="text-[11px] text-muted-foreground block">
+                            Assigned to: {t.assignee.name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 self-end sm:self-center">
+                      <StatusBadge status={t.status} />
+                      <PriorityBadge priority={t.priority} />
+                      {t.dueDate && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="size-3" />
+                          {new Date(t.dueDate).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="rounded-xl border bg-muted/10 p-4">
+              <KanbanBoard tasks={filteredProjectTasks} onTaskClick={(t) => setSelectedTask(t)} />
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Tab 4: Submissions & Deliverables */}
+        <TabsContent value="submissions" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Project Deliverables & Submissions</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Review work submissions, verified attachments, GitHub commits, and live deployments
+                from project members.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void loadSubmissions()}
+              disabled={loadingSubmissions}
+              className="text-xs h-8 gap-1.5 cursor-pointer"
+            >
+              <RefreshCw className={`size-3.5 ${loadingSubmissions ? "animate-spin" : ""}`} />{" "}
+              Refresh
+            </Button>
+          </div>
+
+          {submissions.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-12 text-center text-xs text-muted-foreground space-y-2">
+              <FileCheck2 className="mx-auto size-10 text-muted-foreground/40 mb-2" />
+              <p className="font-medium text-foreground">No work submitted for review yet</p>
+              <p className="max-w-md mx-auto">
+                When assigned members complete tasks and submit work for review, their deliverables,
+                live links, and files will appear here for leader sign-off.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {submissions.map((sub) => {
+                const subTask = projectTasks.find((t) => t.id === sub.taskId);
+
+                return (
+                  <div
+                    key={sub.id}
+                    className="rounded-xl border bg-card p-5 shadow-xs space-y-3.5 transition-all"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
+                          {sub.taskIdentifier}
+                        </span>
+                        <h4
+                          onClick={() => {
+                            if (subTask) setSelectedTask(subTask);
+                          }}
+                          className="text-sm font-bold text-foreground hover:text-primary cursor-pointer"
+                        >
+                          {sub.taskTitle}
+                        </h4>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-bold uppercase px-2.5 py-0.5 rounded-full ${
+                            sub.submissionStatus === "approved"
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                              : sub.submissionStatus === "changes_requested"
+                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                              : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
+                          }`}
+                        >
+                          {sub.submissionStatus === "changes_requested"
+                            ? "Changes Requested"
+                            : sub.submissionStatus}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {new Date(sub.createdAt).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Member & Work Details */}
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <span className="font-medium text-foreground">Submitted by:</span>
+                        <span className="font-semibold text-foreground">{sub.userName}</span>
+                        {sub.timeSpentHours ? (
+                          <>
+                            <span>•</span>
+                            <span>{sub.timeSpentHours} hrs logged</span>
+                          </>
+                        ) : null}
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                          Completion Notes / Summary:
+                        </span>
+                        <p className="text-foreground leading-relaxed whitespace-pre-wrap bg-muted/20 p-3 rounded-lg border">
+                          {sub.workCompleted}
+                        </p>
+                      </div>
+
+                      {/* Links and Attachments */}
+                      {(sub.githubUrl ||
+                        sub.deploymentUrl ||
+                        (sub.attachments && sub.attachments.length > 0)) && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {sub.githubUrl && (
+                            <a
+                              href={sub.githubUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-muted/50 border text-foreground hover:bg-muted font-mono transition-colors"
+                            >
+                              <Github className="size-3 text-primary" />
+                              GitHub Repo / PR
+                            </a>
+                          )}
+                          {sub.deploymentUrl && (
+                            <a
+                              href={sub.deploymentUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-muted/50 border text-foreground hover:bg-muted font-mono transition-colors"
+                            >
+                              <Globe className="size-3 text-emerald-500" />
+                              Live Demo
+                            </a>
+                          )}
+                          {sub.attachments &&
+                            sub.attachments.map((att) => (
+                              <a
+                                key={att.id}
+                                href={att.url}
+                                download={att.name}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-card border text-foreground hover:border-primary transition-colors"
+                              >
+                                <Paperclip className="size-3 text-muted-foreground" />
+                                {att.name}
+                              </a>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Review Decision Buttons for Leader */}
+                    {isLeader && (
+                      <div className="pt-2 border-t flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (subTask) {
+                              setReviewingTask(subTask);
+                              setReviewModalOpen(true);
+                            }
+                          }}
+                          className="text-xs h-8 gap-1.5 cursor-pointer font-semibold"
+                        >
+                          <ShieldCheck className="size-3.5 text-primary" />
+                          Review & Decision
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Tab 5: Activity Log */}
+        <TabsContent value="activity" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Project Activity History</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Complete chronological audit log of all project updates, task creations, reviews, and
+                membership actions.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void loadActivities()}
+              disabled={loadingActivities}
+              className="text-xs h-8 gap-1.5 cursor-pointer"
+            >
+              <RefreshCw className={`size-3.5 ${loadingActivities ? "animate-spin" : ""}`} />{" "}
+              Refresh
+            </Button>
+          </div>
+
+          {activities.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-10 text-center text-xs text-muted-foreground">
+              No recorded activity events for this project yet.
+            </div>
+          ) : (
+            <div className="divide-y rounded-xl border bg-card shadow-xs">
+              {activities.map((act) => (
+                <div key={act.id} className="p-3.5 flex items-start gap-3 text-xs">
+                  <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0 mt-0.5">
+                    <History className="size-4" />
+                  </div>
+                  <div className="flex-1 space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-foreground capitalize">
+                        {(act.type || "Event").replace(/_/g, " ")}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(act.timestamp || act.at).toLocaleString()}
+                      </span>
+                    </div>
+                    {act.taskTitle && (
+                      <p className="text-muted-foreground font-medium">Task: {act.taskTitle}</p>
+                    )}
+                    {act.details && (
+                      <p className="text-muted-foreground text-[11px] leading-relaxed">
+                        {typeof act.details === "string"
+                          ? act.details
+                          : JSON.stringify(act.details)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Tab 6: Settings */}
+        <TabsContent value="settings" className="space-y-6">
+          <div className="rounded-xl border bg-card p-6 shadow-xs space-y-6 max-w-2xl">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Project Workspace Settings</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Update project title, description, priority, dates, and color theme.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Project Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Project Key / Prefix</label>
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={project.key}
+                  className="w-full h-9 rounded-lg border border-input bg-muted px-3 text-xs font-mono text-muted-foreground"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Description</label>
+                <textarea
+                  rows={3}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-card p-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Priority</label>
+                  <select
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
+                    className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs capitalize"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as any)}
+                    className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs capitalize"
+                  >
+                    <option value="planning">Planning</option>
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Start Date</label>
+                  <input
+                    type="date"
+                    value={editStartDate}
+                    onChange={(e) => setEditStartDate(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Due Date</label>
+                  <input
+                    type="date"
+                    value={editDeadline}
+                    onChange={(e) => setEditDeadline(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Color Theme */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Color Theme</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={editColor}
+                    onChange={(e) => setEditColor(e.target.value)}
+                    className="size-9 rounded-lg border border-input bg-card p-1 cursor-pointer"
+                  />
+                  <span className="font-mono text-xs text-muted-foreground uppercase">
+                    {editColor}
+                  </span>
+                </div>
+              </div>
+
+              {isLeader && (
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={async () => {
+                      if (
+                        confirm(
+                          `Are you sure you want to delete "${project.name}"? This cannot be undone.`,
+                        )
+                      ) {
+                        try {
+                          await deleteProject(projectId);
+                          toast.success("Project deleted successfully");
+                          navigate({ to: "/projects" });
+                        } catch (err: any) {
+                          toast.error(err?.message || "Failed to delete project");
+                        }
+                      }
+                    }}
+                    className="cursor-pointer text-xs gap-1.5"
+                  >
+                    <Trash2 className="size-3.5" /> Delete Project
+                  </Button>
+
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={isSavingSettings}
+                    className="cursor-pointer text-xs font-semibold"
+                  >
+                    {isSavingSettings ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              )}
+            </form>
+          </div>
+        </TabsContent>
       </Tabs>
 
       {/* Task Drawer */}
@@ -985,6 +1607,37 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
           task={selectedTask}
           open={!!selectedTask}
           onClose={() => setSelectedTask(null)}
+        />
+      )}
+
+      {/* Assign Task Modal */}
+      <AssignTaskModal
+        open={assignTaskModalOpen}
+        onOpenChange={setAssignTaskModalOpen}
+        presetProjectId={projectId}
+        presetAssigneeId={presetAssigneeId}
+        onTaskCreated={() => {
+          void reload();
+          void loadProjectDetail();
+          void loadActivities();
+        }}
+      />
+
+      {/* Task Review Modal */}
+      {reviewingTask && (
+        <TaskReviewModal
+          task={reviewingTask}
+          open={reviewModalOpen}
+          onOpenChange={(op) => {
+            setReviewModalOpen(op);
+            if (!op) setReviewingTask(null);
+          }}
+          onSuccess={() => {
+            void reload();
+            void loadProjectDetail();
+            void loadSubmissions();
+            void loadActivities();
+          }}
         />
       )}
 
@@ -1027,61 +1680,147 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setAddMilestoneModalOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAddMilestoneModalOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" size="sm">Create Milestone</Button>
+              <Button type="submit" size="sm">
+                Create Milestone
+              </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Add Member Modal */}
+      {/* Add Existing Member Modal (Multi-select) */}
       <Dialog open={addMemberModalOpen} onOpenChange={setAddMemberModalOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Add Existing Member to Project</DialogTitle>
+            <DialogTitle>Add Workspace Members to Project</DialogTitle>
             <DialogDescription>
-              Assign an existing workspace member directly to this project.
+              Select one or multiple existing team members to add to this project.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleAddMember} className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Select Team Member</label>
-              <select
-                value={selectedUserId}
-                onChange={(e) => setSelectedUserId(e.target.value)}
-                required
-                className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
-              >
-                <option value="">-- Choose member --</option>
-                {team.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.role})
-                  </option>
-                ))}
-              </select>
+
+          <form onSubmit={handleAddMembersSubmit} className="space-y-4 pt-2 flex-1 overflow-hidden flex flex-col">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search team members by name or email..."
+                value={memberSearchQuery}
+                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                className="w-full h-9 rounded-lg border border-input bg-card pl-8 pr-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+              />
             </div>
+
+            {/* Role dropdown */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Project Role</label>
+              <label className="text-xs font-semibold text-foreground">Role in Project</label>
               <select
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
                 className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs capitalize"
               >
-                <option value="owner">Owner</option>
-                <option value="lead">Lead</option>
                 <option value="developer">Developer</option>
                 <option value="designer">Designer</option>
                 <option value="reviewer">Reviewer</option>
+                <option value="lead">Lead</option>
                 <option value="viewer">Viewer</option>
               </select>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setAddMemberModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" size="sm">Add to Project</Button>
+
+            {/* Member Checkboxes List */}
+            <div className="flex-1 overflow-y-auto divide-y rounded-lg border bg-muted/20 p-1 space-y-1 max-h-60">
+              {team
+                .filter((m) => {
+                  if (!memberSearchQuery.trim()) return true;
+                  const q = memberSearchQuery.toLowerCase();
+                  return (
+                    m.name.toLowerCase().includes(q) ||
+                    (m.email && m.email.toLowerCase().includes(q))
+                  );
+                })
+                .map((m) => {
+                  const isAlreadyMember = (projectDetail?.members || []).some(
+                    (pm) => pm.id === m.id || (pm.email && pm.email === m.email),
+                  );
+                  const isSelected = selectedMemberIds.includes(m.id);
+
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => {
+                        if (!isAlreadyMember) toggleMemberSelection(m.id);
+                      }}
+                      className={`flex items-center justify-between p-2 rounded-md text-xs transition-colors ${
+                        isAlreadyMember
+                          ? "opacity-50 cursor-not-allowed bg-muted/40"
+                          : isSelected
+                          ? "bg-primary/10 border-primary cursor-pointer"
+                          : "hover:bg-card cursor-pointer"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isAlreadyMember}
+                          onChange={() => {
+                            if (!isAlreadyMember) toggleMemberSelection(m.id);
+                          }}
+                          className="size-3.5 accent-primary cursor-pointer"
+                        />
+                        <div className="size-6 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-[10px]">
+                          {m.initials}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-foreground block">{m.name}</span>
+                          <span className="text-[10px] text-muted-foreground">{m.email}</span>
+                        </div>
+                      </div>
+
+                      {isAlreadyMember ? (
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                          Already Added
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] capitalize">
+                          {m.role}
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t text-xs">
+              <span className="text-muted-foreground">
+                {selectedMemberIds.length} member{selectedMemberIds.length !== 1 ? "s" : ""} selected
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddMemberModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={selectedMemberIds.length === 0 || isAddingMembers}
+                  className="font-semibold"
+                >
+                  {isAddingMembers ? "Adding..." : "Add to Project"}
+                </Button>
+              </div>
             </div>
           </form>
         </DialogContent>
@@ -1092,7 +1831,7 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Mail className="size-4 text-indigo-500" /> Invite Collaborator to Project
+              <Mail className="size-4 text-primary" /> Invite Collaborator to Project
             </DialogTitle>
             <DialogDescription>
               Send an email invitation or generate a single-use shareable acceptance link.
@@ -1131,7 +1870,9 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground flex items-center justify-between">
                 <span>Recipient Email Address *</span>
-                <span className="text-[10px] text-muted-foreground font-normal">Must match recipient account</span>
+                <span className="text-[10px] text-muted-foreground font-normal">
+                  Must match recipient account
+                </span>
               </label>
               <input
                 type="email"
@@ -1145,59 +1886,65 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
 
             {/* Role Selection */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Offered Project Role or Responsibility *</label>
+              <label className="text-xs font-semibold text-foreground">
+                Offered Project Role or Responsibility *
+              </label>
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value)}
-                className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs capitalize"
+                className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs focus:ring-1 focus:ring-primary capitalize"
               >
-                <option value="developer">Developer (Full task & code contribution)</option>
-                <option value="designer">Designer (Design systems & UI reviews)</option>
-                <option value="lead">Lead (Sprint management & assignments)</option>
-                <option value="reviewer">Reviewer (Sign-off & QA validation)</option>
-                <option value="viewer">Viewer (Read-only observation)</option>
-                <option value="member">General Member</option>
-                <option value="owner">Project Owner (Full administrative access)</option>
+                <option value="developer">Developer</option>
+                <option value="designer">Designer</option>
+                <option value="reviewer">Reviewer / Lead</option>
+                <option value="product_manager">Product Manager</option>
+                <option value="qa_engineer">QA Engineer</option>
+                <option value="viewer">Viewer</option>
               </select>
             </div>
 
-            {/* Skills & Designation Grid */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Designation & Skills Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Skills (Optional)</label>
-                <input
-                  type="text"
-                  value={inviteSkills}
-                  onChange={(e) => setInviteSkills(e.target.value)}
-                  placeholder="e.g. React, PostgreSQL"
-                  className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Designation (Optional)</label>
+                <label className="text-xs font-semibold text-foreground">Designation / Title</label>
                 <input
                   type="text"
                   value={inviteDesignation}
                   onChange={(e) => setInviteDesignation(e.target.value)}
-                  placeholder="e.g. Sr. Full-stack Dev"
+                  placeholder="e.g. Senior Frontend Eng"
+                  className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">
+                  Key Skills (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={inviteSkills}
+                  onChange={(e) => setInviteSkills(e.target.value)}
+                  placeholder="React, TypeScript, UI"
                   className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
                 />
               </div>
             </div>
 
-            {/* Optional Personal Note */}
+            {/* Invitation Message */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Personal Message (Optional)</label>
+              <label className="text-xs font-semibold text-foreground">
+                Personal Note / Welcome Message
+              </label>
               <textarea
-                rows={3}
+                rows={2}
                 value={inviteMessage}
                 onChange={(e) => setInviteMessage(e.target.value)}
-                placeholder="e.g. Welcome! Please accept this invite to access the core sprint board and milestone roadmap."
+                placeholder="Looking forward to building this together..."
                 className="w-full rounded-lg border border-input bg-card p-2 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t">
+            <div className="flex justify-end gap-2 pt-2 border-t">
               <Button
                 type="button"
                 variant="outline"
@@ -1207,14 +1954,9 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={isInviting}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 shadow-xs shadow-indigo-600/30"
-              >
+              <Button type="submit" size="sm" disabled={isInviting} className="gap-1.5">
                 <Send className="size-3.5" />
-                {isInviting ? "Sending Invitation..." : "Send Invitation"}
+                {isInviting ? "Sending..." : "Dispatch Invitation"}
               </Button>
             </div>
           </form>
@@ -1241,7 +1983,10 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                   <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold block">Email Invitation Dispatched</span>
-                    <span>An invitation email has been sent to <strong>{inviteResult.invitation.recipientEmail}</strong>.</span>
+                    <span>
+                      An invitation email has been sent to{" "}
+                      <strong>{inviteResult.invitation.recipientEmail}</strong>.
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -1250,7 +1995,8 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                   <div>
                     <span className="font-bold block">Email Service Not Configured</span>
                     <span>
-                      {inviteResult.emailError || "SMTP / Resend provider is not active."} You can copy the generated secure acceptance link below and share it directly.
+                      {inviteResult.emailError || "SMTP / Resend provider is not active."} You can copy
+                      the generated secure acceptance link below and share it directly.
                     </span>
                   </div>
                 </div>
@@ -1259,25 +2005,42 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
               {/* Metadata summary */}
               <div className="grid grid-cols-2 gap-2 text-xs p-3 rounded-lg bg-muted/40 border">
                 <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Recipient</span>
-                  <span className="font-semibold text-foreground">{inviteResult.invitation.recipientEmail}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                    Recipient
+                  </span>
+                  <span className="font-semibold text-foreground">
+                    {inviteResult.invitation.recipientEmail}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Role Offered</span>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                    Role Offered
+                  </span>
                   <Badge variant="outline" className="text-[10px] capitalize font-semibold mt-0.5">
                     {inviteResult.invitation.role}
                   </Badge>
                 </div>
                 <div className="mt-2">
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Status</span>
-                  <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-semibold mt-0.5">
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                    Status
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-semibold mt-0.5"
+                  >
                     Pending Acceptance
                   </Badge>
                 </div>
                 <div className="mt-2">
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Expires</span>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                    Expires
+                  </span>
                   <span className="text-muted-foreground">
-                    {new Date(inviteResult.invitation.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    {new Date(inviteResult.invitation.expiresAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
                   </span>
                 </div>
               </div>
@@ -1294,14 +2057,18 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                   />
                   <Button
                     size="sm"
-                    onClick={() => handleCopyInviteLink(inviteResult.invitationUrl)}
+                    onClick={() => {
+                      navigator.clipboard.writeText(inviteResult.invitationUrl);
+                      toast.success("Invitation link copied to clipboard!");
+                    }}
                     className="gap-1.5 shrink-0 bg-primary cursor-pointer text-xs"
                   >
                     <Copy className="size-3.5" /> Copy Link
                   </Button>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  The recipient must accept this link using an account matching <strong>{inviteResult.invitation.recipientEmail}</strong>.
+                  The recipient must accept this link using an account matching{" "}
+                  <strong>{inviteResult.invitation.recipientEmail}</strong>.
                 </p>
               </div>
 

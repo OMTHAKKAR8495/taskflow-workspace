@@ -80,6 +80,11 @@ function formatTask(
   // Normalized status: 'pending' displayed as 'ready' if needed, or preserved
   const status = row.status || "backlog";
 
+  let attachments: any[] = [];
+  try {
+    attachments = typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments || [];
+  } catch {}
+
   return {
     id: row.id,
     identifier: row.identifier || `NEX-${row.id.replace(/[^0-9]/g, "").slice(-3) || "100"}`,
@@ -95,6 +100,10 @@ function formatTask(
     status,
     priority: row.priority || "medium",
     blockedReason: row.blocked_reason || "",
+    submissionStatus: row.submission_status || (status === "in_review" ? "submitted" : (status === "completed" ? "approved" : "none")),
+    githubUrl: row.github_url || "",
+    deploymentUrl: row.deployment_url || "",
+    attachments,
     startDate: row.start_date ? new Date(row.start_date).toISOString() : null,
     dueDate: row.due_date ? new Date(row.due_date).toISOString() : null,
     estimatedHours: parseFloat(row.estimated_hours || "0") || 0,
@@ -134,21 +143,31 @@ function formatTask(
       dependsOnTaskStatus: d.depends_on_status || "backlog",
       dependencyType: d.dependency_type,
     })),
-    progressUpdates: progressUpdates.map((p) => ({
-      id: p.id,
-      taskId: p.task_id,
-      userId: p.user_id,
-      userName: p.user_name,
-      status: p.status,
-      progressPercent: parseInt(p.progress_percent || "0", 10),
-      workCompleted: p.work_completed,
-      workRemaining: p.work_remaining || "",
-      blockers: p.blockers || "",
-      nextSteps: p.next_steps || "",
-      timeSpentHours: parseFloat(p.time_spent_hours || "0") || 0,
-      evidenceUrl: p.evidence_url || "",
-      createdAt: new Date(p.created_at).toISOString(),
-    })),
+    progressUpdates: progressUpdates.map((p) => {
+      let pAtts: any[] = [];
+      try {
+        pAtts = typeof p.attachments === "string" ? JSON.parse(p.attachments) : p.attachments || [];
+      } catch {}
+      return {
+        id: p.id,
+        taskId: p.task_id,
+        userId: p.user_id,
+        userName: p.user_name,
+        status: p.status,
+        submissionStatus: p.submission_status || (p.status === "in_review" ? "submitted" : "draft"),
+        progressPercent: parseInt(p.progress_percent || "0", 10),
+        workCompleted: p.work_completed,
+        workRemaining: p.work_remaining || "",
+        blockers: p.blockers || "",
+        nextSteps: p.next_steps || "",
+        timeSpentHours: parseFloat(p.time_spent_hours || "0") || 0,
+        evidenceUrl: p.evidence_url || "",
+        githubUrl: p.github_url || "",
+        deploymentUrl: p.deployment_url || "",
+        attachments: pAtts,
+        createdAt: new Date(p.created_at).toISOString(),
+      };
+    }),
     reviews: reviews.map((r) => ({
       id: r.id,
       taskId: r.task_id,
@@ -1049,6 +1068,10 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
       nextSteps = "",
       timeSpentHours = 0,
       evidenceUrl = "",
+      githubUrl = "",
+      deploymentUrl = "",
+      attachments = [],
+      submissionStatus = "",
     } = req.body;
 
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
@@ -1094,10 +1117,13 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
     const addedHours = parseFloat(timeSpentHours) || 0;
     const newActualHours = (parseFloat(task.actual_hours) || 0) + addedHours;
 
+    const effectiveSubmissionStatus = submissionStatus || (targetStatus === "in_review" ? "submitted" : (task.submission_status || "none"));
+    const safeAttachmentsJson = JSON.stringify(Array.isArray(attachments) ? attachments : []);
+
     const progInsert = await query(
       `INSERT INTO task_progress_updates
-       (id, task_id, user_id, user_name, status, progress_percent, work_completed, work_remaining, blockers, next_steps, time_spent_hours, evidence_url, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+       (id, task_id, user_id, user_name, status, progress_percent, work_completed, work_remaining, blockers, next_steps, time_spent_hours, evidence_url, github_url, deployment_url, attachments, submission_status, project_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, NOW())
        RETURNING *`,
       [
         updateId,
@@ -1112,6 +1138,11 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
         nextSteps ? nextSteps.trim() : "",
         addedHours,
         evidenceUrl ? evidenceUrl.trim() : "",
+        githubUrl ? githubUrl.trim() : "",
+        deploymentUrl ? deploymentUrl.trim() : "",
+        safeAttachmentsJson,
+        effectiveSubmissionStatus,
+        task.project_id || null,
       ],
     );
 
@@ -1123,10 +1154,25 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
            actual_hours = $4,
            last_progress_update_at = NOW(),
            completed_at = COALESCE($5, completed_at),
+           submission_status = $6,
+           github_url = COALESCE(NULLIF($7, ''), github_url),
+           deployment_url = COALESCE(NULLIF($8, ''), deployment_url),
+           attachments = CASE WHEN $9::jsonb IS NOT NULL AND jsonb_array_length($9::jsonb) > 0 THEN $9::jsonb ELSE attachments END,
            updated_at = NOW()
-       WHERE id = $6
+       WHERE id = $10
        RETURNING *`,
-      [targetStatus, pct, cleanBlockedReason, newActualHours, completedAt, id],
+      [
+        targetStatus,
+        pct,
+        cleanBlockedReason,
+        newActualHours,
+        completedAt,
+        effectiveSubmissionStatus,
+        githubUrl ? githubUrl.trim() : "",
+        deploymentUrl ? deploymentUrl.trim() : "",
+        safeAttachmentsJson,
+        id,
+      ],
     );
 
     const actType = targetStatus === "in_review"
@@ -1152,6 +1198,9 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
           progressPercent: pct,
           workCompleted: workCompleted.trim(),
           userName,
+          submissionStatus: effectiveSubmissionStatus,
+          githubUrl: githubUrl || undefined,
+          deploymentUrl: deploymentUrl || undefined,
         }),
       ],
     );
@@ -1163,8 +1212,8 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
       let notifMessage = `${userName} updated progress to ${pct}%: ${workCompleted.trim().slice(0, 100)}`;
       let notifType = "system";
 
-      if (targetStatus === "in_review") {
-        notifTitle = `Review Requested: ${task.identifier || task.title}`;
+      if (targetStatus === "in_review" || effectiveSubmissionStatus === "submitted") {
+        notifTitle = `Work Submitted for Review: ${task.identifier || task.title}`;
         notifMessage = `${userName} submitted work for review (${pct}% complete).`;
         notifType = "review";
       } else if (targetStatus === "blocked") {
@@ -1196,6 +1245,10 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
         nextSteps: nextSteps.trim(),
         timeSpentHours: addedHours,
         evidenceUrl: evidenceUrl.trim(),
+        githubUrl: progInsert.rows[0].github_url || "",
+        deploymentUrl: progInsert.rows[0].deployment_url || "",
+        attachments: progInsert.rows[0].attachments || [],
+        submissionStatus: effectiveSubmissionStatus,
         createdAt: new Date(progInsert.rows[0].created_at).toISOString(),
       },
     });
@@ -1240,6 +1293,10 @@ router.get("/:id/progress", optionalAuth, async (req: AuthenticatedRequest, res:
         nextSteps: p.next_steps || "",
         timeSpentHours: parseFloat(p.time_spent_hours || "0") || 0,
         evidenceUrl: p.evidence_url || "",
+        githubUrl: p.github_url || "",
+        deploymentUrl: p.deployment_url || "",
+        attachments: p.attachments || [],
+        submissionStatus: p.submission_status || (p.status === "in_review" ? "submitted" : "none"),
         createdAt: new Date(p.created_at).toISOString(),
       })),
     );
@@ -1290,6 +1347,7 @@ router.post("/:id/review", requireAuth, async (req: AuthenticatedRequest, res: R
     let newStatus = task.status;
     let completedAt = task.completed_at;
     let progressPercent = task.progress_percent;
+    const newSubmissionStatus = decision === "approved" ? "approved" : "changes_requested";
 
     if (decision === "approved") {
       newStatus = "completed";
@@ -1302,11 +1360,24 @@ router.post("/:id/review", requireAuth, async (req: AuthenticatedRequest, res: R
 
     const taskUpdateRes = await query(
       `UPDATE tasks
-       SET status = $1, completed_at = $2, progress_percent = $3, updated_at = NOW()
-       WHERE id = $4
+       SET status = $1, completed_at = $2, progress_percent = $3, submission_status = $4, updated_at = NOW()
+       WHERE id = $5
        RETURNING *`,
-      [newStatus, completedAt, progressPercent, id],
+      [newStatus, completedAt, progressPercent, newSubmissionStatus, id],
     );
+
+    // Update progress updates submission_status
+    if (progressUpdateId) {
+      await query(
+        `UPDATE task_progress_updates SET submission_status = $1 WHERE id = $2`,
+        [newSubmissionStatus, progressUpdateId],
+      );
+    } else {
+      await query(
+        `UPDATE task_progress_updates SET submission_status = $1 WHERE task_id = $2 AND created_at = (SELECT MAX(created_at) FROM task_progress_updates WHERE task_id = $2)`,
+        [newSubmissionStatus, id],
+      );
+    }
 
     await query(
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)

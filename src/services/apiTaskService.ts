@@ -166,13 +166,15 @@ export const apiTaskService: TaskService = {
     request(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   archiveProject: (id) => request(`/projects/${id}/archive`, { method: "POST" }),
   deleteProject: (id) => request(`/projects/${id}`, { method: "DELETE" }),
-  addProjectMember: (projectId, userId, role) =>
+  addProjectMember: (projectId, userId, role = "member") =>
     request(`/projects/${projectId}/members`, {
       method: "POST",
-      body: JSON.stringify({ userId, role }),
+      body: JSON.stringify(Array.isArray(userId) ? { userIds: userId, role } : { userId, role }),
     }),
   removeProjectMember: (projectId, userId) =>
     request(`/projects/${projectId}/members/${userId}`, { method: "DELETE" }),
+  getProjectSubmissions: (projectId) => request(`/projects/${projectId}/submissions`),
+  getProjectActivity: (projectId) => request(`/projects/${projectId}/activity`),
 
   // Project Invitations
   getAllInvitations: () => request("/invitations"),

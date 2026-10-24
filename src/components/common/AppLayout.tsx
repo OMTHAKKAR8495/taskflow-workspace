@@ -95,6 +95,9 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
   const [projectDesc, setProjectDesc] = useState("");
   const [projectColor, setProjectColor] = useState("#6366f1");
   const [projectPriority, setProjectPriority] = useState<TaskPriority>("medium");
+  const [projectStatus, setProjectStatus] = useState<"active" | "planning" | "completed">("active");
+  const [projectStartDate, setProjectStartDate] = useState("");
+  const [projectDueDate, setProjectDueDate] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   // User list creation state
@@ -281,18 +284,21 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
         description: projectDesc.trim(),
         color: projectColor,
         priority: projectPriority,
+        status: projectStatus,
+        startDate: projectStartDate ? new Date(projectStartDate).toISOString() : null,
+        deadline: projectDueDate ? new Date(projectDueDate).toISOString() : null,
         health: "on_track",
-        status: "active",
         progress: 0,
       });
-      toast.success(`Project "${newProj.name}" created successfully!`);
       setCreateProjectModalOpen(false);
       setProjectName("");
       setProjectKey("");
       setProjectDesc("");
+      setProjectStartDate("");
+      setProjectDueDate("");
       navigate({ to: "/projects/$id", params: { id: newProj.id } });
-    } catch {
-      toast.error("Failed to create project");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create project");
     } finally {
       setIsCreatingProject(false);
     }
@@ -833,6 +839,41 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                   <option value="high">High</option>
                   <option value="critical">Critical</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Status</label>
+                <select
+                  value={projectStatus}
+                  onChange={(e) => setProjectStatus(e.target.value as any)}
+                  className="w-full text-sm bg-background px-3 py-2 rounded-lg border outline-none"
+                >
+                  <option value="active">Active</option>
+                  <option value="planning">Planning</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Start Date</label>
+                <input
+                  type="date"
+                  value={projectStartDate}
+                  onChange={(e) => setProjectStartDate(e.target.value)}
+                  className="w-full text-xs bg-background px-3 py-2 rounded-lg border outline-none"
+                >
+                </input>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Due Date</label>
+                <input
+                  type="date"
+                  value={projectDueDate}
+                  onChange={(e) => setProjectDueDate(e.target.value)}
+                  className="w-full text-xs bg-background px-3 py-2 rounded-lg border outline-none"
+                >
+                </input>
               </div>
             </div>
 

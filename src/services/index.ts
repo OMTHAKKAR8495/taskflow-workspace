@@ -198,17 +198,31 @@ class ResilientTaskService implements TaskService {
     );
   }
 
-  addProjectMember(projectId: string, userId: string, role: string) {
+  addProjectMember(projectId: string, userId: string | string[], role = "member") {
     return this.execute(
       () => apiTaskService.addProjectMember!(projectId, userId, role),
-      async () => {},
+      () => mockTaskService.addProjectMember!(projectId, userId, role),
     );
   }
 
   removeProjectMember(projectId: string, userId: string) {
     return this.execute(
       () => apiTaskService.removeProjectMember!(projectId, userId),
-      async () => {},
+      () => mockTaskService.removeProjectMember!(projectId, userId),
+    );
+  }
+
+  getProjectSubmissions(projectId: string) {
+    return this.execute(
+      () => apiTaskService.getProjectSubmissions!(projectId),
+      () => mockTaskService.getProjectSubmissions!(projectId),
+    );
+  }
+
+  getProjectActivity(projectId: string) {
+    return this.execute(
+      () => apiTaskService.getProjectActivity!(projectId),
+      () => mockTaskService.getProjectActivity!(projectId),
     );
   }
 
