@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
 import { pool, query } from "./db.js";
+import { SCHEMA_SQL } from "./schemaSql.js";
 
 const getDirname = (): string => {
   if (typeof __dirname !== "undefined") {
@@ -466,11 +467,22 @@ const SEED_TASKS = [
 ];
 
 export async function seedDatabase(force = false) {
-  // 1. Run Schema
-  const schemaPath = path.resolve(seedDirname, "../schema.sql");
-  if (fs.existsSync(schemaPath)) {
-    const schemaSql = fs.readFileSync(schemaPath, "utf-8");
-    await query(schemaSql);
+  // 1. Run Schema (file-based or embedded string for serverless runtime)
+  try {
+    const schemaPath = path.resolve(seedDirname, "../schema.sql");
+    const localSchemaPath = path.resolve(seedDirname, "schema.sql");
+    if (fs.existsSync(schemaPath)) {
+      const schemaSql = fs.readFileSync(schemaPath, "utf-8");
+      await query(schemaSql);
+    } else if (fs.existsSync(localSchemaPath)) {
+      const schemaSql = fs.readFileSync(localSchemaPath, "utf-8");
+      await query(schemaSql);
+    } else {
+      await query(SCHEMA_SQL);
+    }
+  } catch (schemaErr) {
+    console.warn("Filesystem schema load failed, applying embedded schema SQL:", schemaErr);
+    await query(SCHEMA_SQL);
   }
 
   // Check if force is requested or if projects need updating
