@@ -255,9 +255,9 @@ class ResilientTaskService implements TaskService {
     );
   }
 
-  resendProjectInvitation(invitationId: string) {
+  resendProjectInvitation(invitationId: string, data?: any) {
     return this.execute(
-      () => apiTaskService.resendProjectInvitation!(invitationId),
+      () => apiTaskService.resendProjectInvitation!(invitationId, data),
       () => mockTaskService.resendProjectInvitation!(invitationId),
     );
   }

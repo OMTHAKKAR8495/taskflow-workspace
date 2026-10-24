@@ -55,13 +55,19 @@ export interface TaskService {
     projectId: string,
     data: ProjectInvitationInput,
   ): Promise<CreateInvitationResponse>;
-  resendProjectInvitation?(invitationId: string): Promise<{
+  resendProjectInvitation?(
+    invitationId: string,
+    data?: { deliveryMethod?: "link" | "email" },
+  ): Promise<{
     success: boolean;
     rawToken: string;
     invitationUrl: string;
     expiresAt: string;
+    deliveryMethod?: "link" | "email";
     emailSent: boolean;
+    emailSkipped?: boolean;
     emailError?: string;
+    invitation?: any;
   }>;
   revokeProjectInvitation?(invitationId: string): Promise<void>;
   validateInvitationToken?(token: string): Promise<{

@@ -22,6 +22,8 @@ import {
   Info,
   ShieldAlert,
   UserCheck,
+  Link2,
+  MessageCircle,
 } from "lucide-react";
 import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
@@ -86,11 +88,14 @@ export function TeamView() {
   const [inviteSkills, setInviteSkills] = useState("");
   const [inviteDesignation, setInviteDesignation] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
+  const [inviteDeliveryMethod, setInviteDeliveryMethod] = useState<"link" | "email">("link");
   const [isInviting, setIsInviting] = useState(false);
 
   // Invite Result Modal state (matching ProjectWorkspaceView pattern)
   const [inviteResult, setInviteResult] = useState<CreateInvitationResponse | null>(null);
   const [inviteResultModalOpen, setInviteResultModalOpen] = useState(false);
+  const [hasCopiedLink, setHasCopiedLink] = useState(false);
+  const [hasCopiedTemplate, setHasCopiedTemplate] = useState(false);
   const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
 
   // Secondary "Add member without invite" modal state
@@ -223,9 +228,12 @@ export function TeamView() {
     return map;
   }, [team, nonTrash]);
 
-  // Handle Send Invitation
-  const handleSendInvitation = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle Send / Generate Invitation
+  const handleSendInvitation = async (
+    e?: React.FormEvent,
+    overrideMethod?: "link" | "email",
+  ) => {
+    if (e) e.preventDefault();
     if (!inviteEmail.trim() || !inviteProjectId) {
       toast.error("Please enter a valid email and select a target project");
       return;
@@ -242,34 +250,47 @@ export function TeamView() {
       return;
     }
 
+    const methodToUse = overrideMethod || inviteDeliveryMethod;
     setIsInviting(true);
     try {
       if (!taskService.createProjectInvitation) throw new Error("Invitation service unavailable");
 
       const res = await taskService.createProjectInvitation(inviteProjectId, {
         email: cleanEmail,
+        recipientEmail: cleanEmail,
         fullName: inviteFullName.trim() || undefined,
         role: inviteRole,
         skills: inviteSkills.trim() || undefined,
         designation: inviteDesignation.trim() || undefined,
         message: inviteMessage.trim() || undefined,
+        deliveryMethod: methodToUse,
       });
 
       setInviteResult(res);
       setInviteModalOpen(false);
       setInviteResultModalOpen(true);
+
+      if (methodToUse === "link" && res.invitationUrl) {
+        try {
+          await navigator.clipboard.writeText(res.invitationUrl);
+          setHasCopiedLink(true);
+          toast.success("Invitation link generated & copied to clipboard!");
+          setTimeout(() => setHasCopiedLink(false), 3000);
+        } catch {
+          toast.success("Invitation link generated successfully!");
+        }
+      } else if (res.emailSent) {
+        toast.success(`Invitation emailed to ${cleanEmail}`);
+      } else {
+        toast.info("Invitation created! You can now send via Gmail or share the link.");
+      }
+
       setInviteFullName("");
       setInviteEmail("");
       setInviteSkills("");
       setInviteDesignation("");
       setInviteMessage("");
       void loadInvitations();
-
-      if (res.emailSent) {
-        toast.success(`Invitation emailed to ${cleanEmail}`);
-      } else {
-        toast.info("Invitation created! Shareable link generated.");
-      }
     } catch (err: any) {
       toast.error(err.message || "Failed to create invitation");
     } finally {
@@ -868,11 +889,74 @@ export function TeamView() {
               <Mail className="size-5 text-indigo-500" /> Invite Team Member
             </DialogTitle>
             <DialogDescription>
-              Invite someone to a project via email and generate a secure single-use acceptance link.
+              Choose how to share this invitation: via instant shareable link or email.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSendInvitation} className="space-y-4 pt-2">
+          <form onSubmit={(e) => handleSendInvitation(e)} className="space-y-4 pt-2">
+            {/* Delivery Method Selection: Link vs Email */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                <span>Invitation Method *</span>
+                <span className="text-[10px] text-muted-foreground font-normal">
+                  Choose delivery option
+                </span>
+              </label>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setInviteDeliveryMethod("link")}
+                  className={`p-3 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between relative ${
+                    inviteDeliveryMethod === "link"
+                      ? "border-primary bg-primary/5 shadow-xs ring-1 ring-primary"
+                      : "border-border/80 bg-card/60 hover:bg-muted/40 hover:border-border"
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-foreground">
+                      <Link2 className="size-3.5 text-primary" />
+                      <span>Shareable Link</span>
+                    </div>
+                    {inviteDeliveryMethod === "link" && (
+                      <Check className="size-3.5 text-primary font-bold" />
+                    )}
+                  </div>
+                  <p className="text-[10.5px] text-muted-foreground leading-snug">
+                    Generate an instant link to copy or share via chat / Slack.
+                  </p>
+                  <span className="mt-1.5 inline-flex items-center text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    ⚡ Instant • No SMTP Needed
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInviteDeliveryMethod("email")}
+                  className={`p-3 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between relative ${
+                    inviteDeliveryMethod === "email"
+                      ? "border-primary bg-primary/5 shadow-xs ring-1 ring-primary"
+                      : "border-border/80 bg-card/60 hover:bg-muted/40 hover:border-border"
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-foreground">
+                      <Mail className="size-3.5 text-primary" />
+                      <span>Send via Email</span>
+                    </div>
+                    {inviteDeliveryMethod === "email" && (
+                      <Check className="size-3.5 text-primary font-bold" />
+                    )}
+                  </div>
+                  <p className="text-[10.5px] text-muted-foreground leading-snug">
+                    Send directly from your own Gmail or default email client.
+                  </p>
+                  <span className="mt-1.5 inline-flex items-center text-[9.5px] font-semibold text-primary">
+                    ✉️ 1-Click Gmail / Mail Client
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {/* Full Name */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground">Full Name (Optional)</label>
@@ -979,10 +1063,10 @@ export function TeamView() {
                 }}
                 className="text-[11px] text-muted-foreground hover:text-foreground underline cursor-pointer"
               >
-                Add without sending invite
+                Add directly
               </button>
 
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -993,13 +1077,25 @@ export function TeamView() {
                   Cancel
                 </Button>
                 <Button
-                  type="submit"
+                  type="button"
+                  variant="outline"
                   size="sm"
                   disabled={isInviting}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 shadow-xs shadow-indigo-600/30"
+                  onClick={() => handleSendInvitation(undefined, "link")}
+                  className="gap-1.5 border-primary/30 hover:bg-primary/5 hover:border-primary text-xs"
+                >
+                  <Link2 className="size-3.5 text-primary" />
+                  Generate Link
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isInviting}
+                  onClick={() => handleSendInvitation(undefined, "email")}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 text-xs shadow-xs shadow-indigo-600/30"
                 >
                   <Send className="size-3.5" />
-                  {isInviting ? "Sending..." : "Send Invitation"}
+                  {isInviting ? "Processing..." : "Send via Email"}
                 </Button>
               </div>
             </div>
@@ -1007,121 +1103,214 @@ export function TeamView() {
         </DialogContent>
       </Dialog>
 
-      {/* 2. Invitation Ready & Shareable Link Modal (Reusing ProjectWorkspaceView pattern) */}
-      {inviteResult && (
-        <Dialog open={inviteResultModalOpen} onOpenChange={setInviteResultModalOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-foreground">
-                <Check className="size-4 text-emerald-500 stroke-[3]" /> Invitation Ready
-              </DialogTitle>
-              <DialogDescription>
-                Review invitation details and share the secure single-use acceptance link.
-              </DialogDescription>
-            </DialogHeader>
+      {/* 2. Invitation Ready & Shareable Link Modal */}
+      {inviteResult && (() => {
+        const recipientEmail = inviteResult.invitation.recipientEmail;
+        const recipientName = inviteResult.invitation.recipientName || "";
+        const targetProj = projects.find((p) => p.id === inviteResult.invitation.projectId);
+        const projectName = inviteResult.invitation.projectName || targetProj?.name || "TaskFlow Project";
+        const role = inviteResult.invitation.role;
+        const invitationUrl = inviteResult.invitationUrl;
+        const message = inviteResult.invitation.message;
+        const expiresAt = new Date(inviteResult.invitation.expiresAt).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
 
-            <div className="space-y-4 pt-2">
-              {/* Delivery Notification Banner */}
-              {inviteResult.emailSent ? (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs flex items-start gap-2.5">
-                  <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold block">Email Invitation Dispatched</span>
-                    <span>
-                      An invitation email has been sent to{" "}
-                      <strong>{inviteResult.invitation.recipientEmail}</strong>.
+        const emailSubject = `Invitation to collaborate on "${projectName}" on TaskFlow`;
+        const emailBody = `Hi ${recipientName || "there"},\n\nYou've been invited to join the project "${projectName}" on TaskFlow as a ${role}.\n\nClick here to accept your invitation:\n${invitationUrl}\n\n${message ? `Note from inviter: "${message}"\n\n` : ""}This invitation expires on ${expiresAt}.\n\nBest regards,\n${inviteResult.invitation.inviterName || "TaskFlow Team"}`;
+
+        const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+        const mailtoUrl = `mailto:${recipientEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+        const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(`${emailSubject}\n\nAccept invitation here: ${invitationUrl}`)}`;
+
+        return (
+          <Dialog open={inviteResultModalOpen} onOpenChange={setInviteResultModalOpen}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-foreground">
+                  <Check className="size-4 text-emerald-500 stroke-[3]" /> Invitation Ready
+                </DialogTitle>
+                <DialogDescription>
+                  Share the invitation via link or send directly from your personal email.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 pt-2">
+                {/* Delivery Notification Banner */}
+                {inviteResult.emailSent ? (
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs flex items-start gap-2.5">
+                    <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Email Invitation Dispatched</span>
+                      <span>
+                        An invitation email has been sent to <strong>{recipientEmail}</strong>.
+                      </span>
+                    </div>
+                  </div>
+                ) : inviteResult.deliveryMethod === "link" || inviteResult.emailSkipped ? (
+                  <div className="p-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs flex items-start gap-2.5">
+                    <Link2 className="size-4 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Shareable Link Ready (No SMTP Needed)</span>
+                      <span className="text-muted-foreground">
+                        Your secure link is generated. Copy it below or click to send it directly from your own Gmail / email app.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2.5">
+                    <Info className="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    <div>
+                      <span className="font-bold block">Send from Your Own Email</span>
+                      <span>
+                        Server SMTP is not configured. Click the <strong>Open in Gmail</strong> or <strong>Default Email App</strong> button below to send this invitation from your own email account!
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 1-Click Send via User's Own Email Client */}
+                <div className="p-3.5 rounded-xl border border-primary/20 bg-primary/5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <Mail className="size-4 text-primary" /> Send Using Your Email Account
                     </span>
+                    <Badge variant="outline" className="text-[10px] bg-background">
+                      Direct & Reliable
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Send directly from your email to <strong>{recipientEmail}</strong> with pre-filled link:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gap-1.5 text-xs bg-red-600 hover:bg-red-700 text-white cursor-pointer shadow-xs font-semibold"
+                      onClick={() => window.open(gmailComposeUrl, "_blank", "noopener,noreferrer")}
+                    >
+                      <Mail className="size-3.5" /> Open in Gmail
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs cursor-pointer border-input hover:bg-card font-medium"
+                      onClick={() => {
+                        window.location.href = mailtoUrl;
+                      }}
+                    >
+                      <ExternalLink className="size-3.5" /> Default Email App
+                    </Button>
                   </div>
                 </div>
-              ) : (
-                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2.5">
-                  <Info className="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                  <div>
-                    <span className="font-bold block">Email Service Not Configured</span>
-                    <span>
-                      {inviteResult.emailError || "SMTP / Resend provider is not active."} You can
-                      copy the generated secure acceptance link below and share it directly.
-                    </span>
+
+                {/* Secure Shareable Link Box */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center justify-between">
+                    <span>Secure Shareable Link</span>
+                    <span className="text-[10px] text-muted-foreground font-normal">Valid for 7 days</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={invitationUrl}
+                      className="flex-1 h-9 rounded-lg border border-input bg-card px-3 text-xs font-mono text-muted-foreground select-all"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(invitationUrl);
+                        setHasCopiedLink(true);
+                        toast.success("Invitation link copied to clipboard!");
+                        setTimeout(() => setHasCopiedLink(false), 2500);
+                      }}
+                      className="gap-1.5 shrink-0 bg-primary cursor-pointer text-xs"
+                    >
+                      {hasCopiedLink ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      {hasCopiedLink ? "Copied!" : "Copy Link"}
+                    </Button>
                   </div>
                 </div>
-              )}
 
-              {/* Metadata summary */}
-              <div className="grid grid-cols-2 gap-2 text-xs p-3 rounded-lg bg-muted/40 border">
-                <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">
-                    Recipient
-                  </span>
-                  <span className="font-semibold text-foreground">
-                    {inviteResult.invitation.recipientEmail}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">
-                    Role Offered
-                  </span>
-                  <Badge variant="outline" className="text-[10px] capitalize font-semibold mt-0.5">
-                    {inviteResult.invitation.role}
-                  </Badge>
-                </div>
-                <div className="mt-2">
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">
-                    Status
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-semibold mt-0.5"
-                  >
-                    Pending Acceptance
-                  </Badge>
-                </div>
-                <div className="mt-2">
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">
-                    Expires
-                  </span>
-                  <span className="text-muted-foreground">
-                    {new Date(inviteResult.invitation.expiresAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </span>
-                </div>
-              </div>
-
-              {/* Shareable Link Box */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">Secure Shareable Link</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={inviteResult.invitationUrl}
-                    className="flex-1 h-9 rounded-lg border border-input bg-card px-3 text-xs font-mono text-muted-foreground select-all"
-                  />
+                {/* Additional Quick Share Options */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Button
+                    type="button"
+                    variant="outline"
                     size="sm"
-                    onClick={() => handleCopyInviteLink(inviteResult.invitationUrl)}
-                    className="gap-1.5 shrink-0 bg-primary cursor-pointer text-xs"
+                    className="gap-1.5 text-xs cursor-pointer text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10 border-emerald-500/30"
+                    onClick={() => window.open(whatsappUrl, "_blank", "noopener,noreferrer")}
                   >
-                    <Copy className="size-3.5" /> Copy Link
+                    <MessageCircle className="size-3.5" /> Share via WhatsApp
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs cursor-pointer"
+                    onClick={() => {
+                      navigator.clipboard.writeText(emailBody);
+                      setHasCopiedTemplate(true);
+                      toast.success("Full email message copied to clipboard!");
+                      setTimeout(() => setHasCopiedTemplate(false), 2500);
+                    }}
+                  >
+                    {hasCopiedTemplate ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    {hasCopiedTemplate ? "Copied Message!" : "Copy Full Message"}
                   </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  The recipient must accept this link using an account matching{" "}
-                  <strong>{inviteResult.invitation.recipientEmail}</strong>.
-                </p>
-              </div>
 
-              <div className="flex justify-end pt-3 border-t">
-                <Button size="sm" onClick={() => setInviteResultModalOpen(false)}>
-                  Done
-                </Button>
+                {/* Metadata summary */}
+                <div className="grid grid-cols-2 gap-2 text-xs p-3 rounded-lg bg-muted/40 border">
+                  <div>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                      Recipient
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {recipientEmail}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                      Role Offered
+                    </span>
+                    <Badge variant="outline" className="text-[10px] capitalize font-semibold mt-0.5">
+                      {role}
+                    </Badge>
+                  </div>
+                  <div className="mt-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                      Status
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-semibold mt-0.5"
+                    >
+                      Pending Acceptance
+                    </Badge>
+                  </div>
+                  <div className="mt-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                      Expires
+                    </span>
+                    <span className="text-muted-foreground">{expiresAt}</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-3 border-t">
+                  <Button size="sm" onClick={() => setInviteResultModalOpen(false)}>
+                    Done
+                  </Button>
+                </div>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* 3. Secondary Direct Add Member Dialog (no email/token dispatch) */}
       <Dialog open={addDirectMemberOpen} onOpenChange={setAddDirectMemberOpen}>

@@ -95,12 +95,15 @@ export interface ProjectInvitation {
 }
 
 export interface ProjectInvitationInput {
-  email: string;
+  email?: string;
+  recipientEmail?: string;
   role: string;
   message?: string;
   fullName?: string;
-  skills?: string[];
+  recipientName?: string;
+  skills?: string[] | string;
   designation?: string;
+  deliveryMethod?: "link" | "email";
 }
 
 export interface TaskAttachment {
@@ -193,6 +196,8 @@ export interface CreateInvitationResponse {
   rawToken: string;
   invitationUrl: string;
   emailSent: boolean;
+  emailSkipped?: boolean;
+  deliveryMethod?: "link" | "email";
   emailError?: string;
 }
 

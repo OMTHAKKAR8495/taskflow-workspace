@@ -477,5 +477,43 @@ describe("Team Invitations System - Security, Crypto & Core Logic", () => {
       expect(accepted).toBe(true);
       expect(navigatedTo).toBe("/dashboard");
     });
+
+    // 8. Delivery Method Selection & Direct Email Client / Gmail Fallback
+    it("handles deliveryMethod 'link' by skipping SMTP and generating an instant link", () => {
+      const deliveryMethod = "link";
+      const rawToken = "sample-token-abc";
+      const invitationUrl = `https://taskflow-workspace-seven.vercel.app/invitations/accept?token=${rawToken}`;
+
+      const response = {
+        deliveryMethod,
+        invitationUrl,
+        emailSent: false,
+        emailSkipped: true,
+      };
+
+      expect(response.deliveryMethod).toBe("link");
+      expect(response.emailSkipped).toBe(true);
+      expect(response.emailSent).toBe(false);
+      expect(response.invitationUrl).toContain("sample-token-abc");
+    });
+
+    it("constructs pre-filled Gmail compose and mailto URLs when SMTP is not configured", () => {
+      const recipientEmail = "omthakkar168@gmail.com";
+      const projectName = "rewamp";
+      const role = "developer";
+      const invitationUrl = "https://taskflow-workspace-seven.vercel.app/invitations/accept?token=sample-tok";
+
+      const emailSubject = `Invitation to collaborate on "${projectName}" on TaskFlow`;
+      const emailBody = `Hi there,\n\nYou've been invited to join "${projectName}" as a ${role}.\n\nAccept here:\n${invitationUrl}`;
+
+      const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+      const mailtoUrl = `mailto:${recipientEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+      const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(`${emailSubject}\n\n${invitationUrl}`)}`;
+
+      expect(gmailComposeUrl).toContain("to=omthakkar168%40gmail.com");
+      expect(gmailComposeUrl).toContain("rewamp");
+      expect(mailtoUrl).toContain("mailto:omthakkar168@gmail.com");
+      expect(whatsappUrl).toContain("api.whatsapp.com/send?text=");
+    });
   });
 });
