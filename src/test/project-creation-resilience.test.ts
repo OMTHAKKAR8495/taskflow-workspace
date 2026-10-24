@@ -41,4 +41,34 @@ describe("Project Creation Resilience & Date Parsing", () => {
     expect(proj.startDate).toBe("2026-10-17T00:00:00.000Z");
     expect(proj.deadline).toBe("2026-10-25T00:00:00.000Z");
   });
+
+  it("persists created projects across user logout/login and identity changes", async () => {
+    // 1. Create a project under current user
+    const created = await mockTaskService.createProject({
+      name: "New Enterprise Initiative",
+      key: "NEI",
+      description: "Critical enterprise deliverable",
+      color: "#10b981",
+      priority: "high",
+      lead: "Om Thakkar",
+    });
+
+    // 2. Simulate logout: clear active user
+    window.localStorage.removeItem("taskflow:auth_user");
+    window.localStorage.removeItem("taskflow:jwt_token");
+
+    // 3. Re-fetch projects as logged out user
+    let projects = await mockTaskService.getProjects();
+    expect(projects.some((p) => p.name === "New Enterprise Initiative")).toBe(true);
+
+    // 4. Simulate login as a different user (e.g. google user)
+    window.localStorage.setItem(
+      "taskflow:auth_user",
+      JSON.stringify({ id: "user-g-99999", fullName: "Google Teammate", email: "teammate@gmail.com", role: "leader" }),
+    );
+
+    // 5. Re-fetch projects under the newly logged in user: the project must still be present!
+    projects = await mockTaskService.getProjects();
+    expect(projects.some((p) => p.name === "New Enterprise Initiative")).toBe(true);
+  });
 });

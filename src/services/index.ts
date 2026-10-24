@@ -14,16 +14,33 @@ export { connectionStatus };
  */
 class ResilientTaskService implements TaskService {
   private async execute<T>(apiCall: () => Promise<T>, mockCall: () => Promise<T>): Promise<T> {
+    const isOffline = connectionStatus.getMode() === "offline";
+    const token = typeof window !== "undefined" ? localStorage.getItem("taskflow:jwt_token") : null;
+
+    // Fast-path: When known to be offline and no backend JWT token is held,
+    // don't incur failing network round-trips; serve instantly from local mock storage.
+    if (isOffline && !token) {
+      return await mockCall();
+    }
+
     try {
       const res = await apiCall();
       connectionStatus.setMode("connected");
       return res;
     } catch (err: unknown) {
-      if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
-        // Do NOT silently switch to mock if the server returned a valid 4xx client/validation error!
+      // Re-throw genuine client validation errors on authenticated operations (e.g. 400 Bad Request, 409 Conflict, 422 Unprocessable)
+      // BUT if the error is 401 Unauthorized (unauthenticated/offline login), 403 Forbidden, or a network/server failure (5xx),
+      // gracefully fall back to mockTaskService so user projects and tasks remain accessible in local mode.
+      if (
+        err instanceof ApiError &&
+        err.status !== 401 &&
+        err.status !== 403 &&
+        err.status >= 400 &&
+        err.status < 500
+      ) {
         throw err;
       }
-      console.warn("Backend API unavailable, operating in offline local mode:", err);
+      console.warn("Backend API unavailable or unauthenticated, operating in offline local mode:", err);
       connectionStatus.setMode("offline");
       return await mockCall();
     }

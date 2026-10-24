@@ -37,6 +37,42 @@ function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
+const SHARED_PROJECTS_KEY = "taskflow:shared_projects";
+
+function getSharedProjects(): Project[] | null {
+  if (!isBrowser()) return null;
+  try {
+    const raw = window.localStorage.getItem(SHARED_PROJECTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+
+    // Recover any custom projects previously saved under user keys (like taskflow:store:user-om)
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith("taskflow:store:")) {
+        const storedRaw = window.localStorage.getItem(k);
+        if (storedRaw) {
+          const s = JSON.parse(storedRaw);
+          if (s && Array.isArray(s.projects) && s.projects.length > 4) {
+            saveSharedProjects(s.projects);
+            return s.projects;
+          }
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function saveSharedProjects(projects: Project[]): void {
+  if (!isBrowser()) return;
+  try {
+    window.localStorage.setItem(SHARED_PROJECTS_KEY, JSON.stringify(projects));
+  } catch {}
+}
+
 function getActiveUser(): {
   id: string;
   fullName: string;
@@ -65,6 +101,8 @@ function load(): Store {
   const isDefaultUser =
     !activeUser || activeUser.id === "user-om" || activeUser.username === "omthakkar";
 
+  const sharedProjects = getSharedProjects();
+
   if (isBrowser()) {
     try {
       const raw = window.localStorage.getItem(key);
@@ -72,9 +110,12 @@ function load(): Store {
       if (raw) {
         const parsed = JSON.parse(raw) as Store;
         if (parsed && Array.isArray(parsed.tasks)) {
-          // Ensure projects and team exist in parsed store
-          if (!parsed.projects || parsed.projects.length === 0) {
+          // Use shared workspace projects if present, or existing parsed projects
+          if (sharedProjects && sharedProjects.length > 0) {
+            parsed.projects = sharedProjects;
+          } else if (!parsed.projects || parsed.projects.length === 0) {
             parsed.projects = buildSeedProjects();
+            saveSharedProjects(parsed.projects);
           } else {
             parsed.projects = parsed.projects.map((p) => ({
               ...p,
@@ -82,6 +123,7 @@ function load(): Store {
               priority: p.priority || "medium",
               progress: typeof p.progress === "number" ? p.progress : 0,
             }));
+            saveSharedProjects(parsed.projects);
           }
           if (!parsed.team || parsed.team.length === 0) {
             parsed.team = buildTeamMembers();
@@ -138,9 +180,14 @@ function load(): Store {
   const userEmail = activeUser?.email || "omthakkar@example.com";
 
   const tasks = isDefaultUser ? buildSeedTasks(userId) : buildNewUserTasks(userId);
+  const projects = sharedProjects && sharedProjects.length > 0 ? sharedProjects : buildSeedProjects();
+  if (!sharedProjects) {
+    saveSharedProjects(projects);
+  }
+
   const initialStore: Store = {
     tasks,
-    projects: buildSeedProjects(),
+    projects,
     team: buildTeamMembers(),
     profile: buildSeedProfile(userFullName, userEmail, userId),
     activity: buildSeedActivity(tasks),
@@ -161,6 +208,9 @@ function load(): Store {
 function save(store: Store) {
   const key = getStorageKey();
   memoryStores[key] = store;
+  if (store.projects && Array.isArray(store.projects)) {
+    saveSharedProjects(store.projects);
+  }
   if (isBrowser()) {
     try {
       window.localStorage.setItem(key, JSON.stringify(store));
