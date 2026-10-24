@@ -31,48 +31,70 @@ function getStoredToken(): string | null {
   return window.localStorage.getItem("taskflow:jwt_token");
 }
 
+const inFlightRequests = new Map<string, Promise<any>>();
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isGet = !init || !init.method || init.method.toUpperCase() === "GET";
   const userId = getActiveUserId();
   const token = getStoredToken();
   const base = getApiBaseUrl();
+  const cacheKey = isGet ? `${userId}:${path}` : null;
 
-  let res: Response;
-  try {
-    res = await fetch(`${base}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": userId,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...init?.headers,
-      },
-      credentials: "include",
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Server unreachable";
-    const netErr = new Error(`Network failure: ${message}`);
-    (netErr as unknown as { isNetworkError: boolean }).isNetworkError = true;
-    throw netErr;
+  if (cacheKey && inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey) as Promise<T>;
   }
 
-  if (!res.ok) {
-    let msg = `Request failed: ${res.status}`;
-    let data: unknown = null;
+  const exec = async (): Promise<T> => {
+    let res: Response;
     try {
-      data = await res.json();
-      if (
-        data &&
-        typeof data === "object" &&
-        "error" in data &&
-        typeof (data as { error: string }).error === "string"
-      ) {
-        msg = (data as { error: string }).error;
-      }
-    } catch {}
-    throw new ApiError(msg, res.status, data);
+      res = await fetch(`${base}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": userId,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...init?.headers,
+        },
+        credentials: "include",
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Server unreachable";
+      const netErr = new Error(`Network failure: ${message}`);
+      (netErr as unknown as { isNetworkError: boolean }).isNetworkError = true;
+      throw netErr;
+    }
+
+    if (!res.ok) {
+      let msg = `Request failed: ${res.status}`;
+      let data: unknown = null;
+      try {
+        data = await res.json();
+        if (
+          data &&
+          typeof data === "object" &&
+          "error" in data &&
+          typeof (data as { error: string }).error === "string"
+        ) {
+          msg = (data as { error: string }).error;
+        }
+      } catch {}
+      throw new ApiError(msg, res.status, data);
+    }
+
+    return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  };
+
+  const reqPromise = exec();
+
+  if (cacheKey) {
+    inFlightRequests.set(cacheKey, reqPromise);
+    reqPromise.finally(() => {
+      // Clear from inFlight after response completes
+      setTimeout(() => inFlightRequests.delete(cacheKey), 100);
+    });
   }
 
-  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  return reqPromise;
 }
 
 export const apiTaskService: TaskService = {

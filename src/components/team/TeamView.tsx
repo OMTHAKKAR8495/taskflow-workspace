@@ -109,7 +109,9 @@ export function TeamView() {
   // Load all invitations across projects
   const loadInvitations = async () => {
     try {
-      setLoadingInvitations(true);
+      if (invitations.length === 0) {
+        setLoadingInvitations(true);
+      }
       if (taskService.getAllInvitations) {
         const list = await taskService.getAllInvitations();
         setInvitations(list || []);
@@ -129,7 +131,7 @@ export function TeamView() {
 
   useEffect(() => {
     void loadInvitations();
-  }, [projects]);
+  }, [projects.length]);
 
   const pendingInvitations = useMemo(() => {
     return invitations.filter((inv) => inv.status === "pending");

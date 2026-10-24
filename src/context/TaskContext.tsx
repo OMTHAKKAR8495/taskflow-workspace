@@ -171,7 +171,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const reload = useCallback(async () => {
-    setState("loading");
+    setState((prev) => (prev === "ready" ? "ready" : "loading"));
     try {
       const [t, p, a, projs, members] = await Promise.all([
         taskService.getTasks(),
