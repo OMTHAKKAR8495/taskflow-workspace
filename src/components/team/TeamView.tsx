@@ -24,6 +24,8 @@ import {
   UserCheck,
   Link2,
   MessageCircle,
+  Plus,
+  ArrowRight,
 } from "lucide-react";
 import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
@@ -148,7 +150,7 @@ export function TeamView() {
     if (!r || r === "admin" || r === "owner" || r === "lead" || user.id === "user-om") return true;
     return projects.some(
       (p) =>
-        p.owner_id === user.id ||
+        (p as any).owner_id === user.id ||
         (p as any).ownerId === user.id ||
         (p.members || []).some(
           (m: any) =>
@@ -160,7 +162,7 @@ export function TeamView() {
 
   // Set default project ID when projects load
   useEffect(() => {
-    if (projects.length > 0 && !inviteProjectId) {
+    if (projects.length > 0 && !inviteProjectId && projects[0]) {
       setInviteProjectId(projects[0].id);
     }
   }, [projects, inviteProjectId]);
@@ -221,7 +223,7 @@ export function TeamView() {
           (t.assigneeId && t.assigneeId.toLowerCase() === mid) ||
           (t.assignee?.id && t.assignee.id.toLowerCase() === mid) ||
           (t.assignee?.email && memail && t.assignee.email.toLowerCase() === memail) ||
-          (t.assigneeName && mname && t.assigneeName.toLowerCase() === mname) ||
+          ((t as any).assigneeName && mname && (t as any).assigneeName.toLowerCase() === mname) ||
           ((t as any).assignee_id && (t as any).assignee_id.toLowerCase() === mid),
       );
     }
@@ -761,7 +763,7 @@ export function TeamView() {
             {pendingInvitations.map((inv) => {
               const targetProject = projects.find((p) => p.id === inv.projectId);
               const projectName = inv.projectName || targetProject?.name || "Workspace Project";
-              const projectColor = inv.projectColor || targetProject?.color || "#6366f1";
+              const projectColor = (inv as any).projectColor || targetProject?.color || "#6366f1";
               const isBusy = actionInProgressId === inv.id;
 
               const isExpired = new Date(inv.expiresAt) <= new Date();
@@ -1106,7 +1108,7 @@ export function TeamView() {
       {/* 2. Invitation Ready & Shareable Link Modal */}
       {inviteResult && (() => {
         const recipientEmail = inviteResult.invitation.recipientEmail;
-        const recipientName = inviteResult.invitation.recipientName || "";
+        const recipientName = (inviteResult.invitation as any).recipientName || "";
         const targetProj = projects.find((p) => p.id === inviteResult.invitation.projectId);
         const projectName = inviteResult.invitation.projectName || targetProj?.name || "TaskFlow Project";
         const role = inviteResult.invitation.role;
