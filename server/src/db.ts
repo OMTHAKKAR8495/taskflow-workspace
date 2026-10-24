@@ -52,7 +52,7 @@ const isRemoteDb = Boolean(
 const rejectUnauthorized =
   process.env.DB_ALLOW_INSECURE_TLS === "true"
     ? false
-    : process.env.DB_REJECT_UNAUTHORIZED !== "false";
+    : process.env.DB_REJECT_UNAUTHORIZED === "true";
 
 export const pool = new Pool({
   connectionString:

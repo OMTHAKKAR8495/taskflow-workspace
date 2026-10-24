@@ -32875,7 +32875,7 @@ var resolvedDbUrl = getNormalizedDatabaseUrl();
 var isRemoteDb = Boolean(
   resolvedDbUrl && (resolvedDbUrl.includes("supabase") || resolvedDbUrl.includes("sslmode=require") || resolvedDbUrl.includes("neon.tech") || process.env.DB_SSL === "true")
 );
-var rejectUnauthorized = process.env.DB_ALLOW_INSECURE_TLS === "true" ? false : process.env.DB_REJECT_UNAUTHORIZED !== "false";
+var rejectUnauthorized = process.env.DB_ALLOW_INSECURE_TLS === "true" ? false : process.env.DB_REJECT_UNAUTHORIZED === "true";
 var pool = new Pool2({
   connectionString: resolvedDbUrl || `postgresql://${process.env.PGUSER || process.env.USER || "postgres"}:${process.env.PGPASSWORD || ""}@${process.env.PGHOST || "localhost"}:${process.env.PGPORT || 5432}/${process.env.PGDATABASE || "taskflow_db"}`,
   ssl: isRemoteDb ? { rejectUnauthorized } : void 0,

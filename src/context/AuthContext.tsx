@@ -216,8 +216,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (parts.length >= 2) {
         const payload = JSON.parse(atob(parts[1]));
         const isLeader = payload.email?.toLowerCase().includes("omthakkar");
+        const googleEmail = (payload.email || "user@gmail.com").toLowerCase();
+        const googleId = payload.sub
+          ? `user-g-${payload.sub}`
+          : `user-g-${googleEmail.replace(/[^a-z0-9]/g, "_")}`;
         const googleUser: AuthUser = {
-          id: `user-g-${payload.sub || Date.now()}`,
+          id: googleId,
           username: (payload.email ? payload.email.split("@")[0] : "google_user").toLowerCase(),
           fullName: payload.name || "Google User",
           email: payload.email || "user@gmail.com",
