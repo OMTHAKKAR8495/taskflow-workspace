@@ -113,6 +113,7 @@ export function MemberDashboardView() {
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [updatingTask, setUpdatingTask] = useState<Task | null>(null);
+  const [updatingTaskMode, setUpdatingTaskMode] = useState<"progress" | "submission">("progress");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -613,8 +614,8 @@ export function MemberDashboardView() {
                         </span>
                       </div>
 
-                      {/* Action Buttons: Clear Open Task & Update Progress */}
-                      <div className="flex items-center gap-2">
+                      {/* Action Buttons: Open Task, Update Progress & Submit Work */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <Button
                           size="sm"
                           variant="outline"
@@ -626,12 +627,27 @@ export function MemberDashboardView() {
                         </Button>
                         <Button
                           size="sm"
-                          variant="default"
-                          onClick={() => setUpdatingTask(task)}
-                          className="h-7 text-xs font-semibold cursor-pointer gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
+                          variant="outline"
+                          onClick={() => {
+                            setUpdatingTaskMode("progress");
+                            setUpdatingTask(task);
+                          }}
+                          className="h-7 text-xs font-semibold cursor-pointer gap-1.5"
                         >
                           <TrendingUp className="size-3.5" />
-                          Update Progress
+                          Progress
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => {
+                            setUpdatingTaskMode("submission");
+                            setUpdatingTask(task);
+                          }}
+                          className="h-7 text-xs font-semibold cursor-pointer gap-1.5 bg-primary text-primary-foreground shadow-2xs"
+                        >
+                          <FileCheck2 className="size-3.5" />
+                          Submit Work
                         </Button>
                       </div>
                     </div>
@@ -1064,6 +1080,7 @@ export function MemberDashboardView() {
         <ProgressUpdateModal
           task={updatingTask}
           open={!!updatingTask}
+          initialMode={updatingTaskMode}
           onOpenChange={(open) => {
             if (!open) setUpdatingTask(null);
           }}

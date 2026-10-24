@@ -40,6 +40,8 @@ export function TaskProgressTimeline({
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
 
+  const [modalMode, setModalMode] = useState<"progress" | "submission">("progress");
+
   useEffect(() => {
     let isMounted = true;
     async function loadHistory() {
@@ -142,15 +144,33 @@ export function TaskProgressTimeline({
         {showActions && (
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {canUpdateProgress && (
-              <Button
-                size="sm"
-                variant="default"
-                onClick={() => setIsUpdateModalOpen(true)}
-                className="h-8 text-xs font-semibold cursor-pointer gap-1.5"
-              >
-                <TrendingUp className="size-3.5" />
-                Update Daily Progress
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => {
+                    setModalMode("submission");
+                    setIsUpdateModalOpen(true);
+                  }}
+                  className="h-8 text-xs font-semibold cursor-pointer gap-1.5 shadow-2xs"
+                >
+                  <ShieldCheck className="size-3.5" />
+                  Submit Work for Review
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setModalMode("progress");
+                    setIsUpdateModalOpen(true);
+                  }}
+                  className="h-8 text-xs font-semibold cursor-pointer gap-1.5"
+                >
+                  <TrendingUp className="size-3.5" />
+                  Daily Progress
+                </Button>
+              </>
             )}
 
             {canReview && (
@@ -186,10 +206,13 @@ export function TaskProgressTimeline({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setIsUpdateModalOpen(true)}
+                onClick={() => {
+                  setModalMode("submission");
+                  setIsUpdateModalOpen(true);
+                }}
                 className="text-xs cursor-pointer"
               >
-                Submit First Daily Progress
+                Submit Work for Review
               </Button>
             )}
           </div>
@@ -201,7 +224,7 @@ export function TaskProgressTimeline({
                 className="relative pl-8 text-xs space-y-1.5 group"
               >
                 <div className="absolute left-1.5 top-1 size-3.5 rounded-full bg-primary/20 border-2 border-primary group-hover:scale-110 transition-transform" />
-                <div className="rounded-xl border bg-card p-3 shadow-2xs space-y-2">
+                <div className="rounded-xl border bg-card p-3.5 shadow-2xs space-y-2.5">
                   <div className="flex items-center justify-between text-muted-foreground">
                     <div className="flex items-center gap-1.5 font-medium text-foreground">
                       <User className="size-3 text-muted-foreground" />
@@ -209,6 +232,21 @@ export function TaskProgressTimeline({
                       <span className="text-primary font-mono font-bold">
                         ({item.progressPercent}%)
                       </span>
+                      {item.submissionStatus && item.submissionStatus !== "none" && (
+                        <span
+                          className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${
+                            item.submissionStatus === "approved"
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                              : item.submissionStatus === "changes_requested"
+                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                              : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
+                          }`}
+                        >
+                          {item.submissionStatus === "changes_requested"
+                            ? "Changes Requested"
+                            : item.submissionStatus}
+                        </span>
+                      )}
                     </div>
                     <span className="text-[10px]">
                       {new Date(item.createdAt).toLocaleString(undefined, {
@@ -223,12 +261,65 @@ export function TaskProgressTimeline({
                   {/* Completed */}
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                      Work Completed:
+                      Work Completed / Deliverables:
                     </span>
                     <p className="text-foreground leading-relaxed whitespace-pre-wrap">
                       {item.workCompleted}
                     </p>
                   </div>
+
+                  {/* Submission Links & Attachments */}
+                  {(item.githubUrl || item.deploymentUrl || (item.attachments && item.attachments.length > 0)) && (
+                    <div className="p-2.5 rounded-lg border bg-muted/20 space-y-2">
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {item.githubUrl && (
+                          <a
+                            href={item.githubUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border text-foreground hover:bg-muted font-mono transition-colors"
+                          >
+                            <ExternalLink className="size-3 text-primary" />
+                            GitHub Repo / PR
+                          </a>
+                        )}
+                        {item.deploymentUrl && (
+                          <a
+                            href={item.deploymentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border text-foreground hover:bg-muted font-mono transition-colors"
+                          >
+                            <ExternalLink className="size-3 text-emerald-500" />
+                            Live Demo
+                          </a>
+                        )}
+                      </div>
+
+                      {item.attachments && item.attachments.length > 0 && (
+                        <div className="space-y-1 pt-1 border-t border-border/40">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                            Attached Files ({item.attachments.length}):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {item.attachments.map((att) => (
+                              <a
+                                key={att.id}
+                                href={att.url}
+                                download={att.name}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border bg-card text-foreground hover:border-primary transition-colors"
+                              >
+                                <ExternalLink className="size-2.5 text-muted-foreground" />
+                                {att.name}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Remaining */}
                   {item.workRemaining && (
@@ -266,7 +357,7 @@ export function TaskProgressTimeline({
                       </span>
                     )}
 
-                    {item.evidenceUrl && (
+                    {item.evidenceUrl && !item.githubUrl && !item.deploymentUrl && (
                       <a
                         href={item.evidenceUrl}
                         target="_blank"
@@ -289,6 +380,7 @@ export function TaskProgressTimeline({
         task={task}
         open={isUpdateModalOpen}
         onOpenChange={setIsUpdateModalOpen}
+        initialMode={modalMode}
         onSuccess={() => {
           onRefresh?.();
         }}

@@ -103,6 +103,14 @@ export interface ProjectInvitationInput {
   designation?: string;
 }
 
+export interface TaskAttachment {
+  id: string;
+  name: string;
+  url: string;
+  size?: number;
+  type?: string;
+}
+
 export interface TaskProgressUpdate {
   id: string;
   taskId: string;
@@ -116,6 +124,10 @@ export interface TaskProgressUpdate {
   nextSteps?: string;
   timeSpentHours?: number;
   evidenceUrl?: string;
+  githubUrl?: string;
+  deploymentUrl?: string;
+  attachments?: TaskAttachment[];
+  submissionStatus?: "draft" | "submitted" | "in_review" | "changes_requested" | "approved";
   createdAt: string;
 }
 
@@ -128,6 +140,34 @@ export interface TaskProgressUpdateInput {
   nextSteps?: string;
   timeSpentHours?: number;
   evidenceUrl?: string;
+  githubUrl?: string;
+  deploymentUrl?: string;
+  attachments?: TaskAttachment[];
+  submissionStatus?: "draft" | "submitted" | "in_review" | "changes_requested" | "approved";
+}
+
+export interface ProjectSubmission {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskIdentifier: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  status: TaskStatus;
+  submissionStatus: "draft" | "submitted" | "in_review" | "changes_requested" | "approved";
+  progressPercent: number;
+  workCompleted: string;
+  workRemaining?: string;
+  blockers?: string;
+  nextSteps?: string;
+  timeSpentHours?: number;
+  evidenceUrl?: string;
+  githubUrl?: string;
+  deploymentUrl?: string;
+  attachments?: TaskAttachment[];
+  reviews?: TaskReview[];
+  createdAt: string;
 }
 
 export interface TaskReview {
@@ -247,10 +287,13 @@ export interface Task {
   focusTimeSeconds?: number | undefined;
   completedAt?: string | null | undefined;
   progressPercent?: number | undefined;
-  lastProgressUpdateAt?: string | null | undefined;
   progressUpdates?: TaskProgressUpdate[] | undefined;
   reviews?: TaskReview[] | undefined;
   latestProgress?: TaskProgressUpdate | null | undefined;
+  submissionStatus?: "none" | "draft" | "submitted" | "in_review" | "changes_requested" | "approved" | undefined;
+  attachments?: TaskAttachment[] | undefined;
+  githubUrl?: string | undefined;
+  deploymentUrl?: string | undefined;
   comments?: TaskComment[] | undefined;
   createdAt: string;
   updatedAt: string;
@@ -263,6 +306,10 @@ export interface TaskInput {
   status?: TaskStatus | undefined;
   priority?: TaskPriority | undefined;
   blockedReason?: string | undefined;
+  submissionStatus?: "none" | "draft" | "submitted" | "in_review" | "changes_requested" | "approved" | undefined;
+  attachments?: TaskAttachment[] | undefined;
+  githubUrl?: string | undefined;
+  deploymentUrl?: string | undefined;
   startDate?: string | null | undefined;
   dueDate?: string | null | undefined;
   estimatedHours?: number | undefined;

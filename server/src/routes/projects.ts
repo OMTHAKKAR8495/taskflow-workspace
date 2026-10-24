@@ -172,33 +172,83 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     const {
       name,
       key,
-      description = "",
-      color = "#4f46e5",
+      key_prefix,
+      keyPrefix,
+      description,
+      desc,
+      color,
+      color_theme,
+      colorTheme,
       status = "active",
       priority = "medium",
       health = "on_track",
       lead,
       startDate,
+      start_date,
       deadline,
+      due_date,
+      dueDate,
     } = req.body;
 
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ error: "Project name is required" });
     }
 
-    if (!key || typeof key !== "string" || !key.trim()) {
-      return res.status(400).json({ error: "Project key is required" });
-    }
-
-    const cleanKey = key.trim().toUpperCase().slice(0, 10);
     const cleanName = name.trim();
+    const rawKey = key || key_prefix || keyPrefix;
+    let cleanKey = "";
 
-    // Check unique key
-    const existingKey = await query("SELECT id FROM projects WHERE UPPER(key) = $1", [cleanKey]);
-    if (existingKey.rowCount && existingKey.rowCount > 0) {
-      return res.status(409).json({ error: `Project key '${cleanKey}' is already taken. Please choose another.` });
+    if (rawKey && typeof rawKey === "string" && rawKey.trim()) {
+      cleanKey = rawKey.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 10);
+      if (!cleanKey) {
+        cleanKey = cleanName.replace(/[^A-Za-z0-9]/g, "").slice(0, 4).toUpperCase() || "PRJ";
+      }
+
+      // Check unique key for user-supplied key
+      const existingKey = await query("SELECT id FROM projects WHERE UPPER(key) = $1", [cleanKey]);
+      if (existingKey.rowCount && existingKey.rowCount > 0) {
+        return res.status(409).json({ error: `Project key '${cleanKey}' is already taken. Please choose another unique key.` });
+      }
+    } else {
+      // Auto-generate key from project name
+      let baseKey = cleanName.replace(/[^A-Za-z0-9]/g, "").slice(0, 4).toUpperCase();
+      if (!baseKey) baseKey = "PRJ";
+      cleanKey = baseKey;
+      let counter = 1;
+      while (true) {
+        const existing = await query("SELECT id FROM projects WHERE UPPER(key) = $1", [cleanKey]);
+        if (!existing.rowCount || existing.rowCount === 0) break;
+        counter++;
+        cleanKey = `${baseKey}${counter}`.slice(0, 10);
+      }
     }
 
+    const cleanColor = (color || color_theme || colorTheme || "#4f46e5").toString().trim();
+    const cleanDesc = (description ?? desc ?? "").toString().trim();
+    const cleanPriority = (priority || "medium").toString().trim();
+    const cleanStatus = (status || "active").toString().trim();
+    const cleanHealth = (health || "on_track").toString().trim();
+    const parsedStartDate = (startDate || start_date) ? new Date(startDate || start_date).toISOString() : null;
+    const parsedDeadline = (deadline || due_date || dueDate) ? new Date(deadline || due_date || dueDate).toISOString() : null;
+
+    // Ensure creator exists in users table to satisfy foreign keys
+    const userRes = await query("SELECT id, full_name, username FROM users WHERE id = $1", [userId]);
+    let creatorName = req.user?.username || "Lead";
+    if (userRes.rows.length === 0) {
+      const fallbackName = userId === "user-om" ? "Om Thakkar" : (req.user?.username || "Workspace Leader");
+      const fallbackEmail = userId === "user-om" ? "omthakkar@example.com" : `${userId}@taskflow.local`;
+      await query(
+        `INSERT INTO users (id, username, full_name, email, role)
+         VALUES ($1, $2, $3, $4, 'admin')
+         ON CONFLICT (id) DO NOTHING`,
+        [userId, userId, fallbackName, fallbackEmail],
+      );
+      creatorName = fallbackName;
+    } else {
+      creatorName = userRes.rows[0].full_name || userRes.rows[0].username || creatorName;
+    }
+
+    const cleanLead = (lead && typeof lead === "string" && lead.trim()) ? lead.trim() : creatorName;
     const projectId = `proj-${Date.now()}`;
     const now = new Date().toISOString();
 
@@ -213,15 +263,15 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
         projectId,
         cleanName,
         cleanKey,
-        description.trim(),
-        color,
-        status,
-        priority,
-        health,
-        lead && lead.trim() ? lead.trim() : req.user?.username || "Lead",
+        cleanDesc,
+        cleanColor,
+        cleanStatus,
+        cleanPriority,
+        cleanHealth,
+        cleanLead,
         userId,
-        startDate ? new Date(startDate).toISOString() : null,
-        deadline ? new Date(deadline).toISOString() : null,
+        parsedStartDate,
+        parsedDeadline,
         now,
       ],
     );
@@ -253,8 +303,8 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
       health: p.health,
       lead: p.lead,
       ownerId: p.owner_id,
-      startDate: p.start_date,
-      deadline: p.deadline,
+      startDate: p.start_date ? new Date(p.start_date).toISOString() : null,
+      deadline: p.deadline ? new Date(p.deadline).toISOString() : null,
       progress: 0,
       taskCount: 0,
       completedCount: 0,
@@ -263,7 +313,7 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     });
   } catch (err: any) {
     console.error("Error creating project:", err);
-    res.status(500).json({ error: "Failed to create project" });
+    res.status(500).json({ error: err?.message || "Failed to create project" });
   }
 });
 
@@ -541,24 +591,65 @@ router.post("/:id/members", requireAuth, async (req: AuthenticatedRequest, res: 
       return res.status(403).json({ error: "Unauthorized: Only project leaders can add members to a project" });
     }
 
-    const { userId, role = "member" } = req.body;
+    const { userId, userIds, role = "member" } = req.body;
+    const targetUserIds: string[] = Array.isArray(userIds)
+      ? userIds.filter((u: any) => typeof u === "string" && u.trim()).map((u: string) => u.trim())
+      : userId && typeof userId === "string" && userId.trim()
+        ? [userId.trim()]
+        : [];
 
-    if (!userId) {
-      return res.status(400).json({ error: "User ID is required" });
+    if (targetUserIds.length === 0) {
+      return res.status(400).json({ error: "User ID or User IDs array is required" });
     }
 
-    const memberId = `pm-${Date.now()}`;
-    await query(
-      `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-      [memberId, id, userId, role],
-    );
+    const added: string[] = [];
 
-    res.status(201).json({ success: true, memberId, role });
+    for (const uid of targetUserIds) {
+      // Ensure user exists in users table to satisfy foreign key constraint
+      const uRes = await query("SELECT id FROM users WHERE id = $1", [uid]);
+      if (uRes.rows.length === 0) {
+        // Sync from team_members if present
+        const tmRes = await query("SELECT * FROM team_members WHERE id = $1", [uid]);
+        if (tmRes.rows.length > 0) {
+          const tm = tmRes.rows[0];
+          await query(
+            `INSERT INTO users (id, username, full_name, email, role)
+             VALUES ($1, $2, $3, $4, 'member')
+             ON CONFLICT (id) DO NOTHING`,
+            [tm.id, tm.id, tm.name, tm.email],
+          );
+        } else {
+          // Create placeholder user
+          await query(
+            `INSERT INTO users (id, username, full_name, email, role)
+             VALUES ($1, $2, $3, $4, 'member')
+             ON CONFLICT (id) DO NOTHING`,
+            [uid, uid, `Member ${uid}`, `${uid}@taskflow.local`],
+          );
+        }
+      }
+
+      const memberId = `pm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      await query(
+        `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+        [memberId, id, uid, role],
+      );
+      added.push(uid);
+
+      // Record activity
+      await query(
+        `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
+         VALUES ($1, $2, $3, '', '', 'member_joined', $4, NOW())`,
+        [`act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`, currentUserId, id, JSON.stringify({ userId: uid, role })],
+      );
+    }
+
+    res.status(201).json({ success: true, count: added.length, addedUserIds: added, role });
   } catch (err: any) {
     console.error("Error adding project member:", err);
-    res.status(500).json({ error: "Failed to add member to project" });
+    res.status(500).json({ error: err?.message || "Failed to add member to project" });
   }
 });
 
@@ -674,6 +765,127 @@ router.delete("/:id/milestones/:milestoneId", requireAuth, async (req: Authentic
   } catch (err: any) {
     console.error("Error deleting milestone:", err);
     res.status(500).json({ error: "Failed to delete milestone" });
+  }
+});
+
+// 9. Project Submissions & Deliverables
+router.get("/:id/submissions", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = getUserId(req);
+
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isProjLead = isGlobalLead || (await isProjectLeader(userId, String(id)));
+
+    let sql = `
+      SELECT pu.*, t.title as task_title, t.identifier as task_identifier, t.assignee_id,
+             COALESCE(u.full_name, pu.user_name) as submitter_name,
+             COALESCE(u.avatar_url, '') as submitter_avatar
+      FROM task_progress_updates pu
+      JOIN tasks t ON pu.task_id = t.id
+      LEFT JOIN users u ON pu.user_id = u.id
+      WHERE (t.project_id = $1 OR pu.project_id = $1)
+    `;
+    const params: any[] = [id];
+
+    // Privacy rule: non-leaders only see their own submissions
+    if (!isProjLead) {
+      params.push(userId);
+      sql += ` AND pu.user_id = $${params.length}`;
+    }
+
+    sql += ` ORDER BY pu.created_at DESC`;
+
+    const result = await query(sql, params);
+
+    // Also fetch reviews for tasks in this project
+    const reviewsRes = await query(
+      `SELECT r.* FROM task_reviews r
+       JOIN tasks t ON r.task_id = t.id
+       WHERE t.project_id = $1
+       ORDER BY r.created_at DESC`,
+      [id],
+    );
+    const reviewsByUpdate: Record<string, any[]> = {};
+    for (const r of reviewsRes.rows) {
+      const upId = r.progress_update_id || r.task_id;
+      if (!reviewsByUpdate[upId]) reviewsByUpdate[upId] = [];
+      reviewsByUpdate[upId].push(r);
+    }
+
+    res.json(
+      result.rows.map((row) => {
+        let atts: any[] = [];
+        try {
+          atts = typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments || [];
+        } catch {}
+        return {
+          id: row.id,
+          taskId: row.task_id,
+          taskTitle: row.task_title,
+          taskIdentifier: row.task_identifier || "NEX-000",
+          userId: row.user_id,
+          userName: row.submitter_name,
+          userAvatar: row.submitter_avatar,
+          status: row.status,
+          submissionStatus: row.submission_status || (row.status === "in_review" ? "submitted" : "draft"),
+          progressPercent: row.progress_percent,
+          workCompleted: row.work_completed,
+          workRemaining: row.work_remaining || "",
+          blockers: row.blockers || "",
+          nextSteps: row.next_steps || "",
+          timeSpentHours: parseFloat(row.time_spent_hours || "0") || 0,
+          evidenceUrl: row.evidence_url || "",
+          githubUrl: row.github_url || "",
+          deploymentUrl: row.deployment_url || "",
+          attachments: atts,
+          reviews: (reviewsByUpdate[row.id] || reviewsByUpdate[row.task_id] || []).map((r) => ({
+            id: r.id,
+            reviewerId: r.reviewer_id,
+            reviewerName: r.reviewer_name,
+            decision: r.decision,
+            feedback: r.feedback,
+            createdAt: new Date(r.created_at).toISOString(),
+          })),
+          createdAt: new Date(row.created_at).toISOString(),
+        };
+      }),
+    );
+  } catch (err: any) {
+    console.error("Error fetching project submissions:", err);
+    res.status(500).json({ error: "Failed to fetch project submissions" });
+  }
+});
+
+// 10. Project Activity History
+router.get("/:id/activity", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      `SELECT a.*, COALESCE(u.full_name, u.username, 'Team Member') as user_name, COALESCE(u.avatar_url, '') as user_avatar
+       FROM activities a
+       LEFT JOIN users u ON a.user_id = u.id
+       WHERE a.project_id = $1
+       ORDER BY a.at DESC
+       LIMIT 100`,
+      [id],
+    );
+    res.json(
+      result.rows.map((a) => ({
+        id: a.id,
+        userId: a.user_id,
+        userName: a.user_name,
+        userAvatar: a.user_avatar,
+        type: a.type,
+        taskTitle: a.task_title,
+        taskId: a.task_id,
+        details: typeof a.details === "string" ? JSON.parse(a.details) : a.details || {},
+        at: new Date(a.at).toISOString(),
+      })),
+    );
+  } catch (err: any) {
+    console.error("Error fetching project activity:", err);
+    res.status(500).json({ error: "Failed to fetch project activity" });
   }
 });
 

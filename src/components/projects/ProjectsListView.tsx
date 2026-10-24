@@ -116,8 +116,8 @@ export function ProjectsListView() {
       setKey("");
       setDescription("");
       navigate({ to: "/projects/$id", params: { id: p.id } });
-    } catch {
-      // Error handled in context
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create project");
     } finally {
       setIsSubmitting(false);
     }

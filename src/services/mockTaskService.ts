@@ -583,6 +583,83 @@ export const mockTaskService: TaskService = {
     save(store);
   },
 
+  async addProjectMember(projectId: string, userId: string | string[], role = "member") {
+    await wait();
+    const store = load();
+    const proj = store.projects.find((p) => p.id === projectId);
+    if (!proj) throw new Error("Project not found");
+    if (!proj.members) proj.members = [];
+    const ids = Array.isArray(userId) ? userId : [userId];
+    for (const uid of ids) {
+      if (!proj.members.some((m) => m.id === uid)) {
+        const teamMember = store.team.find((t) => t.id === uid);
+        proj.members.push({
+          id: uid,
+          membershipId: `pm-${Date.now()}-${uid}`,
+          name: teamMember?.name || `Member ${uid}`,
+          email: teamMember?.email || `${uid}@taskflow.local`,
+          role,
+          initials: teamMember?.initials || uid.slice(0, 2).toUpperCase(),
+          joinedAt: new Date().toISOString(),
+        });
+      }
+    }
+    save(store);
+  },
+
+  async removeProjectMember(projectId: string, userId: string) {
+    await wait();
+    const store = load();
+    const proj = store.projects.find((p) => p.id === projectId);
+    if (proj && proj.members) {
+      proj.members = proj.members.filter((m) => m.id !== userId);
+      save(store);
+    }
+  },
+
+  async getProjectSubmissions(projectId: string) {
+    await wait();
+    const store = load();
+    const projectTasks = store.tasks.filter((t) => t.projectId === projectId);
+    const submissions: any[] = [];
+    for (const t of projectTasks) {
+      if (t.progressUpdates) {
+        for (const pu of t.progressUpdates) {
+          submissions.push({
+            id: pu.id,
+            taskId: t.id,
+            taskTitle: t.title,
+            taskIdentifier: t.identifier || "NEX-000",
+            userId: pu.userId,
+            userName: pu.userName,
+            status: pu.status,
+            submissionStatus: pu.submissionStatus || (pu.status === "in_review" ? "submitted" : "draft"),
+            progressPercent: pu.progressPercent,
+            workCompleted: pu.workCompleted,
+            workRemaining: pu.workRemaining,
+            blockers: pu.blockers,
+            nextSteps: pu.nextSteps,
+            timeSpentHours: pu.timeSpentHours || 0,
+            evidenceUrl: pu.evidenceUrl,
+            githubUrl: pu.githubUrl || "",
+            deploymentUrl: pu.deploymentUrl || "",
+            attachments: pu.attachments || [],
+            reviews: t.reviews || [],
+            createdAt: pu.createdAt,
+          });
+        }
+      }
+    }
+    return submissions;
+  },
+
+  async getProjectActivity(projectId: string) {
+    await wait();
+    const store = load();
+    const proj = store.projects.find((p) => p.id === projectId);
+    return proj?.recentActivity || [];
+  },
+
   async getMyWorkTasks() {
     await wait();
     const store = load();

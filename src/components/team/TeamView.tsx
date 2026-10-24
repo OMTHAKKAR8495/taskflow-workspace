@@ -45,14 +45,31 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge, PriorityBadge } from "@/components/tasks/badges";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
+import { AssignTaskModal } from "@/components/tasks/AssignTaskModal";
 import { MemberProfileDrawer } from "./MemberProfileDrawer";
 import { toast } from "sonner";
-import type { Task, TeamMember, ProjectInvitation, CreateInvitationResponse } from "@/types";
+import type { Task, TeamMember, ProjectInvitation, CreateInvitationResponse, TaskPriority } from "@/types";
 
 export function TeamView() {
-  const { team, tasks, projects, addTeamMember } = useTasks();
+  const { team, tasks, projects, addTeamMember, createProject } = useTasks();
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  // Assign Task modal state
+  const [assignTaskModalOpen, setAssignTaskModalOpen] = useState(false);
+  const [assignTaskAssigneeId, setAssignTaskAssigneeId] = useState<string | undefined>(undefined);
+
+  // Create Project state for Team page
+  const [createProjectModalOpen, setCreateProjectModalOpen] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectKey, setProjectKey] = useState("");
+  const [projectDesc, setProjectDesc] = useState("");
+  const [projectColor, setProjectColor] = useState("#6366f1");
+  const [projectPriority, setProjectPriority] = useState<TaskPriority>("medium");
+  const [projectStatus, setProjectStatus] = useState<"active" | "planning" | "completed">("active");
+  const [projectStartDate, setProjectStartDate] = useState("");
+  const [projectDueDate, setProjectDueDate] = useState("");
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   const [search, setSearch] = useState("");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -81,6 +98,38 @@ export function TeamView() {
   const [directEmail, setDirectEmail] = useState("");
   const [directRole, setDirectRole] = useState("Software Engineer");
   const [isSubmittingDirect, setIsSubmittingDirect] = useState(false);
+
+  const handleCreateProjectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectName.trim()) return;
+    setIsCreatingProject(true);
+    try {
+      const genKey = projectKey.trim().toUpperCase() || projectName.slice(0, 3).toUpperCase();
+      const newProj = await createProject({
+        name: projectName.trim(),
+        key: genKey,
+        description: projectDesc.trim(),
+        color: projectColor,
+        priority: projectPriority,
+        status: projectStatus,
+        startDate: projectStartDate ? new Date(projectStartDate).toISOString() : null,
+        deadline: projectDueDate ? new Date(projectDueDate).toISOString() : null,
+        health: "on_track",
+        progress: 0,
+      });
+      setCreateProjectModalOpen(false);
+      setProjectName("");
+      setProjectKey("");
+      setProjectDesc("");
+      setProjectStartDate("");
+      setProjectDueDate("");
+      navigate({ to: "/projects/$id", params: { id: newProj.id } });
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create project");
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
 
   // Pending Invitations list state
   const [invitations, setInvitations] = useState<ProjectInvitation[]>([]);
@@ -367,6 +416,13 @@ export function TeamView() {
         {canInvite && (
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
+              onClick={() => setCreateProjectModalOpen(true)}
+              className="gap-2 cursor-pointer border-slate-700 hover:border-indigo-500 hover:text-indigo-400"
+            >
+              <FolderKanban className="size-4" /> Create Project
+            </Button>
+            <Button
               onClick={() => {
                 setInviteEmail("");
                 setInviteModalOpen(true);
@@ -470,6 +526,15 @@ export function TeamView() {
                           className="cursor-pointer gap-2 font-medium text-primary"
                         >
                           <ListTodo className="size-3.5" /> View Profile & Tasks
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setAssignTaskAssigneeId(member.id);
+                            setAssignTaskModalOpen(true);
+                          }}
+                          className="cursor-pointer gap-2 font-medium"
+                        >
+                          <Plus className="size-3.5 text-primary" /> Assign Task
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         {canInvite && (
@@ -782,8 +847,16 @@ export function TeamView() {
         onOpenTask={(task) => setSelectedTask(task)}
         onAssignTask={(m) => {
           setMemberDrawerOpen(false);
-          navigate({ to: "/tasks/new", search: { assigneeId: m.id } as any });
+          setAssignTaskAssigneeId(m.id);
+          setAssignTaskModalOpen(true);
         }}
+      />
+
+      {/* Assign Task Modal */}
+      <AssignTaskModal
+        open={assignTaskModalOpen}
+        onOpenChange={setAssignTaskModalOpen}
+        presetAssigneeId={assignTaskAssigneeId}
       />
 
       {/* 1. Primary "Invite Member" Dialog */}
@@ -1107,6 +1180,142 @@ export function TeamView() {
               </Button>
               <Button type="submit" size="sm" disabled={isSubmittingDirect}>
                 {isSubmittingDirect ? "Adding..." : "Add Directly"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Project Modal */}
+      <Dialog open={createProjectModalOpen} onOpenChange={setCreateProjectModalOpen}>
+        <DialogContent className="sm:max-w-md p-6 bg-card rounded-2xl shadow-xl border">
+          <DialogHeader>
+            <div className="flex size-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 mb-2">
+              <FolderKanban className="size-5" />
+            </div>
+            <DialogTitle className="text-lg font-bold">Create New Project</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Define a new initiative, roadmap, or client workspace with deliverables and milestones.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateProjectSubmit} className="space-y-4 py-2">
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-foreground">Project Name *</label>
+              <input
+                type="text"
+                required
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="e.g. Mobile Banking App v2"
+                className="w-full text-sm bg-background px-3 py-2 rounded-lg border outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Key Prefix</label>
+                <input
+                  type="text"
+                  maxLength={5}
+                  value={projectKey}
+                  onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
+                  placeholder="e.g. BNK"
+                  className="w-full text-sm bg-background px-3 py-2 rounded-lg border outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Priority</label>
+                <select
+                  value={projectPriority}
+                  onChange={(e) => setProjectPriority(e.target.value as TaskPriority)}
+                  className="w-full text-sm bg-background px-3 py-2 rounded-lg border outline-none"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Status</label>
+                <select
+                  value={projectStatus}
+                  onChange={(e) => setProjectStatus(e.target.value as any)}
+                  className="w-full text-sm bg-background px-3 py-2 rounded-lg border outline-none"
+                >
+                  <option value="active">Active</option>
+                  <option value="planning">Planning</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Start Date</label>
+                <input
+                  type="date"
+                  value={projectStartDate}
+                  onChange={(e) => setProjectStartDate(e.target.value)}
+                  className="w-full text-xs bg-background px-3 py-2 rounded-lg border outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-foreground">Due Date</label>
+                <input
+                  type="date"
+                  value={projectDueDate}
+                  onChange={(e) => setProjectDueDate(e.target.value)}
+                  className="w-full text-xs bg-background px-3 py-2 rounded-lg border outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-foreground">Color Theme</label>
+              <div className="flex gap-2">
+                {["#4f46e5", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#ef4444"].map((c) => (
+                  <button
+                    type="button"
+                    key={c}
+                    onClick={() => setProjectColor(c)}
+                    className={`size-6 rounded-full cursor-pointer transition-transform ${
+                      projectColor === c ? "ring-2 ring-foreground scale-110" : ""
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-foreground">Description</label>
+              <textarea
+                rows={2}
+                value={projectDesc}
+                onChange={(e) => setProjectDesc(e.target.value)}
+                placeholder="High-level goal and scope..."
+                className="w-full text-xs bg-background px-3 py-2 rounded-lg border outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setCreateProjectModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isCreatingProject}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+              >
+                {isCreatingProject ? "Creating..." : "Create Project"}
               </Button>
             </div>
           </form>
