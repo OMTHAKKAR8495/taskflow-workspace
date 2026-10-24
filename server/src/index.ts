@@ -76,31 +76,10 @@ const handleEmailStatus = (req: express.Request, res: express.Response) => {
   });
 };
 
-// Lazy schema initialization to guarantee tables exist in serverless environments (e.g. Vercel)
-let schemaEnsured = false;
-let schemaPromise: Promise<void> | null = null;
-
-async function ensureSchema() {
-  if (schemaEnsured) return;
-  if (!schemaPromise) {
-    schemaPromise = (async () => {
-      try {
-        await seedDatabase();
-      } catch (err) {
-        console.error("Auto schema migration error:", err);
-      } finally {
-        schemaEnsured = true;
-      }
-    })();
-  }
-  return schemaPromise;
-}
-
-app.use(async (req, res, next) => {
-  try {
-    await ensureSchema();
-  } catch (err) {
-    console.error("Schema middleware error:", err);
+// Lightweight response headers for high-performance API delivery
+app.use((req, res, next) => {
+  if (req.method === "GET") {
+    res.setHeader("Cache-Control", "private, no-cache, no-transform");
   }
   next();
 });

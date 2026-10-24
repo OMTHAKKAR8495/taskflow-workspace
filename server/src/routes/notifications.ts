@@ -31,12 +31,13 @@ router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     params.push(parseInt(String(limit), 10) || 50);
     sql += ` LIMIT $${params.length}`;
 
-    const result = await query(sql, params);
-
-    const unreadCountRes = await query(
-      "SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND is_read = FALSE",
-      [userId],
-    );
+    const [result, unreadCountRes] = await Promise.all([
+      query(sql, params),
+      query(
+        "SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND is_read = FALSE",
+        [userId],
+      ),
+    ]);
     const unreadCount = parseInt(unreadCountRes.rows[0]?.count || "0", 10);
 
     const items = result.rows.map((row) => ({

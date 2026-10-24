@@ -21,16 +21,22 @@ function getUserId(req: AuthenticatedRequest): string {
 router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
-    const isLead = await isWorkspaceAdminOrLead(userId);
-    // 1. Fetch team members
-    const membersRes = await query("SELECT * FROM team_members ORDER BY name ASC");
-
-    // 2. Fetch tasks grouped by assignee
-    const tasksRes = await query(
-      `SELECT assignee_id, status, priority, due_date, estimated_hours
-       FROM tasks
-       WHERE is_trash = FALSE AND assignee_id IS NOT NULL`,
-    );
+    // Fetch role permissions, members, task workloads, and project memberships in parallel
+    const [isLead, membersRes, tasksRes, projectMembersRes] = await Promise.all([
+      isWorkspaceAdminOrLead(userId),
+      query("SELECT * FROM team_members ORDER BY name ASC"),
+      query(
+        `SELECT assignee_id, status, priority, due_date, estimated_hours
+         FROM tasks
+         WHERE is_trash = FALSE AND assignee_id IS NOT NULL`,
+      ),
+      query(
+        `SELECT pm.user_id, p.id as project_id, p.name as project_name, p.color as project_color, pm.role as project_role
+         FROM project_members pm
+         JOIN projects p ON pm.project_id = p.id
+         WHERE p.status != 'archived'`,
+      ),
+    ]);
 
     const now = new Date();
     const workloadByAssignee: Record<
@@ -63,14 +69,6 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
         w.totalHours += parseFloat(t.estimated_hours || "0") || 0;
       }
     }
-
-    // 3. Fetch project memberships
-    const projectMembersRes = await query(
-      `SELECT pm.user_id, p.id as project_id, p.name as project_name, p.color as project_color, pm.role as project_role
-       FROM project_members pm
-       JOIN projects p ON pm.project_id = p.id
-       WHERE p.status != 'archived'`,
-    );
 
     const projectsByUser: Record<string, any[]> = {};
     for (const pm of projectMembersRes.rows) {

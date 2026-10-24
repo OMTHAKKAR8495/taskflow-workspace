@@ -148,11 +148,11 @@ export function DashboardView() {
     return nonTrashTasks.filter((t) => t.status === "in_review");
   }, [nonTrashTasks]);
 
-  if (state === "loading") {
+  if (state === "loading" && tasks.length === 0 && projects.length === 0) {
     return <LoadingState rows={4} />;
   }
 
-  if (state === "error") {
+  if (state === "error" && tasks.length === 0 && projects.length === 0) {
     return <ErrorState onRetry={reload} />;
   }
 

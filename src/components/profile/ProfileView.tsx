@@ -53,11 +53,11 @@ export function ProfileView() {
     },
   });
 
-  if (state === "loading") {
+  if (state === "loading" && !profile) {
     return <LoadingState rows={4} />;
   }
 
-  if (state === "error" || !profile) {
+  if (state === "error" && !profile) {
     return <ErrorState onRetry={reload} />;
   }
 

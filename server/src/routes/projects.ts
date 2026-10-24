@@ -90,32 +90,31 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 
     sql += " ORDER BY created_at ASC";
 
-    const projectsRes = await query(sql, params);
+    // Fetch projects, task metrics, member counts, and milestones in parallel
+    const [projectsRes, tasksRes, membersRes, milestonesRes] = await Promise.all([
+      query(sql, params),
+      query(
+        `SELECT project_id, status, priority, due_date
+         FROM tasks
+         WHERE is_trash = FALSE AND project_id IS NOT NULL`,
+      ),
+      query(
+        `SELECT project_id, COUNT(*) as count
+         FROM project_members
+         GROUP BY project_id`,
+      ),
+      query(
+        `SELECT project_id, status, COUNT(*) as count
+         FROM milestones
+         GROUP BY project_id, status`,
+      ),
+    ]);
 
-    // Fetch task counts per project
-    const tasksRes = await query(
-      `SELECT project_id, status, priority, due_date
-       FROM tasks
-       WHERE is_trash = FALSE AND project_id IS NOT NULL`,
-    );
-
-    // Fetch members count per project
-    const membersRes = await query(
-      `SELECT project_id, COUNT(*) as count
-       FROM project_members
-       GROUP BY project_id`,
-    );
     const memberCounts: Record<string, number> = {};
     for (const m of membersRes.rows) {
       memberCounts[m.project_id] = parseInt(m.count, 10);
     }
 
-    // Fetch milestones count
-    const milestonesRes = await query(
-      `SELECT project_id, status, COUNT(*) as count
-       FROM milestones
-       GROUP BY project_id, status`,
-    );
     const milestoneStats: Record<string, { total: number; completed: number }> = {};
     for (const row of milestonesRes.rows) {
       if (!milestoneStats[row.project_id]) {

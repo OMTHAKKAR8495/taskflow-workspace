@@ -44,6 +44,11 @@ function getActiveUserRole(): string {
 }
 
 const inFlightRequests = new Map<string, Promise<any>>();
+const inMemoryCache = new Map<string, { data: any; expiresAt: number }>();
+
+export function invalidateApiCache(): void {
+  inMemoryCache.clear();
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isGet = !init || !init.method || init.method.toUpperCase() === "GET";
@@ -52,6 +57,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getStoredToken();
   const base = getApiBaseUrl();
   const cacheKey = isGet ? `${userId}:${path}` : null;
+
+  // On any mutation (POST, PUT, DELETE, PATCH), immediately invalidate cache
+  if (!isGet) {
+    inMemoryCache.clear();
+  }
+
+  // Check TTL in-memory cache for fast instant rendering (10s TTL)
+  if (cacheKey && inMemoryCache.has(cacheKey)) {
+    const cached = inMemoryCache.get(cacheKey)!;
+    if (cached.expiresAt > Date.now()) {
+      return cached.data as T;
+    } else {
+      inMemoryCache.delete(cacheKey);
+    }
+  }
 
   if (cacheKey && inFlightRequests.has(cacheKey)) {
     return inFlightRequests.get(cacheKey) as Promise<T>;
@@ -95,7 +115,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       throw new ApiError(msg, res.status, data);
     }
 
-    return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+    const json = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+    if (cacheKey) {
+      inMemoryCache.set(cacheKey, { data: json, expiresAt: Date.now() + 10000 });
+    }
+    return json;
   };
 
   const reqPromise = exec();
@@ -103,7 +127,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (cacheKey) {
     inFlightRequests.set(cacheKey, reqPromise);
     reqPromise.finally(() => {
-      // Clear from inFlight after response completes
       setTimeout(() => inFlightRequests.delete(cacheKey), 100);
     });
   }
