@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Users,
   UserPlus,
@@ -45,15 +45,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge, PriorityBadge } from "@/components/tasks/badges";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
+import { MemberProfileDrawer } from "./MemberProfileDrawer";
 import { toast } from "sonner";
 import type { Task, TeamMember, ProjectInvitation, CreateInvitationResponse } from "@/types";
 
 export function TeamView() {
   const { team, tasks, projects, addTeamMember } = useTasks();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [search, setSearch] = useState("");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [inspectingMember, setInspectingMember] = useState<TeamMember | null>(null);
+  const [memberDrawerOpen, setMemberDrawerOpen] = useState(false);
 
   // Invite Member modal state
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -153,7 +157,18 @@ export function TeamView() {
   const tasksByMember = useMemo(() => {
     const map: Record<string, Task[]> = {};
     for (const m of team) {
-      map[m.id] = nonTrash.filter((t) => t.assignee?.id === m.id || t.assigneeId === m.id);
+      const mid = m.id.toLowerCase();
+      const memail = (m.email || "").toLowerCase();
+      const mname = (m.name || "").toLowerCase();
+
+      map[m.id] = nonTrash.filter(
+        (t) =>
+          (t.assigneeId && t.assigneeId.toLowerCase() === mid) ||
+          (t.assignee?.id && t.assignee.id.toLowerCase() === mid) ||
+          (t.assignee?.email && memail && t.assignee.email.toLowerCase() === memail) ||
+          (t.assigneeName && mname && t.assigneeName.toLowerCase() === mname) ||
+          ((t as any).assignee_id && (t as any).assignee_id.toLowerCase() === mid),
+      );
     }
     return map;
   }, [team, nonTrash]);
@@ -397,14 +412,24 @@ export function TeamView() {
               className="flex flex-col justify-between rounded-xl border bg-card p-5 shadow-xs hover:shadow-md transition-all relative group"
             >
               <div>
-                {/* Profile Header */}
+                {/* Profile Header (Clickable to view member profile & tasks) */}
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="size-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm shadow-2xs">
+                  <div
+                    onClick={() => {
+                      setInspectingMember(member);
+                      setMemberDrawerOpen(true);
+                    }}
+                    className="flex items-center gap-3 cursor-pointer group/header hover:opacity-90 transition-opacity"
+                    title="Click to view assigned & completed tasks"
+                  >
+                    <div className="size-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm shadow-2xs group-hover/header:ring-2 group-hover/header:ring-primary/40 transition-all">
                       {member.initials}
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-foreground">{member.name}</h3>
+                      <h3 className="text-sm font-bold text-foreground group-hover/header:text-primary transition-colors flex items-center gap-1.5">
+                        {member.name}
+                        <ExternalLink className="size-3 opacity-0 group-hover/header:opacity-100 transition-opacity text-primary" />
+                      </h3>
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Briefcase className="size-3" /> {member.role}
                       </span>
@@ -436,7 +461,17 @@ export function TeamView() {
                           <MoreVertical className="size-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48 text-xs">
+                      <DropdownMenuContent align="end" className="w-52 text-xs">
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setInspectingMember(member);
+                            setMemberDrawerOpen(true);
+                          }}
+                          className="cursor-pointer gap-2 font-medium text-primary"
+                        >
+                          <ListTodo className="size-3.5" /> View Profile & Tasks
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         {canInvite && (
                           <>
                             <DropdownMenuItem
@@ -489,8 +524,15 @@ export function TeamView() {
                   </div>
                 )}
 
-                {/* Workload Progress Bar */}
-                <div className="mt-4 space-y-1.5">
+                {/* Workload Progress Bar (Clickable) */}
+                <div
+                  onClick={() => {
+                    setInspectingMember(member);
+                    setMemberDrawerOpen(true);
+                  }}
+                  className="mt-4 space-y-1.5 cursor-pointer hover:opacity-85 transition-opacity"
+                  title="Click to view full workload & tasks"
+                >
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">Sprint Capacity</span>
                     <span className="font-semibold text-foreground">
@@ -500,24 +542,56 @@ export function TeamView() {
                   <Progress value={Math.min(capacityPercent, 100)} className="h-1.5" />
                 </div>
 
-                {/* Task Breakdown Chips */}
+                {/* Task Breakdown Chips (Clickable) */}
                 <div className="mt-4 grid grid-cols-4 gap-1.5 text-center text-xs">
-                  <div className="rounded-lg bg-muted/40 p-1.5">
-                    <span className="text-[10px] text-muted-foreground block">Progress</span>
-                    <span className="font-bold text-primary">{inProgressTasks.length}</span>
-                  </div>
-                  <div className="rounded-lg bg-muted/40 p-1.5">
-                    <span className="text-[10px] text-muted-foreground block">Review</span>
-                    <span className="font-bold text-purple-600">{inReviewTasks.length}</span>
-                  </div>
-                  <div className="rounded-lg bg-muted/40 p-1.5">
-                    <span className="text-[10px] text-muted-foreground block">Done</span>
-                    <span className="font-bold text-emerald-600">{completedTasks.length}</span>
-                  </div>
-                  <div className="rounded-lg bg-muted/40 p-1.5">
-                    <span className="text-[10px] text-muted-foreground block">Overdue</span>
-                    <span className="font-bold text-rose-600">{overdueTasks.length}</span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingMember(member);
+                      setMemberDrawerOpen(true);
+                    }}
+                    className="rounded-lg bg-muted/40 p-1.5 hover:bg-muted/70 transition-colors cursor-pointer text-left"
+                    title="View In Progress tasks"
+                  >
+                    <span className="text-[10px] text-muted-foreground block text-center">Progress</span>
+                    <span className="font-bold text-primary block text-center">{inProgressTasks.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingMember(member);
+                      setMemberDrawerOpen(true);
+                    }}
+                    className="rounded-lg bg-muted/40 p-1.5 hover:bg-muted/70 transition-colors cursor-pointer text-left"
+                    title="View In Review tasks"
+                  >
+                    <span className="text-[10px] text-muted-foreground block text-center">Review</span>
+                    <span className="font-bold text-purple-600 block text-center">{inReviewTasks.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingMember(member);
+                      setMemberDrawerOpen(true);
+                    }}
+                    className="rounded-lg bg-muted/40 p-1.5 hover:bg-muted/70 transition-colors cursor-pointer text-left ring-1 ring-emerald-500/20"
+                    title="View Completed tasks"
+                  >
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block text-center">Done</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400 block text-center">{completedTasks.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingMember(member);
+                      setMemberDrawerOpen(true);
+                    }}
+                    className="rounded-lg bg-muted/40 p-1.5 hover:bg-muted/70 transition-colors cursor-pointer text-left"
+                    title="View Overdue tasks"
+                  >
+                    <span className="text-[10px] text-muted-foreground block text-center">Overdue</span>
+                    <span className="font-bold text-rose-600 block text-center">{overdueTasks.length}</span>
+                  </button>
                 </div>
               </div>
 
@@ -549,6 +623,19 @@ export function TeamView() {
                     )}
                   </div>
                 )}
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingMember(member);
+                      setMemberDrawerOpen(true);
+                    }}
+                    className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    View profile & all tasks <ArrowRight className="size-3" />
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -685,6 +772,19 @@ export function TeamView() {
           onClose={() => setSelectedTask(null)}
         />
       )}
+
+      {/* Member Profile & Assigned Tasks Drawer */}
+      <MemberProfileDrawer
+        member={inspectingMember}
+        tasks={tasks}
+        open={memberDrawerOpen}
+        onClose={() => setMemberDrawerOpen(false)}
+        onOpenTask={(task) => setSelectedTask(task)}
+        onAssignTask={(m) => {
+          setMemberDrawerOpen(false);
+          navigate({ to: "/tasks/new", search: { assigneeId: m.id } as any });
+        }}
+      />
 
       {/* 1. Primary "Invite Member" Dialog */}
       <Dialog open={inviteModalOpen} onOpenChange={setInviteModalOpen}>
