@@ -75,10 +75,47 @@ const handleEmailStatus = (req: express.Request, res: express.Response) => {
   });
 };
 
+// Lazy schema initialization to guarantee tables exist in serverless environments (e.g. Vercel)
+let schemaEnsured = false;
+let schemaPromise: Promise<void> | null = null;
+
+async function ensureSchema() {
+  if (schemaEnsured) return;
+  if (!schemaPromise) {
+    schemaPromise = (async () => {
+      try {
+        await seedDatabase();
+      } catch (err) {
+        console.error("Auto schema migration error:", err);
+      } finally {
+        schemaEnsured = true;
+      }
+    })();
+  }
+  return schemaPromise;
+}
+
+app.use(async (req, res, next) => {
+  try {
+    await ensureSchema();
+  } catch (err) {
+    console.error("Schema middleware error:", err);
+  }
+  next();
+});
+
 app.get("/api/health", handleHealth);
 app.get("/health", handleHealth);
 app.get("/api/settings/email-status", handleEmailStatus);
 app.get("/settings/email-status", handleEmailStatus);
+app.all(["/api/admin/migrate", "/admin/migrate"], async (req, res) => {
+  try {
+    await seedDatabase(true);
+    res.json({ status: "ok", message: "Database schema migration executed successfully" });
+  } catch (err: any) {
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
 app.get("/", (req, res) => res.json({ name: "TaskFlow Nexus Enterprise API", status: "ok" }));
 
 // Mount Routes (supporting both /api/* and root /* for flexible reverse-proxy / serverless rewrites)
