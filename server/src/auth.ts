@@ -1,7 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
+if (!process.env["JWT_SECRET"] && process.env.NODE_ENV === "production") {
+  throw new Error("FATAL: JWT_SECRET environment variable must be configured in production");
+}
 const JWT_SECRET = process.env["JWT_SECRET"] || "taskflow-super-secret-key-2026";
 
 export interface AuthenticatedUser {
@@ -13,6 +17,14 @@ export interface AuthenticatedUser {
 export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUser;
   userId?: string;
+}
+
+export function generateId(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+export function getUserId(req: AuthenticatedRequest): string | null {
+  return req.user?.userId || req.userId || null;
 }
 
 export async function hashPassword(plainText: string): Promise<string> {
@@ -49,50 +61,13 @@ export function extractToken(req: {
   return null;
 }
 
-import { query } from "./db.js";
-
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const token = extractToken(req);
   if (token) {
     const decoded = verifyToken(token);
-    if (decoded) {
+    if (decoded && decoded.userId) {
       req.user = decoded;
       req.userId = decoded.userId;
-      return next();
-    }
-  }
-
-  // Fallback: check x-user-id header and verify with DB
-  const customId = req.headers["x-user-id"] as string;
-  if (customId && customId.trim()) {
-    const cleanId = customId.trim();
-    const customRole = (req.headers["x-user-role"] as string) || "admin";
-    try {
-      const uRes = await query("SELECT id, username, role FROM users WHERE id = $1", [cleanId]);
-      if (uRes.rows.length > 0) {
-        const u = uRes.rows[0];
-        const effectiveRole = customRole === "leader" || customRole === "admin" ? customRole : (u.role || "member");
-        req.user = { userId: u.id, username: u.username || u.id, role: effectiveRole };
-        req.userId = u.id;
-        return next();
-      }
-
-      // Auto-provision user in DB so foreign keys and auth never fail
-      const cleanName = cleanId.replace(/^user-|^team-/, "").replace(/[-_]/g, " ");
-      const fallbackName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
-      const fallbackEmail = `${cleanId.replace(/[^a-zA-Z0-9]/g, "")}@taskflow.local`;
-      await query(
-        `INSERT INTO users (id, username, full_name, email, role)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role`,
-        [cleanId, cleanId, fallbackName, fallbackEmail, customRole || "admin"],
-      );
-      req.user = { userId: cleanId, username: cleanId, role: customRole || "admin" };
-      req.userId = cleanId;
-      return next();
-    } catch {
-      req.user = { userId: cleanId, username: cleanId, role: customRole || "admin" };
-      req.userId = cleanId;
       return next();
     }
   }
@@ -104,26 +79,10 @@ export async function optionalAuth(req: AuthenticatedRequest, _res: Response, ne
   const token = extractToken(req);
   if (token) {
     const decoded = verifyToken(token);
-    if (decoded) {
+    if (decoded && decoded.userId) {
       req.user = decoded;
       req.userId = decoded.userId;
-      return next();
     }
-  }
-
-  const customId = req.headers["x-user-id"] as string;
-  if (customId && customId.trim()) {
-    const cleanId = customId.trim();
-    req.userId = cleanId;
-    try {
-      const uRes = await query("SELECT id, username, role FROM users WHERE id = $1", [cleanId]);
-      if (uRes.rows.length > 0) {
-        const u = uRes.rows[0];
-        req.user = { userId: u.id, username: u.username || u.id, role: u.role || "member" };
-      } else if (cleanId === "user-om" || cleanId === "omthakkar") {
-        req.user = { userId: "user-om", username: "omthakkar", role: "admin" };
-      }
-    } catch {}
   }
   next();
 }

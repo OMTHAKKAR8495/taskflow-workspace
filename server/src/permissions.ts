@@ -11,7 +11,7 @@ export async function isWorkspaceAdminOrLead(
   userId: string,
   userRecord?: { role?: string; id?: string },
 ): Promise<boolean> {
-  if (userId === "user-om" || userId === "omthakkar") return true;
+  if (!userId) return false;
 
   if (userRecord && userRecord.role) {
     const r = userRecord.role.toLowerCase();

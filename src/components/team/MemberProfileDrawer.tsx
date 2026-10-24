@@ -52,14 +52,13 @@ export function MemberProfileDrawer({
   const [copiedCreds, setCopiedCreds] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  if (!member) return null;
-
   // Derive credentials info
-  const testUsername = member.email ? member.email.split("@")[0].replace(".", "") : "member";
+  const testUsername = member?.email ? member.email.split("@")[0].replace(".", "") : "member";
   const testPassword = "thakkar2912";
 
   // Match tasks for this member
   const memberTasks = useMemo(() => {
+    if (!member) return [];
     return tasks.filter((t) => {
       if (t.isTrash) return false;
       const mid = member.id.toLowerCase();
@@ -122,7 +121,7 @@ export function MemberProfileDrawer({
   const totalActualHours = memberTasks.reduce((acc, t) => acc + (t.actualHours || 0), 0);
 
   const handleCopyEmail = () => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
+    if (typeof navigator !== "undefined" && navigator.clipboard && member) {
       navigator.clipboard.writeText(member.email);
       setCopiedEmail(true);
       toast.success("Email address copied to clipboard!");
@@ -138,6 +137,8 @@ export function MemberProfileDrawer({
       setTimeout(() => setCopiedCreds(false), 2000);
     }
   };
+
+  if (!member) return null;
 
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>

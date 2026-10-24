@@ -1,18 +1,17 @@
-import { Router, Request, Response } from "express";
+import { Router, type Response } from "express";
 import { query } from "../db.js";
+import { requireAuth, type AuthenticatedRequest } from "../auth.js";
 
 const router = Router();
 
-function getUserId(req: any): string {
-  if (req.userId) return req.userId;
-  const custom = req.headers["x-user-id"] as string;
-  return custom && custom.trim() ? custom.trim() : "user-om";
-}
-
 // GET /api/activity
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
     const result = await query(
       `SELECT DISTINCT a.* FROM activities a
        LEFT JOIN project_members pm ON a.project_id = pm.project_id AND pm.user_id = $1

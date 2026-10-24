@@ -20,49 +20,47 @@ export async function wouldCreateCycle(taskId: string, dependsOnTaskId: string):
     return true; // Self-dependency is always circular
   }
 
-  // Load all "blocks" and "blocked_by" dependencies
-  const res = await query("SELECT task_id, depends_on_task_id, dependency_type FROM task_dependencies");
-  
-  // Build adjacency list: child -> parents (task -> prerequisites it depends on)
-  const adj = new Map<string, Set<string>>();
-  for (const row of res.rows) {
-    let t = row.task_id;
-    let dep = row.depends_on_task_id;
-    
-    // Normalize: if type is 'blocks', row.task_id blocks row.depends_on_task_id
-    // meaning depends_on_task_id depends on task_id
-    if (row.dependency_type === "blocks") {
-      const temp = t;
-      t = dep;
-      dep = temp;
-    }
-    
-    if (!adj.has(t)) adj.set(t, new Set());
-    adj.get(t)!.add(dep);
-  }
-
   // Check if dependsOnTaskId can reach taskId through dependencies
-  // If dependsOnTaskId already depends on taskId, adding taskId -> dependsOnTaskId creates a cycle!
+  // We perform targeted breadth-first traversal querying only relevant nodes
   const visited = new Set<string>();
-  const queue = [dependsOnTaskId];
+  let currentBatch = [dependsOnTaskId];
 
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    if (current === taskId) {
+  while (currentBatch.length > 0) {
+    if (currentBatch.includes(taskId)) {
       return true;
     }
 
-    if (!visited.has(current)) {
-      visited.add(current);
-      const prerequisites = adj.get(current);
-      if (prerequisites) {
-        for (const p of prerequisites) {
-          if (!visited.has(p)) {
-            queue.push(p);
-          }
-        }
+    for (const id of currentBatch) {
+      visited.add(id);
+    }
+
+    // Find all prerequisite tasks that currentBatch tasks depend on
+    const res = await query(
+      `SELECT task_id, depends_on_task_id, dependency_type
+       FROM task_dependencies
+       WHERE (task_id = ANY($1) AND dependency_type = 'blocked_by')
+          OR (depends_on_task_id = ANY($1) AND dependency_type = 'blocks')`,
+      [currentBatch],
+    );
+
+    if (res.rows.length === 0) {
+      break;
+    }
+
+    const nextBatch: string[] = [];
+    for (const row of res.rows) {
+      // If task_id depends_on depends_on_task_id (blocked_by), the prerequisite is depends_on_task_id
+      // If type is 'blocks', depends_on_task_id depends on task_id, so if depends_on_task_id is in currentBatch, task_id is prerequisite
+      const prereq = row.dependency_type === "blocked_by" ? row.depends_on_task_id : row.task_id;
+      if (prereq === taskId) {
+        return true;
+      }
+      if (!visited.has(prereq) && !nextBatch.includes(prereq)) {
+        nextBatch.push(prereq);
       }
     }
+
+    currentBatch = nextBatch;
   }
 
   return false;

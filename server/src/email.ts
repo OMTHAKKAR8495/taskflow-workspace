@@ -38,6 +38,19 @@ export function getAppBaseUrl(): string {
 }
 
 /**
+ * Sanitizes unsafe HTML special characters to prevent HTML/XSS injection in emails.
+ */
+export function escapeHtml(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
  * Sends an invitation email using the configured provider (SMTP or Resend).
  * Returns { delivered: false, error: ... } if no provider is configured,
  * ensuring honest delivery reporting.
@@ -56,6 +69,15 @@ export async function sendInvitationEmail(
     };
   }
 
+  const safeProjectName = escapeHtml(projectName);
+  const safeInviterName = escapeHtml(inviterName);
+  const safeRole = escapeHtml(role);
+  const safeMessage = message ? escapeHtml(message) : "";
+  // Ensure invitationUrl is a valid URL starting with http:// or https://
+  const safeInvitationUrl = invitationUrl.startsWith("http://") || invitationUrl.startsWith("https://")
+    ? invitationUrl.replace(/["'<>]/g, "")
+    : "";
+
   const formattedExpiry = expiresAt.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
@@ -67,7 +89,7 @@ export async function sendInvitationEmail(
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Invitation to ${projectName}</title>
+  <title>Invitation to ${safeProjectName}</title>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 40px 20px; margin: 0;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; margin: 0 auto; background-color: #1e293b; border-radius: 16px; border: 1px solid #334155; overflow: hidden;">
@@ -79,19 +101,19 @@ export async function sendInvitationEmail(
     </tr>
     <tr>
       <td style="padding: 32px;">
-        <h2 style="color: #ffffff; font-size: 18px; margin: 0 0 16px;">You've been invited to join <strong>${projectName}</strong></h2>
+        <h2 style="color: #ffffff; font-size: 18px; margin: 0 0 16px;">You've been invited to join <strong>${safeProjectName}</strong></h2>
         <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">
-          <strong>${inviterName}</strong> has invited you to collaborate on the <strong>${projectName}</strong> project as a <span style="background-color: #312e81; color: #a5b4fc; padding: 2px 8px; border-radius: 6px; font-weight: 600; text-transform: capitalize;">${role}</span>.
+          <strong>${safeInviterName}</strong> has invited you to collaborate on the <strong>${safeProjectName}</strong> project as a <span style="background-color: #312e81; color: #a5b4fc; padding: 2px 8px; border-radius: 6px; font-weight: 600; text-transform: capitalize;">${safeRole}</span>.
         </p>
         ${
-          message
+          safeMessage
             ? `<div style="background-color: #0f172a; border-left: 3px solid #6366f1; padding: 14px 16px; margin: 0 0 24px; border-radius: 0 8px 8px 0; font-size: 13px; color: #94a3b8; font-style: italic;">
-                "${message}"
+                "${safeMessage}"
                </div>`
             : ""
         }
         <div style="text-align: center; margin: 32px 0;">
-          <a href="${invitationUrl}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);">
+          <a href="${safeInvitationUrl}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);">
             Accept Invitation & Join Project
           </a>
         </div>

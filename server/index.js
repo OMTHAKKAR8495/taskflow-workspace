@@ -5263,6 +5263,12 @@ var require_read = __commonJS({
       req._body = true;
       var encoding = opts.encoding !== null ? opts.encoding : null;
       var verify = opts.verify;
+      if (verify && encoding !== null && !iconv.encodingExists(encoding)) {
+        return next(createError(415, 'unsupported charset "' + encoding.toUpperCase() + '"', {
+          charset: encoding.toLowerCase(),
+          type: "charset.unsupported"
+        }));
+      }
       try {
         stream = contentstream(req, debug, opts.inflate);
         length = stream.length;
@@ -5272,12 +5278,6 @@ var require_read = __commonJS({
       }
       opts.length = length;
       opts.encoding = verify ? null : encoding;
-      if (opts.encoding === null && encoding !== null && !iconv.encodingExists(encoding)) {
-        return next(createError(415, 'unsupported charset "' + encoding.toUpperCase() + '"', {
-          charset: encoding.toLowerCase(),
-          type: "charset.unsupported"
-        }));
-      }
       debug("read body");
       getBody(stream, opts, function(error2, body) {
         if (error2) {
@@ -5298,6 +5298,17 @@ var require_read = __commonJS({
             next(createError(400, _error));
           });
           return;
+        }
+        if (stream !== req) {
+          if (typeof req.unpipe === "function") {
+            req.unpipe(stream);
+          } else {
+            unpipe(req);
+          }
+          stream.on("error", function() {
+          });
+          destroy(stream, true);
+          req.resume();
         }
         if (verify) {
           try {
@@ -17553,8 +17564,8 @@ var require_escape_html = __commonJS({
   "node_modules/escape-html/index.js"(exports2, module2) {
     "use strict";
     var matchHtmlRegExp = /["'&<>]/;
-    module2.exports = escapeHtml;
-    function escapeHtml(string) {
+    module2.exports = escapeHtml2;
+    function escapeHtml2(string) {
       var str = "" + string;
       var match = matchHtmlRegExp.exec(str);
       if (!match) {
@@ -17685,7 +17696,7 @@ var require_finalhandler = __commonJS({
     "use strict";
     var debug = require_src()("finalhandler");
     var encodeUrl = require_encodeurl();
-    var escapeHtml = require_escape_html();
+    var escapeHtml2 = require_escape_html();
     var onFinished = require_on_finished();
     var parseUrl = require_parseurl();
     var statuses = require_statuses();
@@ -17697,7 +17708,7 @@ var require_finalhandler = __commonJS({
     };
     var isFinished = onFinished.isFinished;
     function createHtmlDocument(message) {
-      var body = escapeHtml(message).replace(NEWLINE_REGEXP, "<br>").replace(DOUBLE_SPACE_REGEXP, " &nbsp;");
+      var body = escapeHtml2(message).replace(NEWLINE_REGEXP, "<br>").replace(DOUBLE_SPACE_REGEXP, " &nbsp;");
       return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>' + body + "</pre>\n</body>\n</html>\n";
     }
     module2.exports = finalhandler;
@@ -18976,14 +18987,14 @@ var require_etag = __commonJS({
   "node_modules/etag/index.js"(exports2, module2) {
     "use strict";
     module2.exports = etag;
-    var crypto10 = require("crypto");
+    var crypto12 = require("crypto");
     var Stats = require("fs").Stats;
     var toString = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash2 = crypto10.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash2 = crypto12.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash2 + '"';
     }
@@ -19353,7 +19364,7 @@ var require_send = __commonJS({
     var deprecate = require_depd()("send");
     var destroy = require_destroy();
     var encodeUrl = require_encodeurl();
-    var escapeHtml = require_escape_html();
+    var escapeHtml2 = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
     var fs5 = require("fs");
@@ -19453,7 +19464,7 @@ var require_send = __commonJS({
       }
       var res = this.res;
       var msg = statuses.message[status] || String(status);
-      var doc = createHtmlDocument("Error", escapeHtml(msg));
+      var doc = createHtmlDocument("Error", escapeHtml2(msg));
       clearHeaders(res);
       if (err && err.headers) {
         setHeaders(res, err.headers);
@@ -19553,7 +19564,7 @@ var require_send = __commonJS({
         return;
       }
       var loc = encodeUrl(collapseLeadingSlashes(this.path + "/"));
-      var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml(loc));
+      var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml2(loc));
       res.statusCode = 301;
       res.setHeader("Content-Type", "text/html; charset=UTF-8");
       res.setHeader("Content-Length", Buffer.byteLength(doc));
@@ -21892,11 +21903,11 @@ var require_request = __commonJS({
 // node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS({
   "node_modules/cookie-signature/index.js"(exports2) {
-    var crypto10 = require("crypto");
+    var crypto12 = require("crypto");
     exports2.sign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val + "." + crypto10.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto12.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports2.unsign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -21905,7 +21916,7 @@ var require_cookie_signature = __commonJS({
       return sha1(mac) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto10.createHash("sha1").update(str).digest("hex");
+      return crypto12.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -22158,7 +22169,7 @@ var require_response = __commonJS({
     var createError = require_http_errors();
     var deprecate = require_depd()("express");
     var encodeUrl = require_encodeurl();
-    var escapeHtml = require_escape_html();
+    var escapeHtml2 = require_escape_html();
     var http2 = require("http");
     var isAbsolute = require_utils2().isAbsolute;
     var onFinished = require_on_finished();
@@ -22564,7 +22575,7 @@ var require_response = __commonJS({
           body = statuses.message[status] + ". Redirecting to " + address;
         },
         html: function() {
-          var u = escapeHtml(address);
+          var u = escapeHtml2(address);
           body = "<p>" + statuses.message[status] + ". Redirecting to " + u + "</p>";
         },
         default: function() {
@@ -22696,7 +22707,7 @@ var require_serve_static = __commonJS({
   "node_modules/serve-static/index.js"(exports2, module2) {
     "use strict";
     var encodeUrl = require_encodeurl();
-    var escapeHtml = require_escape_html();
+    var escapeHtml2 = require_escape_html();
     var parseUrl = require_parseurl();
     var resolve3 = require("path").resolve;
     var send = require_send();
@@ -22783,7 +22794,7 @@ var require_serve_static = __commonJS({
         originalUrl.path = null;
         originalUrl.pathname = collapseLeadingSlashes(originalUrl.pathname + "/");
         var loc = encodeUrl(url.format(originalUrl));
-        var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml(loc));
+        var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml2(loc));
         res.statusCode = 301;
         res.setHeader("Content-Type", "text/html; charset=UTF-8");
         res.setHeader("Content-Length", Buffer.byteLength(doc));
@@ -23154,11 +23165,11 @@ var require_lib3 = __commonJS({
 // node_modules/cookie-parser/node_modules/cookie-signature/index.js
 var require_cookie_signature2 = __commonJS({
   "node_modules/cookie-parser/node_modules/cookie-signature/index.js"(exports2) {
-    var crypto10 = require("crypto");
+    var crypto12 = require("crypto");
     exports2.sign = function(val, secret) {
       if ("string" != typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if ("string" != typeof secret) throw new TypeError("Secret string must be provided.");
-      return val + "." + crypto10.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto12.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports2.unsign = function(val, secret) {
       if ("string" != typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -23167,7 +23178,7 @@ var require_cookie_signature2 = __commonJS({
       return sha1(mac) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto10.createHash("sha1").update(str).digest("hex");
+      return crypto12.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -23338,7 +23349,7 @@ var require_main = __commonJS({
     var fs5 = require("fs");
     var path5 = require("path");
     var os3 = require("os");
-    var crypto10 = require("crypto");
+    var crypto12 = require("crypto");
     var packageJson = require_package();
     var version2 = packageJson.version;
     var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
@@ -23557,7 +23568,7 @@ var require_main = __commonJS({
       const authTag = ciphertext.subarray(-16);
       ciphertext = ciphertext.subarray(12, -16);
       try {
-        const aesgcm = crypto10.createDecipheriv("aes-256-gcm", key, nonce);
+        const aesgcm = crypto12.createDecipheriv("aes-256-gcm", key, nonce);
         aesgcm.setAuthTag(authTag);
         return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
       } catch (error2) {
@@ -24955,7 +24966,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "node_modules/pg/lib/crypto/sasl.js"(exports2, module2) {
     "use strict";
-    var crypto10 = require_utils4();
+    var crypto12 = require_utils4();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -24973,7 +24984,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto10.randomBytes(18).toString("base64");
+      const clientNonce = crypto12.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -25015,20 +25026,20 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto10.hashByName(hashName, peerCert);
+        const certHash = await crypto12.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto10.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey = await crypto10.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto10.sha256(clientKey);
-      const clientSignature = await crypto10.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto12.deriveKey(saslprep(password), saltBytes, sv.iteration);
+      const clientKey = await crypto12.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto12.sha256(clientKey);
+      const clientSignature = await crypto12.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto10.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto10.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto12.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto12.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -27267,7 +27278,7 @@ var require_client = __commonJS({
     var Query2 = require_query2();
     var defaults2 = require_defaults();
     var Connection2 = require_connection();
-    var crypto10 = require_utils4();
+    var crypto12 = require_utils4();
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -27522,7 +27533,7 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-            const hashedPassword = await crypto10.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto12.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e) {
             this.emit("error", e);
@@ -29183,14 +29194,14 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "node_modules/jwa/index.js"(exports2, module2) {
     var Buffer2 = require_safe_buffer().Buffer;
-    var crypto10 = require("crypto");
+    var crypto12 = require("crypto");
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-    var supportsKeyObjects = typeof crypto10.createPublicKey === "function";
+    var supportsKeyObjects = typeof crypto12.createPublicKey === "function";
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -29280,17 +29291,17 @@ var require_jwa = __commonJS({
       return function sign2(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-        var hmac = crypto10.createHmac("sha" + bits, secret);
+        var hmac = crypto12.createHmac("sha" + bits, secret);
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-    var timingSafeEqual = "timingSafeEqual" in crypto10 ? function timingSafeEqual2(a, b) {
+    var timingSafeEqual = "timingSafeEqual" in crypto12 ? function timingSafeEqual2(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
-      return crypto10.timingSafeEqual(a, b);
+      return crypto12.timingSafeEqual(a, b);
     } : function timingSafeEqual2(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -29307,7 +29318,7 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto10.createSign("RSA-SHA" + bits);
+        var signer = crypto12.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -29317,7 +29328,7 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto10.createVerify("RSA-SHA" + bits);
+        var verifier = crypto12.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -29326,11 +29337,11 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto10.createSign("RSA-SHA" + bits);
+        var signer = crypto12.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
-          padding: crypto10.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto10.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto12.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto12.constants.RSA_PSS_SALTLEN_DIGEST
         }, "base64"));
         return fromBase64(sig);
       };
@@ -29340,12 +29351,12 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto10.createVerify("RSA-SHA" + bits);
+        var verifier = crypto12.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
-          padding: crypto10.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto10.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto12.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto12.constants.RSA_PSS_SALTLEN_DIGEST
         }, signature, "base64");
       };
     }
@@ -32849,8 +32860,11 @@ var { Pool: Pool2 } = esm_default;
 function getNormalizedDatabaseUrl() {
   let url = process.env.DATABASE_URL;
   if (!url) return void 0;
-  if (url.includes("db.your-project-ref.supabase.co")) {
-    url = url.replace("postgres:", "postgres.your-project-ref:").replace("db.your-project-ref.supabase.co:5432", "aws-0-ap-northeast-1.pooler.supabase.com:6543").replace("db.your-project-ref.supabase.co", "aws-0-ap-northeast-1.pooler.supabase.com:6543");
+  const directMatch = url.match(/db\.([a-z0-9]+)\.supabase\.co/i);
+  if (directMatch) {
+    const ref = directMatch[1];
+    const region = process.env.SUPABASE_REGION || "aws-0-ap-northeast-1";
+    url = url.replace("postgres:", `postgres.${ref}:`).replace(`db.${ref}.supabase.co:5432`, `${region}.pooler.supabase.com:6543`).replace(`db.${ref}.supabase.co`, `${region}.pooler.supabase.com:6543`);
   }
   if (url.includes("pooler.supabase.com:5432")) {
     url = url.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543");
@@ -32861,9 +32875,10 @@ var resolvedDbUrl = getNormalizedDatabaseUrl();
 var isRemoteDb = Boolean(
   resolvedDbUrl && (resolvedDbUrl.includes("supabase") || resolvedDbUrl.includes("sslmode=require") || resolvedDbUrl.includes("neon.tech") || process.env.DB_SSL === "true")
 );
+var rejectUnauthorized = process.env.DB_ALLOW_INSECURE_TLS === "true" ? false : process.env.DB_REJECT_UNAUTHORIZED !== "false";
 var pool = new Pool2({
   connectionString: resolvedDbUrl || `postgresql://${process.env.PGUSER || process.env.USER || "postgres"}:${process.env.PGPASSWORD || ""}@${process.env.PGHOST || "localhost"}:${process.env.PGPORT || 5432}/${process.env.PGDATABASE || "taskflow_db"}`,
-  ssl: isRemoteDb ? { rejectUnauthorized: false } : void 0,
+  ssl: isRemoteDb ? { rejectUnauthorized } : void 0,
   max: process.env.VERCEL ? 3 : 10,
   idleTimeoutMillis: 1e4,
   connectionTimeoutMillis: 1e4
@@ -32879,6 +32894,9 @@ async function query(text, params) {
   }
   return res;
 }
+
+// src/auth.ts
+var import_crypto2 = __toESM(require("crypto"));
 
 // node_modules/bcryptjs/index.js
 var import_crypto = __toESM(require("crypto"), 1);
@@ -34605,7 +34623,13 @@ var bcryptjs_default = {
 
 // src/auth.ts
 var import_jsonwebtoken = __toESM(require_jsonwebtoken());
+if (!process.env["JWT_SECRET"] && process.env.NODE_ENV === "production") {
+  throw new Error("FATAL: JWT_SECRET environment variable must be configured in production");
+}
 var JWT_SECRET = process.env["JWT_SECRET"] || "taskflow-super-secret-key-2026";
+function generateId(prefix) {
+  return `${prefix}-${import_crypto2.default.randomUUID()}`;
+}
 async function hashPassword(plainText) {
   return bcryptjs_default.hash(plainText, 10);
 }
@@ -34636,71 +34660,13 @@ async function requireAuth(req, res, next) {
   const token = extractToken(req);
   if (token) {
     const decoded = verifyToken(token);
-    if (decoded) {
+    if (decoded && decoded.userId) {
       req.user = decoded;
       req.userId = decoded.userId;
-      return next();
-    }
-  }
-  const customId = req.headers["x-user-id"];
-  if (customId && customId.trim()) {
-    const cleanId = customId.trim();
-    const customRole = req.headers["x-user-role"] || "admin";
-    try {
-      const uRes = await query("SELECT id, username, role FROM users WHERE id = $1", [cleanId]);
-      if (uRes.rows.length > 0) {
-        const u = uRes.rows[0];
-        const effectiveRole = customRole === "leader" || customRole === "admin" ? customRole : u.role || "member";
-        req.user = { userId: u.id, username: u.username || u.id, role: effectiveRole };
-        req.userId = u.id;
-        return next();
-      }
-      const cleanName = cleanId.replace(/^user-|^team-/, "").replace(/[-_]/g, " ");
-      const fallbackName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
-      const fallbackEmail = `${cleanId.replace(/[^a-zA-Z0-9]/g, "")}@taskflow.local`;
-      await query(
-        `INSERT INTO users (id, username, full_name, email, role)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role`,
-        [cleanId, cleanId, fallbackName, fallbackEmail, customRole || "admin"]
-      );
-      req.user = { userId: cleanId, username: cleanId, role: customRole || "admin" };
-      req.userId = cleanId;
-      return next();
-    } catch {
-      req.user = { userId: cleanId, username: cleanId, role: customRole || "admin" };
-      req.userId = cleanId;
       return next();
     }
   }
   return res.status(401).json({ error: "Authentication required" });
-}
-async function optionalAuth(req, _res, next) {
-  const token = extractToken(req);
-  if (token) {
-    const decoded = verifyToken(token);
-    if (decoded) {
-      req.user = decoded;
-      req.userId = decoded.userId;
-      return next();
-    }
-  }
-  const customId = req.headers["x-user-id"];
-  if (customId && customId.trim()) {
-    const cleanId = customId.trim();
-    req.userId = cleanId;
-    try {
-      const uRes = await query("SELECT id, username, role FROM users WHERE id = $1", [cleanId]);
-      if (uRes.rows.length > 0) {
-        const u = uRes.rows[0];
-        req.user = { userId: u.id, username: u.username || u.id, role: u.role || "member" };
-      } else if (cleanId === "user-om" || cleanId === "omthakkar") {
-        req.user = { userId: "user-om", username: "omthakkar", role: "admin" };
-      }
-    } catch {
-    }
-  }
-  next();
 }
 var authAttempts = /* @__PURE__ */ new Map();
 var RATE_LIMIT_WINDOW_MS = 15 * 60 * 1e3;
@@ -34727,7 +34693,7 @@ function authRateLimiter(req, res, next) {
 var router = (0, import_express.Router)();
 router.post("/register", authRateLimiter, async (req, res) => {
   try {
-    const { fullName, email, username, password, role = "member" } = req.body;
+    const { fullName, email, username, password } = req.body;
     if (!fullName || typeof fullName !== "string" || !fullName.trim()) {
       return res.status(400).json({ error: "Full name is required" });
     }
@@ -34743,7 +34709,7 @@ router.post("/register", authRateLimiter, async (req, res) => {
     const cleanUsername = username.trim().toLowerCase();
     const cleanEmail = email.trim().toLowerCase();
     const cleanFullName = fullName.trim();
-    const cleanRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
+    const cleanRole = "member";
     const existing = await query(
       "SELECT id FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $2",
       [cleanUsername, cleanEmail]
@@ -34752,7 +34718,7 @@ router.post("/register", authRateLimiter, async (req, res) => {
       return res.status(409).json({ error: "Username or email is already in use" });
     }
     const hashedPassword = await hashPassword(password);
-    const userId = `user-${Date.now()}`;
+    const userId = generateId("user");
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const insertRes = await query(
       `INSERT INTO users (id, username, full_name, email, password_hash, role, created_at, updated_at)
@@ -34803,20 +34769,12 @@ router.post("/login", authRateLimiter, async (req, res) => {
     const user = result.rows[0];
     let isValid = false;
     if (user.password_hash) {
-      if (user.password_hash.startsWith("$2a$") || user.password_hash.startsWith("$2b$")) {
-        isValid = await verifyPassword(password, user.password_hash);
-      } else {
-        isValid = user.password_hash === password;
-        if (isValid) {
-          const newHash = await hashPassword(password);
-          await query("UPDATE users SET password_hash = $1 WHERE id = $2", [newHash, user.id]);
-        }
-      }
+      isValid = await verifyPassword(password, user.password_hash);
     }
     if (!isValid) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
-    const effectiveRole = user.role || (user.id === "user-om" ? "leader" : "member");
+    const effectiveRole = user.role || "member";
     const token = generateToken({ userId: user.id, username: user.username, role: effectiveRole });
     res.cookie("taskflow_token", token, {
       httpOnly: true,
@@ -34856,7 +34814,7 @@ router.get("/me", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
     const u = result.rows[0];
-    const effectiveRole = u.role || (u.id === "user-om" ? "leader" : "member");
+    const effectiveRole = u.role || "member";
     res.json({
       id: u.id,
       username: u.username,
@@ -34873,8 +34831,21 @@ router.get("/me", requireAuth, async (req, res) => {
 router.patch("/role", requireAuth, async (req, res) => {
   try {
     const userId = req.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { role } = req.body;
     const targetRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
+    const userDbRes = await query("SELECT role FROM users WHERE id = $1", [userId]);
+    if (!userDbRes.rowCount || userDbRes.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const currentBaseRole = (userDbRes.rows[0].role || "member").toLowerCase();
+    if (targetRole === "leader" && currentBaseRole !== "leader" && currentBaseRole !== "admin" && currentBaseRole !== "lead") {
+      return res.status(403).json({
+        error: "Unauthorized: Only users with leader or administrator privileges can switch to leader role"
+      });
+    }
     const updateRes = await query(
       `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2
        RETURNING id, username, full_name, email, avatar_url, role`,
@@ -34948,9 +34919,14 @@ async function processGoogleUser(googleProfile) {
     [googleId, cleanEmail]
   );
   let user;
-  const isLeadCandidate = cleanEmail === "omthakkar@example.com" || cleanEmail === "omthakkar168@gmail.com" || cleanEmail.startsWith("omthakkar");
+  const isLeadCandidate = Boolean(
+    process.env.ADMIN_EMAIL && cleanEmail === process.env.ADMIN_EMAIL.trim().toLowerCase()
+  );
   if (existingUserRes.rowCount && existingUserRes.rowCount > 0) {
     user = existingUserRes.rows[0];
+    if (user.google_id && user.google_id !== googleId) {
+      throw new Error("This email is already associated with a different Google account");
+    }
     const updatedRes = await query(
       `UPDATE users
        SET google_id = COALESCE(google_id, $1),
@@ -34972,7 +34948,7 @@ async function processGoogleUser(googleProfile) {
     if (checkUsername.rowCount && checkUsername.rowCount > 0) {
       username = `${baseUsername}${Math.floor(100 + Math.random() * 900)}`;
     }
-    const userId = `user-g-${Date.now()}`;
+    const userId = generateId("user-g");
     const initialRole = isLeadCandidate ? "leader" : "member";
     const insertRes = await query(
       `INSERT INTO users (id, username, full_name, email, avatar_url, role, google_id, auth_provider, created_at, updated_at)
@@ -35003,6 +34979,15 @@ router.post("/google", async (req, res) => {
       const payload = await tokenResp.json();
       if (!payload.email) {
         return res.status(400).json({ error: "Google account does not contain a verified email" });
+      }
+      if (GOOGLE_CLIENT_ID && payload.aud !== GOOGLE_CLIENT_ID) {
+        return res.status(401).json({ error: "Invalid Google token audience" });
+      }
+      if (!GOOGLE_CLIENT_ID && process.env.NODE_ENV === "production") {
+        return res.status(500).json({ error: "Google authentication is not properly configured on server" });
+      }
+      if (payload.email_verified !== true && payload.email_verified !== "true") {
+        return res.status(401).json({ error: "Google account email is not verified" });
       }
       googleProfile = {
         sub: payload.sub,
@@ -35117,7 +35102,7 @@ router.get("/google/callback", async (req, res) => {
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1e3
     });
-    return res.redirect(`${appBase}/dashboard?login=google_success#token=${token}`);
+    return res.redirect(`${appBase}/dashboard?login=google_success`);
   } catch (err) {
     console.error("Google callback exception:", err);
     const appBase = process.env.APP_BASE_URL || "/";
@@ -35134,37 +35119,36 @@ async function wouldCreateCycle(taskId, dependsOnTaskId) {
   if (taskId === dependsOnTaskId) {
     return true;
   }
-  const res = await query("SELECT task_id, depends_on_task_id, dependency_type FROM task_dependencies");
-  const adj = /* @__PURE__ */ new Map();
-  for (const row of res.rows) {
-    let t = row.task_id;
-    let dep = row.depends_on_task_id;
-    if (row.dependency_type === "blocks") {
-      const temp = t;
-      t = dep;
-      dep = temp;
-    }
-    if (!adj.has(t)) adj.set(t, /* @__PURE__ */ new Set());
-    adj.get(t).add(dep);
-  }
   const visited = /* @__PURE__ */ new Set();
-  const queue = [dependsOnTaskId];
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (current === taskId) {
+  let currentBatch = [dependsOnTaskId];
+  while (currentBatch.length > 0) {
+    if (currentBatch.includes(taskId)) {
       return true;
     }
-    if (!visited.has(current)) {
-      visited.add(current);
-      const prerequisites = adj.get(current);
-      if (prerequisites) {
-        for (const p of prerequisites) {
-          if (!visited.has(p)) {
-            queue.push(p);
-          }
-        }
+    for (const id of currentBatch) {
+      visited.add(id);
+    }
+    const res = await query(
+      `SELECT task_id, depends_on_task_id, dependency_type
+       FROM task_dependencies
+       WHERE (task_id = ANY($1) AND dependency_type = 'blocked_by')
+          OR (depends_on_task_id = ANY($1) AND dependency_type = 'blocks')`,
+      [currentBatch]
+    );
+    if (res.rows.length === 0) {
+      break;
+    }
+    const nextBatch = [];
+    for (const row of res.rows) {
+      const prereq = row.dependency_type === "blocked_by" ? row.depends_on_task_id : row.task_id;
+      if (prereq === taskId) {
+        return true;
+      }
+      if (!visited.has(prereq) && !nextBatch.includes(prereq)) {
+        nextBatch.push(prereq);
       }
     }
+    currentBatch = nextBatch;
   }
   return false;
 }
@@ -35172,7 +35156,7 @@ async function wouldCreateCycle(taskId, dependsOnTaskId) {
 // src/permissions.ts
 var roleCache = /* @__PURE__ */ new Map();
 async function isWorkspaceAdminOrLead(userId, userRecord) {
-  if (userId === "user-om" || userId === "omthakkar") return true;
+  if (!userId) return false;
   if (userRecord && userRecord.role) {
     const r = userRecord.role.toLowerCase();
     return r === "admin" || r === "leader" || r === "lead";
@@ -35346,15 +35330,7 @@ var VALID_STATUSES = [
 ];
 var VALID_PRIORITIES = ["critical", "high", "medium", "low"];
 function getUserId(req) {
-  if (req.user?.userId) return req.user.userId;
-  if (req.userId) return req.userId;
-  const token = extractToken(req);
-  if (token) {
-    const decoded = verifyToken(token);
-    if (decoded?.userId) return decoded.userId;
-  }
-  const custom = req.headers["x-user-id"];
-  return custom && custom.trim() ? custom.trim() : "user-om";
+  return req.user?.userId || req.userId || "";
 }
 function formatTask(row, comments = [], dependencies = [], progressUpdates = [], reviews = []) {
   let tags = [];
@@ -35482,11 +35458,14 @@ function formatTask(row, comments = [], dependencies = [], progressUpdates = [],
     updatedAt: new Date(row.updated_at).toISOString()
   };
 }
-router2.get("/stats", optionalAuth, async (req, res) => {
+router2.get("/stats", requireAuth, async (req, res) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { projectId } = req.query;
-    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId, req.user);
     let isProjLead = false;
     if (projectId && typeof projectId === "string" && projectId !== "all") {
       isProjLead = await isProjectLeader(userId, projectId);
@@ -35548,9 +35527,12 @@ router2.get("/stats", optionalAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to compute stats" });
   }
 });
-router2.get("/my-work", optionalAuth, async (req, res) => {
+router2.get("/my-work", requireAuth, async (req, res) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const userTasksRes = await query(
       `SELECT * FROM tasks
        WHERE is_trash = FALSE AND (user_id = $1 OR assignee_id = $1 OR reviewer_id = $1)
@@ -35601,10 +35583,13 @@ router2.get("/my-work", optionalAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch my-work tasks" });
   }
 });
-router2.get("/review-queue", optionalAuth, async (req, res) => {
+router2.get("/review-queue", requireAuth, async (req, res) => {
   try {
     const userId = getUserId(req);
-    const isLead = await isWorkspaceAdminOrLead(userId);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
     let sql = `SELECT t.*,
               (SELECT json_build_object(
                  'id', pu.id,
@@ -35643,11 +35628,14 @@ router2.get("/review-queue", optionalAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch review queue" });
   }
 });
-router2.get("/", optionalAuth, async (req, res) => {
+router2.get("/", requireAuth, async (req, res) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { projectId, status, priority, assigneeId, search, isTrash } = req.query;
-    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId, req.user);
     let isProjLead = false;
     if (projectId && typeof projectId === "string" && projectId !== "all") {
       isProjLead = await isProjectLeader(userId, projectId);
@@ -35685,26 +35673,36 @@ router2.get("/", optionalAuth, async (req, res) => {
       sql += ` AND (LOWER(title) LIKE $${params.length} OR LOWER(description) LIKE $${params.length} OR LOWER(COALESCE(identifier, '')) LIKE $${params.length})`;
     }
     sql += " ORDER BY created_at DESC";
-    const [tasksRes, commentsRes, depsRes] = await Promise.all([
-      query(sql, params),
-      query("SELECT * FROM task_comments ORDER BY created_at ASC"),
-      query(
-        `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
-         FROM task_dependencies td
-         JOIN tasks t ON td.depends_on_task_id = t.id`
-      )
-    ]);
+    const tasksRes = await query(sql, params);
+    const taskRows = tasksRes.rows;
+    const taskIds = taskRows.map((r) => r.id);
+    let commentsRows = [];
+    let depsRows = [];
+    if (taskIds.length > 0) {
+      const [commentsRes, depsRes] = await Promise.all([
+        query("SELECT * FROM task_comments WHERE task_id = ANY($1) ORDER BY created_at ASC", [taskIds]),
+        query(
+          `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
+           FROM task_dependencies td
+           JOIN tasks t ON td.depends_on_task_id = t.id
+           WHERE td.task_id = ANY($1)`,
+          [taskIds]
+        )
+      ]);
+      commentsRows = commentsRes.rows;
+      depsRows = depsRes.rows;
+    }
     const commentsByTask = {};
-    for (const c of commentsRes.rows) {
+    for (const c of commentsRows) {
       if (!commentsByTask[c.task_id]) commentsByTask[c.task_id] = [];
       commentsByTask[c.task_id].push(c);
     }
     const depsByTask = {};
-    for (const d of depsRes.rows) {
+    for (const d of depsRows) {
       if (!depsByTask[d.task_id]) depsByTask[d.task_id] = [];
       depsByTask[d.task_id].push(d);
     }
-    const tasks = tasksRes.rows.map(
+    const tasks = taskRows.map(
       (row) => formatTask(row, commentsByTask[row.id] || [], depsByTask[row.id] || [])
     );
     res.json(tasks);
@@ -35713,10 +35711,13 @@ router2.get("/", optionalAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch tasks" });
   }
 });
-router2.get("/:id", optionalAuth, async (req, res) => {
+router2.get("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
       return res.status(404).json({ error: "Task not found" });
@@ -35845,7 +35846,7 @@ router2.post("/", requireAuth, async (req, res) => {
         reviewerName = rRes.rows[0].name;
       }
     }
-    const taskId = `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const taskId = generateId("task");
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const result = await query(
       `INSERT INTO tasks (
@@ -35891,7 +35892,7 @@ router2.post("/", requireAuth, async (req, res) => {
         now
       ]
     );
-    const actId = `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const actId = generateId("act");
     await query(
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, 'task_created', $6, $7)`,
@@ -35910,7 +35911,7 @@ router2.post("/", requireAuth, async (req, res) => {
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, created_at)
          VALUES ($1, $2, $3, $4, 'assignment', $5, $6, 'task', $7, $8)`,
         [
-          `notif-${Date.now()}`,
+          generateId("notif"),
           assigneeId,
           userId,
           req.user?.username || "A teammate",
@@ -36090,7 +36091,7 @@ router2.patch("/:id", requireAuth, async (req, res) => {
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, created_at)
          VALUES ($1, $2, $3, $4, 'review', $5, $6, 'task', $7, $8)`,
         [
-          `notif-${Date.now()}`,
+          generateId("notif"),
           reviewerId,
           userId,
           req.user?.username || "A teammate",
@@ -36106,7 +36107,7 @@ router2.patch("/:id", requireAuth, async (req, res) => {
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
-        `act-${Date.now()}`,
+        generateId("act"),
         userId,
         projectId || current.project_id,
         id,
@@ -36136,6 +36137,9 @@ router2.patch("/:id", requireAuth, async (req, res) => {
 router2.post("/:id/status", requireAuth, async (req, res) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     const { status, blockedReason } = req.body;
     if (!status || !VALID_STATUSES.includes(status)) {
@@ -36183,7 +36187,7 @@ router2.post("/:id/status", requireAuth, async (req, res) => {
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, 'status_changed', $6, $7)`,
       [
-        `act-${Date.now()}`,
+        generateId("act"),
         userId,
         current.project_id,
         id,
@@ -36244,7 +36248,7 @@ router2.post("/:id/progress", requireAuth, async (req, res) => {
     }
     const userRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
     const userName = userRes.rows[0]?.full_name || userRes.rows[0]?.username || "Team Member";
-    const updateId = `prog-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const updateId = generateId("prog");
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const completedAt = targetStatus === "completed" ? now : null;
     const cleanBlockedReason = targetStatus === "blocked" ? blockers.trim() : task.status === "blocked" && targetStatus !== "blocked" ? "" : task.blocked_reason;
@@ -36310,7 +36314,7 @@ router2.post("/:id/progress", requireAuth, async (req, res) => {
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
       [
-        `act-${Date.now()}`,
+        generateId("act"),
         userId,
         task.project_id,
         id,
@@ -36327,7 +36331,7 @@ router2.post("/:id/progress", requireAuth, async (req, res) => {
         })
       ]
     );
-    const recipientId = task.reviewer_id || (task.project_id ? (await query("SELECT owner_id FROM projects WHERE id = $1", [task.project_id])).rows[0]?.owner_id : "user-om") || "user-om";
+    const recipientId = task.reviewer_id || (task.project_id ? (await query("SELECT owner_id FROM projects WHERE id = $1", [task.project_id])).rows[0]?.owner_id : null);
     if (recipientId && recipientId !== userId) {
       let notifTitle = `Progress Update: ${task.identifier || task.title}`;
       let notifMessage = `${userName} updated progress to ${pct}%: ${workCompleted.trim().slice(0, 100)}`;
@@ -36344,7 +36348,7 @@ router2.post("/:id/progress", requireAuth, async (req, res) => {
       await query(
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'task', $8, FALSE, NOW())`,
-        [`notif-${Date.now()}`, recipientId, userId, userName, notifType, notifTitle, notifMessage, id]
+        [generateId("notif"), recipientId, userId, userName, notifType, notifTitle, notifMessage, id]
       );
     }
     res.status(201).json({
@@ -36372,13 +36376,16 @@ router2.post("/:id/progress", requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("Error submitting progress update:", err);
-    res.status(500).json({ error: "Failed to submit progress update: " + err.message });
+    res.status(500).json({ error: "Failed to submit progress update" });
   }
 });
-router2.get("/:id/progress", optionalAuth, async (req, res) => {
+router2.get("/:id/progress", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
       return res.status(404).json({ error: "Task not found" });
@@ -36421,6 +36428,9 @@ router2.get("/:id/progress", optionalAuth, async (req, res) => {
 router2.post("/:id/review", requireAuth, async (req, res) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     const { decision, feedback, progressUpdateId } = req.body;
     if (!decision || decision !== "approved" && decision !== "changes_requested") {
@@ -36440,7 +36450,7 @@ router2.post("/:id/review", requireAuth, async (req, res) => {
     }
     const reviewerRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
     const reviewerName = reviewerRes.rows[0]?.full_name || reviewerRes.rows[0]?.username || "Team Leader";
-    const reviewId = `rev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const reviewId = generateId("rev");
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const revInsert = await query(
       `INSERT INTO task_reviews (id, task_id, reviewer_id, reviewer_name, progress_update_id, decision, feedback, created_at)
@@ -36482,7 +36492,7 @@ router2.post("/:id/review", requireAuth, async (req, res) => {
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
       [
-        `act-${Date.now()}`,
+        generateId("act"),
         userId,
         task.project_id,
         id,
@@ -36497,7 +36507,7 @@ router2.post("/:id/review", requireAuth, async (req, res) => {
       await query(
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, 'review', $5, $6, 'task', $7, FALSE, NOW())`,
-        [`notif-${Date.now()}`, task.assignee_id, userId, reviewerName, notifTitle, notifMessage, id]
+        [generateId("notif"), task.assignee_id, userId, reviewerName, notifTitle, notifMessage, id]
       );
     }
     res.status(201).json({
@@ -36516,13 +36526,16 @@ router2.post("/:id/review", requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("Error submitting review:", err);
-    res.status(500).json({ error: "Failed to submit review: " + err.message });
+    res.status(500).json({ error: "Failed to submit review" });
   }
 });
-router2.get("/:id/reviews", optionalAuth, async (req, res) => {
+router2.get("/:id/reviews", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
       return res.status(404).json({ error: "Task not found" });
@@ -36553,10 +36566,13 @@ router2.get("/:id/reviews", optionalAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch reviews" });
   }
 });
-router2.get("/:id/dependencies", optionalAuth, async (req, res) => {
+router2.get("/:id/dependencies", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
       return res.status(404).json({ error: "Task not found" });
@@ -36581,6 +36597,10 @@ router2.get("/:id/dependencies", optionalAuth, async (req, res) => {
 });
 router2.post("/:id/dependencies", requireAuth, async (req, res) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     const { dependsOnTaskId, dependencyType = "blocked_by" } = req.body;
     if (!dependsOnTaskId) {
@@ -36589,9 +36609,18 @@ router2.post("/:id/dependencies", requireAuth, async (req, res) => {
     if (id === dependsOnTaskId) {
       return res.status(400).json({ error: "A task cannot depend on itself" });
     }
-    const checkRes = await query("SELECT id FROM tasks WHERE id = $1 OR id = $2", [id, dependsOnTaskId]);
-    if (checkRes.rowCount !== 2) {
-      return res.status(404).json({ error: "One or both tasks could not be found" });
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to modify dependencies for this task" });
+    }
+    const targetTaskRes = await query("SELECT id, title, status FROM tasks WHERE id = $1", [dependsOnTaskId]);
+    if (targetTaskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Prerequisite task could not be found" });
     }
     const isCircular = await wouldCreateCycle(String(id), String(dependsOnTaskId));
     if (isCircular) {
@@ -36599,7 +36628,7 @@ router2.post("/:id/dependencies", requireAuth, async (req, res) => {
         error: "Circular dependency detected: Adding this relationship would create an invalid cyclic dependency loop between tasks."
       });
     }
-    const depId = `dep-${Date.now()}`;
+    const depId = generateId("dep");
     await query(
       `INSERT INTO task_dependencies (id, task_id, depends_on_task_id, dependency_type, created_at)
        VALUES ($1, $2, $3, $4, NOW())
@@ -36607,11 +36636,11 @@ router2.post("/:id/dependencies", requireAuth, async (req, res) => {
       [depId, id, dependsOnTaskId, dependencyType]
     );
     if (dependencyType === "blocked_by") {
-      const targetTask = await query("SELECT title, status FROM tasks WHERE id = $1", [dependsOnTaskId]);
-      if (targetTask.rows[0]?.status !== "completed") {
+      const targetTask = targetTaskRes.rows[0];
+      if (targetTask.status !== "completed") {
         await query(
           "UPDATE tasks SET status = 'blocked', blocked_reason = $1 WHERE id = $2 AND status != 'completed'",
-          [`Blocked by prerequisite: "${targetTask.rows[0]?.title}"`, id]
+          [`Blocked by prerequisite: "${targetTask.title}"`, id]
         );
       }
     }
@@ -36623,7 +36652,25 @@ router2.post("/:id/dependencies", requireAuth, async (req, res) => {
 });
 router2.delete("/:id/dependencies/:depId", requireAuth, async (req, res) => {
   try {
-    const { depId } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const { id, depId } = req.params;
+    const depRes = await query(
+      `SELECT td.*, t.user_id, t.assignee_id, t.project_id
+       FROM task_dependencies td
+       JOIN tasks t ON td.task_id = t.id
+       WHERE td.id = $1 AND td.task_id = $2`,
+      [depId, id]
+    );
+    if (depRes.rowCount === 0) {
+      return res.status(404).json({ error: "Dependency not found" });
+    }
+    const perm = await canUserEditTask(userId, String(id), depRes.rows[0]);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to remove dependency for this task" });
+    }
     await query("DELETE FROM task_dependencies WHERE id = $1", [depId]);
     res.json({ success: true });
   } catch (err) {
@@ -36634,12 +36681,19 @@ router2.delete("/:id/dependencies/:depId", requireAuth, async (req, res) => {
 router2.post("/:id/subtasks/:subtaskId/toggle", requireAuth, async (req, res) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id, subtaskId } = req.params;
     const currentRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (currentRes.rowCount === 0) {
       return res.status(404).json({ error: "Task not found" });
     }
     const current = currentRes.rows[0];
+    const perm = await canUserEditTask(userId, String(id), current);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to update subtasks for this task" });
+    }
     let subtasks = [];
     try {
       subtasks = typeof current.subtasks === "string" ? JSON.parse(current.subtasks) : current.subtasks || [];
@@ -36661,9 +36715,43 @@ router2.post("/:id/subtasks/:subtaskId/toggle", requireAuth, async (req, res) =>
     res.status(500).json({ error: "Failed to toggle subtask" });
   }
 });
+router2.delete("/trash/empty", requireAuth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
+    if (isLead) {
+      await query("DELETE FROM tasks WHERE is_trash = TRUE");
+    } else {
+      await query(
+        "DELETE FROM tasks WHERE is_trash = TRUE AND (user_id = $1 OR assignee_id = $1)",
+        [userId]
+      );
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error("Error emptying trash:", err);
+    res.status(500).json({ error: "Failed to empty trash" });
+  }
+});
 router2.delete("/:id", requireAuth, async (req, res) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to move this task to trash" });
+    }
     await query(
       "UPDATE tasks SET is_trash = TRUE, deleted_at = NOW(), updated_at = NOW() WHERE id = $1",
       [id]
@@ -36676,7 +36764,20 @@ router2.delete("/:id", requireAuth, async (req, res) => {
 });
 router2.post("/:id/restore", requireAuth, async (req, res) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to restore this task" });
+    }
     const updateRes = await query(
       `UPDATE tasks
        SET is_trash = FALSE, deleted_at = NULL, updated_at = NOW()
@@ -36684,49 +36785,68 @@ router2.post("/:id/restore", requireAuth, async (req, res) => {
        RETURNING *`,
       [id]
     );
-    if (updateRes.rowCount === 0) return res.status(404).json({ error: "Task not found" });
     res.json(formatTask(updateRes.rows[0]));
   } catch (err) {
+    console.error("Error restoring task:", err);
     res.status(500).json({ error: "Failed to restore task" });
   }
 });
 router2.delete("/:id/permanent", requireAuth, async (req, res) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to permanently delete this task" });
+    }
     await query("DELETE FROM tasks WHERE id = $1", [id]);
     res.status(204).send();
   } catch (err) {
+    console.error("Error permanently deleting task:", err);
     res.status(500).json({ error: "Failed to delete task" });
-  }
-});
-router2.delete("/trash/empty", requireAuth, async (req, res) => {
-  try {
-    await query("DELETE FROM tasks WHERE is_trash = TRUE");
-    res.status(204).send();
-  } catch (err) {
-    res.status(500).json({ error: "Failed to empty trash" });
   }
 });
 router2.post("/:id/bookmark", requireAuth, async (req, res) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
-    const currentRes = await query("SELECT is_bookmarked FROM tasks WHERE id = $1", [id]);
-    if (currentRes.rowCount === 0) return res.status(404).json({ error: "Task not found" });
-    const nextBookmarked = !currentRes.rows[0].is_bookmarked;
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) return res.status(404).json({ error: "Task not found" });
+    const task = taskRes.rows[0];
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden" });
+    }
+    const nextBookmarked = !task.is_bookmarked;
     const updateRes = await query(
       "UPDATE tasks SET is_bookmarked = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
       [nextBookmarked, id]
     );
     res.json(formatTask(updateRes.rows[0]));
   } catch (err) {
+    console.error("Error toggling bookmark:", err);
     res.status(500).json({ error: "Failed to toggle bookmark" });
   }
 });
 router2.post("/:id/comments", requireAuth, async (req, res) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
-    const { content, author } = req.body;
+    const { content } = req.body;
     if (!content || !content.trim()) {
       return res.status(400).json({ error: "Comment content is required" });
     }
@@ -36739,9 +36859,11 @@ router2.post("/:id/comments", requireAuth, async (req, res) => {
     if (!canView.allowed) {
       return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
     }
+    const userRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
+    const verifiedAuthor = userRes.rows[0]?.full_name || userRes.rows[0]?.username || req.user?.username || "Team Member";
     const mentionsMatch = content.match(/@(\w+)/g);
     const mentions = mentionsMatch ? mentionsMatch.map((m) => m.substring(1)) : [];
-    const commentId = `comm-${Date.now()}`;
+    const commentId = generateId("comm");
     await query(
       `INSERT INTO task_comments (id, task_id, user_id, author, content, mentions, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
@@ -36749,22 +36871,22 @@ router2.post("/:id/comments", requireAuth, async (req, res) => {
         commentId,
         id,
         userId,
-        author && author.trim() ? author.trim() : req.user?.username || "Teammate",
+        verifiedAuthor,
         content.trim(),
         JSON.stringify(mentions)
       ]
     );
     for (const mention of mentions) {
       const uRes = await query("SELECT id FROM users WHERE LOWER(username) = $1", [mention.toLowerCase()]);
-      if (uRes.rowCount && uRes.rowCount > 0) {
+      if (uRes.rowCount && uRes.rowCount > 0 && uRes.rows[0].id !== userId) {
         await query(
           `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, created_at)
            VALUES ($1, $2, $3, $4, 'mention', 'Mentioned in a comment', $5, 'task', $6, NOW())`,
           [
-            `notif-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+            generateId("notif"),
             uRes.rows[0].id,
             userId,
-            author || "A teammate",
+            verifiedAuthor,
             `Mentioned you in task comments: "${content.trim().slice(0, 80)}"`,
             id
           ]
@@ -36787,36 +36909,15 @@ var tasks_default = router2;
 // src/routes/profile.ts
 var import_express3 = __toESM(require_express2());
 var router3 = (0, import_express3.Router)();
-function getUserId2(req) {
-  const custom = req.headers["x-user-id"];
-  return custom && custom.trim() ? custom.trim() : "user-om";
-}
-router3.get("/", async (req, res) => {
+router3.get("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId2(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const result = await query("SELECT * FROM users WHERE id = $1", [userId]);
     if (result.rowCount === 0) {
-      const isDefault = userId === "user-om";
-      const insert = await query(
-        `INSERT INTO users (id, username, full_name, email, avatar_url, created_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         RETURNING *`,
-        [
-          userId,
-          isDefault ? "omthakkar" : userId,
-          isDefault ? "Om Thakkar" : "TaskFlow User",
-          isDefault ? "omthakkar@example.com" : `${userId}@example.com`,
-          ""
-        ]
-      );
-      const row2 = insert.rows[0];
-      return res.json({
-        id: row2.id,
-        fullName: row2.full_name,
-        email: row2.email,
-        avatarUrl: row2.avatar_url || "",
-        createdAt: new Date(row2.created_at).toISOString()
-      });
+      return res.status(404).json({ error: "Profile not found" });
     }
     const row = result.rows[0];
     res.json({
@@ -36824,6 +36925,7 @@ router3.get("/", async (req, res) => {
       fullName: row.full_name,
       email: row.email,
       avatarUrl: row.avatar_url || "",
+      role: row.role || "member",
       createdAt: new Date(row.created_at).toISOString()
     });
   } catch (err) {
@@ -36831,27 +36933,42 @@ router3.get("/", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch profile" });
   }
 });
-router3.put("/", async (req, res) => {
+router3.put("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId2(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { fullName, email, avatarUrl = "" } = req.body;
+    if (!fullName || typeof fullName !== "string" || !fullName.trim()) {
+      return res.status(400).json({ error: "Full name is required" });
+    }
+    if (!email || typeof email !== "string" || !email.includes("@")) {
+      return res.status(400).json({ error: "Valid email is required" });
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanFullName = fullName.trim();
+    const emailCheck = await query("SELECT id FROM users WHERE LOWER(email) = $1 AND id != $2", [cleanEmail, userId]);
+    if (emailCheck.rowCount && emailCheck.rowCount > 0) {
+      return res.status(409).json({ error: "Email is already in use by another account" });
+    }
     const result = await query(
-      `INSERT INTO users (id, username, full_name, email, avatar_url, updated_at)
-       VALUES ($1, $1, $2, $3, $4, NOW())
-       ON CONFLICT (id) DO UPDATE SET
-         full_name = EXCLUDED.full_name,
-         email = EXCLUDED.email,
-         avatar_url = EXCLUDED.avatar_url,
-         updated_at = NOW()
+      `UPDATE users
+       SET full_name = $1, email = $2, avatar_url = $3, updated_at = NOW()
+       WHERE id = $4
        RETURNING *`,
-      [userId, fullName?.trim() || "User", email?.trim() || "user@example.com", avatarUrl || ""]
+      [cleanFullName, cleanEmail, String(avatarUrl || "").trim(), userId]
     );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
     const row = result.rows[0];
     res.json({
       id: row.id,
       fullName: row.full_name,
       email: row.email,
       avatarUrl: row.avatar_url || "",
+      role: row.role || "member",
       createdAt: new Date(row.created_at).toISOString()
     });
   } catch (err) {
@@ -36864,14 +36981,12 @@ var profile_default = router3;
 // src/routes/activity.ts
 var import_express4 = __toESM(require_express2());
 var router4 = (0, import_express4.Router)();
-function getUserId3(req) {
-  if (req.userId) return req.userId;
-  const custom = req.headers["x-user-id"];
-  return custom && custom.trim() ? custom.trim() : "user-om";
-}
-router4.get("/", async (req, res) => {
+router4.get("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId3(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const result = await query(
       `SELECT DISTINCT a.* FROM activities a
        LEFT JOIN project_members pm ON a.project_id = pm.project_id AND pm.user_id = $1
@@ -36897,17 +37012,6 @@ var activity_default = router4;
 // src/routes/projects.ts
 var import_express5 = __toESM(require_express2());
 var router5 = (0, import_express5.Router)();
-function getUserId4(req) {
-  if (req.user?.userId) return req.user.userId;
-  if (req.userId) return req.userId;
-  const token = extractToken(req);
-  if (token) {
-    const decoded = verifyToken(token);
-    if (decoded?.userId) return decoded.userId;
-  }
-  const custom = req.headers["x-user-id"];
-  return custom && custom.trim() ? custom.trim() : "user-om";
-}
 function parseSafeDate(val) {
   if (!val) return null;
   if (typeof val === "string") {
@@ -36940,11 +37044,14 @@ function parseSafeDate(val) {
     return null;
   }
 }
-router5.get("/", optionalAuth, async (req, res) => {
+router5.get("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId4(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { status, search } = req.query;
-    const isLead = await isWorkspaceAdminOrLead(userId);
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
     let sql = "SELECT * FROM projects WHERE 1=1";
     const params = [];
     if (!isLead) {
@@ -37058,9 +37165,11 @@ router5.get("/", optionalAuth, async (req, res) => {
 });
 router5.post("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId4(req);
-    const userRole = req.headers["x-user-role"] || req.user?.role || "leader";
-    const isLead = await isWorkspaceAdminOrLead(userId, { role: userRole, id: userId });
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only team leaders and administrators can create projects" });
     }
@@ -37121,20 +37230,18 @@ router5.post("/", requireAuth, async (req, res) => {
     const userRes = await query("SELECT id, full_name, username FROM users WHERE id = $1", [userId]);
     let creatorName = req.user?.username || "Lead";
     if (userRes.rows.length === 0) {
-      const fallbackName = userId === "user-om" ? "Om Thakkar" : req.user?.username || "Workspace Leader";
-      const fallbackEmail = userId === "user-om" ? "omthakkar@example.com" : `${userId}@taskflow.local`;
+      creatorName = req.user?.username || "Workspace Leader";
       await query(
         `INSERT INTO users (id, username, full_name, email, role)
-         VALUES ($1, $2, $3, $4, 'admin')
+         VALUES ($1, $2, $3, $4, 'member')
          ON CONFLICT (id) DO NOTHING`,
-        [userId, userId, fallbackName, fallbackEmail]
+        [userId, req.user?.username || userId, creatorName, `${userId}@taskflow.local`]
       );
-      creatorName = fallbackName;
     } else {
       creatorName = userRes.rows[0].full_name || userRes.rows[0].username || creatorName;
     }
     const cleanLead = lead && typeof lead === "string" && lead.trim() ? lead.trim() : creatorName;
-    const projectId = `proj-${Date.now()}`;
+    const projectId = generateId("proj");
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const insertRes = await query(
       `INSERT INTO projects (
@@ -37163,12 +37270,12 @@ router5.post("/", requireAuth, async (req, res) => {
       `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
        VALUES ($1, $2, $3, 'owner', $4)
        ON CONFLICT (project_id, user_id) DO NOTHING`,
-      [`pm-${Date.now()}`, projectId, userId, now]
+      [generateId("pm"), projectId, userId, now]
     );
     await query(
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, '', $4, 'project_created', $5, $6)`,
-      [`act-${Date.now()}`, userId, projectId, cleanName, JSON.stringify({ key: cleanKey }), now]
+      [generateId("act"), userId, projectId, cleanName, JSON.stringify({ key: cleanKey }), now]
     );
     const p = insertRes.rows[0];
     res.status(201).json({
@@ -37192,19 +37299,22 @@ router5.post("/", requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("Error creating project:", err);
-    res.status(500).json({ error: err?.message || "Failed to create project" });
+    res.status(500).json({ error: "Failed to create project" });
   }
 });
-router5.get("/:id", optionalAuth, async (req, res) => {
+router5.get("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = getUserId4(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const projectRes = await query("SELECT * FROM projects WHERE id = $1", [id]);
     if (!projectRes.rowCount || projectRes.rowCount === 0) {
       return res.status(404).json({ error: "Project not found" });
     }
     const p = projectRes.rows[0];
-    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId, req.user);
     const isProjLead = isGlobalLead || await isProjectLeader(userId, String(id));
     const isMember = isProjLead || await isProjectMember(userId, String(id));
     if (!isMember) {
@@ -37317,7 +37427,14 @@ router5.get("/:id", optionalAuth, async (req, res) => {
 router5.patch("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = getUserId4(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectLeader(userId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can update project settings" });
+    }
     const updates = req.body;
     const fields = [];
     const values = [];
@@ -37354,7 +37471,7 @@ router5.patch("/:id", requireAuth, async (req, res) => {
     await query(
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, '', $4, 'project_updated', $5, NOW())`,
-      [`act-${Date.now()}`, userId, id, updated.name, JSON.stringify(updates)]
+      [generateId("act"), userId, id, updated.name, JSON.stringify(updates)]
     );
     res.json(updated);
   } catch (err) {
@@ -37365,6 +37482,14 @@ router5.patch("/:id", requireAuth, async (req, res) => {
 router5.post("/:id/archive", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectLeader(userId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can archive projects" });
+    }
     const projectRes = await query("SELECT status, archived_at FROM projects WHERE id = $1", [id]);
     if (!projectRes.rowCount || projectRes.rowCount === 0) {
       return res.status(404).json({ error: "Project not found" });
@@ -37385,6 +37510,14 @@ router5.post("/:id/archive", requireAuth, async (req, res) => {
 router5.delete("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectLeader(userId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can delete projects" });
+    }
     const del = await query("DELETE FROM projects WHERE id = $1 RETURNING name", [id]);
     if (!del.rowCount || del.rowCount === 0) {
       return res.status(404).json({ error: "Project not found" });
@@ -37395,9 +37528,17 @@ router5.delete("/:id", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to delete project" });
   }
 });
-router5.get("/:id/members", async (req, res) => {
+router5.get("/:id/members", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isMember = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectMember(userId, String(id));
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
     const result = await query(
       `SELECT pm.id, pm.role, pm.joined_at,
               COALESCE(u.id, tm.id) as user_id,
@@ -37421,12 +37562,17 @@ router5.get("/:id/members", async (req, res) => {
 router5.post("/:id/members", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const currentUserId = getUserId4(req);
-    const isLead = await isProjectLeader(currentUserId, String(id));
+    const currentUserId = req.user?.userId;
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(currentUserId, req.user) || await isProjectLeader(currentUserId, String(id));
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only project leaders can add members to a project" });
     }
     const { userId, userIds, role = "member" } = req.body;
+    const allowedRoles = ["member", "lead", "viewer"];
+    const targetRole = allowedRoles.includes(role) ? role : "member";
     const targetUserIds = Array.isArray(userIds) ? userIds.filter((u) => typeof u === "string" && u.trim()).map((u) => u.trim()) : userId && typeof userId === "string" && userId.trim() ? [userId.trim()] : [];
     if (targetUserIds.length === 0) {
       return res.status(400).json({ error: "User ID or User IDs array is required" });
@@ -37445,39 +37591,40 @@ router5.post("/:id/members", requireAuth, async (req, res) => {
             [tm.id, tm.id, tm.name, tm.email]
           );
         } else {
-          await query(
-            `INSERT INTO users (id, username, full_name, email, role)
-             VALUES ($1, $2, $3, $4, 'member')
-             ON CONFLICT (id) DO NOTHING`,
-            [uid, uid, `Member ${uid}`, `${uid}@taskflow.local`]
-          );
+          continue;
         }
       }
-      const memberId = `pm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const memberId = generateId("pm");
       await query(
         `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
          VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-        [memberId, id, uid, role]
+        [memberId, id, uid, targetRole]
       );
       added.push(uid);
       await query(
         `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
          VALUES ($1, $2, $3, '', '', 'member_joined', $4, NOW())`,
-        [`act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`, currentUserId, id, JSON.stringify({ userId: uid, role })]
+        [generateId("act"), currentUserId, id, JSON.stringify({ userId: uid, role: targetRole })]
       );
     }
-    res.status(201).json({ success: true, count: added.length, addedUserIds: added, role });
+    if (added.length === 0) {
+      return res.status(400).json({ error: "No valid existing users found to add to project" });
+    }
+    res.status(201).json({ success: true, count: added.length, addedUserIds: added, role: targetRole });
   } catch (err) {
     console.error("Error adding project member:", err);
-    res.status(500).json({ error: err?.message || "Failed to add member to project" });
+    res.status(500).json({ error: "Failed to add member to project" });
   }
 });
 router5.delete("/:id/members/:userId", requireAuth, async (req, res) => {
   try {
     const { id, userId } = req.params;
-    const currentUserId = getUserId4(req);
-    const isLead = await isProjectLeader(currentUserId, String(id));
+    const currentUserId = req.user?.userId;
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(currentUserId, req.user) || await isProjectLeader(currentUserId, String(id));
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only project leaders can remove project members" });
     }
@@ -37488,9 +37635,17 @@ router5.delete("/:id/members/:userId", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to remove member" });
   }
 });
-router5.get("/:id/milestones", async (req, res) => {
+router5.get("/:id/milestones", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isMember = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectMember(userId, String(id));
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
     const result = await query(
       "SELECT * FROM milestones WHERE project_id = $1 ORDER BY target_date ASC",
       [id]
@@ -37504,6 +37659,14 @@ router5.get("/:id/milestones", async (req, res) => {
 router5.post("/:id/milestones", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectLeader(userId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can create milestones" });
+    }
     const { title, description = "", targetDate, status = "pending" } = req.body;
     if (!title || !title.trim()) {
       return res.status(400).json({ error: "Milestone title is required" });
@@ -37511,7 +37674,7 @@ router5.post("/:id/milestones", requireAuth, async (req, res) => {
     if (!targetDate) {
       return res.status(400).json({ error: "Milestone target date is required" });
     }
-    const milestoneId = `ms-${Date.now()}`;
+    const milestoneId = generateId("ms");
     const parsedTarget = parseSafeDate(targetDate) || (/* @__PURE__ */ new Date()).toISOString();
     const result = await query(
       `INSERT INTO milestones (id, project_id, title, description, target_date, status, created_at, updated_at)
@@ -37527,7 +37690,15 @@ router5.post("/:id/milestones", requireAuth, async (req, res) => {
 });
 router5.patch("/:id/milestones/:milestoneId", requireAuth, async (req, res) => {
   try {
-    const { milestoneId } = req.params;
+    const { id, milestoneId } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectLeader(userId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can update milestones" });
+    }
     const { title, description, targetDate, status } = req.body;
     const fields = [];
     const values = [];
@@ -37549,8 +37720,9 @@ router5.patch("/:id/milestones/:milestoneId", requireAuth, async (req, res) => {
     }
     fields.push("updated_at = NOW()");
     values.push(milestoneId);
+    values.push(id);
     const result = await query(
-      `UPDATE milestones SET ${fields.join(", ")} WHERE id = $${values.length} RETURNING *`,
+      `UPDATE milestones SET ${fields.join(", ")} WHERE id = $${values.length - 1} AND project_id = $${values.length} RETURNING *`,
       values
     );
     if (!result.rowCount || result.rowCount === 0) {
@@ -37564,20 +37736,38 @@ router5.patch("/:id/milestones/:milestoneId", requireAuth, async (req, res) => {
 });
 router5.delete("/:id/milestones/:milestoneId", requireAuth, async (req, res) => {
   try {
-    const { milestoneId } = req.params;
-    await query("DELETE FROM milestones WHERE id = $1", [milestoneId]);
+    const { id, milestoneId } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectLeader(userId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can delete milestones" });
+    }
+    const del = await query("DELETE FROM milestones WHERE id = $1 AND project_id = $2 RETURNING id", [milestoneId, id]);
+    if (!del.rowCount || del.rowCount === 0) {
+      return res.status(404).json({ error: "Milestone not found" });
+    }
     res.json({ success: true });
   } catch (err) {
     console.error("Error deleting milestone:", err);
     res.status(500).json({ error: "Failed to delete milestone" });
   }
 });
-router5.get("/:id/submissions", optionalAuth, async (req, res) => {
+router5.get("/:id/submissions", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = getUserId4(req);
-    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId, req.user);
     const isProjLead = isGlobalLead || await isProjectLeader(userId, String(id));
+    const isMember = isProjLead || await isProjectMember(userId, String(id));
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
     let sql = `
       SELECT pu.*, t.title as task_title, t.identifier as task_identifier, t.assignee_id,
              COALESCE(u.full_name, pu.user_name) as submitter_name,
@@ -37651,9 +37841,17 @@ router5.get("/:id/submissions", optionalAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch project submissions" });
   }
 });
-router5.get("/:id/activity", optionalAuth, async (req, res) => {
+router5.get("/:id/activity", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isMember = await isWorkspaceAdminOrLead(userId, req.user) || await isProjectMember(userId, String(id));
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
     const result = await query(
       `SELECT a.*, COALESCE(u.full_name, u.username, 'Team Member') as user_name, COALESCE(u.avatar_url, '') as user_avatar
        FROM activities a
@@ -37686,20 +37884,12 @@ var projects_default = router5;
 // src/routes/team.ts
 var import_express6 = __toESM(require_express2());
 var router6 = (0, import_express6.Router)();
-function getUserId5(req) {
-  if (req.user?.userId) return req.user.userId;
-  if (req.userId) return req.userId;
-  const token = extractToken(req);
-  if (token) {
-    const decoded = verifyToken(token);
-    if (decoded?.userId) return decoded.userId;
-  }
-  const custom = req.headers["x-user-id"];
-  return custom && custom.trim() ? custom.trim() : "user-om";
-}
-router6.get("/", optionalAuth, async (req, res) => {
+router6.get("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId5(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const [isLead, membersRes, tasksRes, projectMembersRes] = await Promise.all([
       isWorkspaceAdminOrLead(userId),
       query("SELECT * FROM team_members ORDER BY name ASC"),
@@ -37799,7 +37989,10 @@ router6.get("/", optionalAuth, async (req, res) => {
 });
 router6.post("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId5(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const isLead = await isWorkspaceAdminOrLead(userId);
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only team leaders can add team members" });
@@ -37812,7 +38005,7 @@ router6.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Valid email is required" });
     }
     const cleanInitials = initials && initials.trim() ? initials.trim().toUpperCase().slice(0, 3) : name2.slice(0, 2).toUpperCase();
-    const memberId = `team-${Date.now()}`;
+    const memberId = generateId("team");
     const insertRes = await query(
       `INSERT INTO team_members (id, name, email, role, avatar_url, initials)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -37830,13 +38023,12 @@ var team_default = router6;
 // src/routes/notifications.ts
 var import_express7 = __toESM(require_express2());
 var router7 = (0, import_express7.Router)();
-function getUserId6(req) {
-  if (req.userId) return req.userId;
-  return "user-om";
-}
 router7.get("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId6(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { unreadOnly, type, limit = 50 } = req.query;
     let sql = "SELECT * FROM notifications WHERE user_id = $1";
     const params = [userId];
@@ -37882,7 +38074,10 @@ router7.get("/", requireAuth, async (req, res) => {
 });
 router7.post("/:id/read", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId6(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     const result = await query(
       "UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2 RETURNING id",
@@ -37899,7 +38094,10 @@ router7.post("/:id/read", requireAuth, async (req, res) => {
 });
 router7.post("/read-all", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId6(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     await query("UPDATE notifications SET is_read = TRUE WHERE user_id = $1", [userId]);
     res.json({ success: true });
   } catch (err) {
@@ -37907,9 +38105,25 @@ router7.post("/read-all", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to mark all read" });
   }
 });
+router7.delete("/clear-all", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    await query("DELETE FROM notifications WHERE user_id = $1 AND is_read = TRUE", [userId]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error clearing notifications:", err);
+    res.status(500).json({ error: "Failed to clear notifications" });
+  }
+});
 router7.delete("/:id", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId6(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     await query("DELETE FROM notifications WHERE id = $1 AND user_id = $2", [id, userId]);
     res.json({ success: true });
@@ -37918,21 +38132,11 @@ router7.delete("/:id", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to delete notification" });
   }
 });
-router7.delete("/clear-all", requireAuth, async (req, res) => {
-  try {
-    const userId = getUserId6(req);
-    await query("DELETE FROM notifications WHERE user_id = $1 AND is_read = TRUE", [userId]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Error clearing notifications:", err);
-    res.status(500).json({ error: "Failed to clear notifications" });
-  }
-});
 var notifications_default = router7;
 
 // src/routes/invitations.ts
 var import_express8 = __toESM(require_express2());
-var import_crypto2 = __toESM(require("crypto"));
+var import_crypto3 = __toESM(require("crypto"));
 
 // node_modules/nodemailer/dist/esm/mailer/index.js
 var import_node_events = require("node:events");
@@ -50846,6 +51050,10 @@ function isEmailConfigured() {
 function getAppBaseUrl() {
   return (process.env.APP_BASE_URL || process.env.PUBLIC_APP_URL || process.env.VITE_APP_URL || "http://localhost:3000").replace(/\/$/, "");
 }
+function escapeHtml(str) {
+  if (!str) return "";
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
 async function sendInvitationEmail(params) {
   const { recipientEmail, projectName, inviterName, role, invitationUrl, expiresAt, message } = params;
   if (!isEmailConfigured()) {
@@ -50854,6 +51062,11 @@ async function sendInvitationEmail(params) {
       error: "Email delivery provider not configured (missing SMTP_HOST/SMTP_USER or RESEND_API_KEY). Please copy and share the generated invitation link manually."
     };
   }
+  const safeProjectName = escapeHtml(projectName);
+  const safeInviterName = escapeHtml(inviterName);
+  const safeRole = escapeHtml(role);
+  const safeMessage = message ? escapeHtml(message) : "";
+  const safeInvitationUrl = invitationUrl.startsWith("http://") || invitationUrl.startsWith("https://") ? invitationUrl.replace(/["'<>]/g, "") : "";
   const formattedExpiry = expiresAt.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
@@ -50864,7 +51077,7 @@ async function sendInvitationEmail(params) {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Invitation to ${projectName}</title>
+  <title>Invitation to ${safeProjectName}</title>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 40px 20px; margin: 0;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; margin: 0 auto; background-color: #1e293b; border-radius: 16px; border: 1px solid #334155; overflow: hidden;">
@@ -50876,15 +51089,15 @@ async function sendInvitationEmail(params) {
     </tr>
     <tr>
       <td style="padding: 32px;">
-        <h2 style="color: #ffffff; font-size: 18px; margin: 0 0 16px;">You've been invited to join <strong>${projectName}</strong></h2>
+        <h2 style="color: #ffffff; font-size: 18px; margin: 0 0 16px;">You've been invited to join <strong>${safeProjectName}</strong></h2>
         <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">
-          <strong>${inviterName}</strong> has invited you to collaborate on the <strong>${projectName}</strong> project as a <span style="background-color: #312e81; color: #a5b4fc; padding: 2px 8px; border-radius: 6px; font-weight: 600; text-transform: capitalize;">${role}</span>.
+          <strong>${safeInviterName}</strong> has invited you to collaborate on the <strong>${safeProjectName}</strong> project as a <span style="background-color: #312e81; color: #a5b4fc; padding: 2px 8px; border-radius: 6px; font-weight: 600; text-transform: capitalize;">${safeRole}</span>.
         </p>
-        ${message ? `<div style="background-color: #0f172a; border-left: 3px solid #6366f1; padding: 14px 16px; margin: 0 0 24px; border-radius: 0 8px 8px 0; font-size: 13px; color: #94a3b8; font-style: italic;">
-                "${message}"
+        ${safeMessage ? `<div style="background-color: #0f172a; border-left: 3px solid #6366f1; padding: 14px 16px; margin: 0 0 24px; border-radius: 0 8px 8px 0; font-size: 13px; color: #94a3b8; font-style: italic;">
+                "${safeMessage}"
                </div>` : ""}
         <div style="text-align: center; margin: 32px 0;">
-          <a href="${invitationUrl}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);">
+          <a href="${safeInvitationUrl}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);">
             Accept Invitation & Join Project
           </a>
         </div>
@@ -51047,7 +51260,7 @@ async function canUserManageProject(userId, projectId) {
   return { allowed: false };
 }
 function hashToken(rawToken) {
-  return import_crypto2.default.createHash("sha256").update(rawToken).digest("hex");
+  return import_crypto3.default.createHash("sha256").update(rawToken).digest("hex");
 }
 invitationsRouter.post(
   "/projects/:projectId/invitations",
@@ -51123,9 +51336,9 @@ invitationsRouter.post(
           error: "A pending invitation already exists for this email address in this project"
         });
       }
-      const rawToken = import_crypto2.default.randomBytes(32).toString("hex");
+      const rawToken = import_crypto3.default.randomBytes(32).toString("hex");
       const tokenHash = hashToken(rawToken);
-      const inviteId = `inv-${Date.now()}-${import_crypto2.default.randomBytes(4).toString("hex")}`;
+      const inviteId = generateId("inv");
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3);
       const inviterRes = await query("SELECT full_name, username FROM users WHERE id = $1", [
         inviterId
@@ -51155,11 +51368,7 @@ invitationsRouter.post(
           designation ? String(designation).trim() : ""
         ]
       );
-      let originBase = getAppBaseUrl();
-      const originHeader = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
-      if (originHeader && !originHeader.includes("localhost") && !originHeader.includes("127.0.0.1")) {
-        originBase = originHeader.replace(/\/$/, "");
-      }
+      const originBase = getAppBaseUrl();
       const invitationUrl = `${originBase}/invitations/accept?token=${rawToken}`;
       let emailResult = { delivered: false };
       if (deliveryMethod === "email") {
@@ -51430,7 +51639,7 @@ invitationsRouter.post(
           error: `Email mismatch: You are signed in as "${user.email}", but this invitation was issued to "${inv.recipient_email}". Please sign in with the correct account to accept.`
         });
       }
-      const memberId = `pm-${Date.now()}-${import_crypto2.default.randomBytes(3).toString("hex")}`;
+      const memberId = generateId("pm");
       await client.query(
         `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
          VALUES ($1, $2, $3, $4, NOW())
@@ -51443,10 +51652,10 @@ invitationsRouter.post(
         `INSERT INTO team_members (id, name, email, role, avatar_url, initials)
          VALUES ($1, $2, $3, $4, '', $5)
          ON CONFLICT (id) DO UPDATE SET
-           name = EXCLUDED.name,
-           email = EXCLUDED.email,
-           role = EXCLUDED.role,
-           initials = EXCLUDED.initials`,
+            name = EXCLUDED.name,
+            email = EXCLUDED.email,
+            role = EXCLUDED.role,
+            initials = EXCLUDED.initials`,
         [user.id, user.full_name, user.email, memberRole, initials]
       );
       await client.query(
@@ -51455,7 +51664,7 @@ invitationsRouter.post(
          WHERE id = $2`,
         [user.id, inv.id]
       );
-      const activityId = `act-${Date.now()}-${import_crypto2.default.randomBytes(3).toString("hex")}`;
+      const activityId = generateId("act");
       await client.query(
         `INSERT INTO activities (id, user_id, project_id, task_id, type, task_title, user_name, details, at)
          VALUES ($1, $2, $3, 'system', 'project_updated', $4, $5, $6, NOW())`,
@@ -51468,7 +51677,7 @@ invitationsRouter.post(
           JSON.stringify({ action: "accepted_invitation", role: inv.role })
         ]
       );
-      const notifId = `notif-${Date.now()}-${import_crypto2.default.randomBytes(3).toString("hex")}`;
+      const notifId = generateId("notif");
       await client.query(
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, 'system', $5, $6, 'project', $7, FALSE, NOW())`,
@@ -51482,7 +51691,7 @@ invitationsRouter.post(
           inv.project_id
         ]
       );
-      const welcomeNotifId = `notif-${Date.now()}-${import_crypto2.default.randomBytes(3).toString("hex")}`;
+      const welcomeNotifId = generateId("notif");
       await client.query(
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, 'system', $5, $6, 'project', $7, FALSE, NOW())`,
@@ -51566,7 +51775,7 @@ invitationsRouter.post(
       if (inv.status === "accepted") {
         return res.status(400).json({ error: "Cannot resend an invitation that has already been accepted" });
       }
-      const rawToken = import_crypto2.default.randomBytes(32).toString("hex");
+      const rawToken = import_crypto3.default.randomBytes(32).toString("hex");
       const tokenHash = hashToken(rawToken);
       const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3);
       await query(
@@ -51578,11 +51787,7 @@ invitationsRouter.post(
       const inviterRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
       const inviterName = inviterRes.rows[0]?.full_name || inviterRes.rows[0]?.username || "A project manager";
       const { deliveryMethod = "link" } = req.body || {};
-      let originBase = getAppBaseUrl();
-      const originHeader = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
-      if (originHeader && !originHeader.includes("localhost") && !originHeader.includes("127.0.0.1")) {
-        originBase = originHeader.replace(/\/$/, "");
-      }
+      const originBase = getAppBaseUrl();
       const invitationUrl = `${originBase}/invitations/accept?token=${rawToken}`;
       let emailResult = { delivered: false };
       if (deliveryMethod === "email") {
@@ -51661,6 +51866,7 @@ invitationsRouter.post(
 // src/seed.ts
 var import_fs = __toESM(require("fs"));
 var import_path2 = __toESM(require("path"));
+var import_crypto4 = __toESM(require("crypto"));
 
 // src/schemaSql.ts
 var SCHEMA_SQL = `
@@ -52425,20 +52631,17 @@ async function seedDatabase(force = false) {
   const existingUsers = await query("SELECT COUNT(*) as count FROM users");
   const count = parseInt(existingUsers.rows[0]?.count || "0", 10);
   if (count > 0 && !force) {
-    console.log("\u2139\uFE0F Database schema up to date. Applying Nexus seed data...");
-  } else {
-    console.log("\u{1F331} Seeding TaskFlow Nexus Enterprise Database...");
+    console.log("\u2139\uFE0F Database already initialized with users. Preserving user accounts and passwords.");
+    return;
   }
+  console.log("\u{1F331} Initializing TaskFlow Nexus seed data...");
   const defaultUserId = "user-om";
-  const defaultPasswordHash = await bcryptjs_default.hash("thakkar2912", 10);
+  const initialAdminPass = process.env.ADMIN_INITIAL_PASSWORD || (process.env.NODE_ENV === "production" ? import_crypto4.default.randomBytes(16).toString("hex") : "DevAdmin#2026!");
+  const defaultPasswordHash = await bcryptjs_default.hash(initialAdminPass, 10);
   await query(
     `INSERT INTO users (id, username, full_name, email, avatar_url, password_hash, role)
      VALUES ($1, $2, $3, $4, $5, $6, 'admin')
-     ON CONFLICT (username) DO UPDATE SET
-       full_name = EXCLUDED.full_name,
-       email = EXCLUDED.email,
-       password_hash = EXCLUDED.password_hash,
-       role = 'admin';`,
+     ON CONFLICT (username) DO NOTHING;`,
     [defaultUserId, "omthakkar", "Om Thakkar", "omthakkar@example.com", "", defaultPasswordHash]
   );
   for (const m of SEED_TEAM_MEMBERS) {
@@ -52453,13 +52656,12 @@ async function seedDatabase(force = false) {
     );
     if (m.id === "team-om" || m.email === "omthakkar@example.com") continue;
     const username = m.email.split("@")[0].replace(".", "");
+    const memberPasswordHash = await bcryptjs_default.hash(import_crypto4.default.randomBytes(16).toString("hex"), 10);
     await query(
       `INSERT INTO users (id, username, full_name, email, password_hash, role)
        VALUES ($1, $2, $3, $4, $5, 'member')
-       ON CONFLICT (username) DO UPDATE SET
-         full_name = EXCLUDED.full_name,
-         email = EXCLUDED.email`,
-      [m.id, username, m.name, m.email, defaultPasswordHash]
+       ON CONFLICT (username) DO NOTHING;`,
+      [m.id, username, m.name, m.email, memberPasswordHash]
     );
   }
   for (const p of SEED_PROJECTS) {
@@ -52812,14 +53014,29 @@ if (process.argv[1] && process.argv[1].endsWith("seed.ts")) {
 import_dotenv2.default.config();
 var app = (0, import_express9.default)();
 var PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4e3;
+app.set("trust proxy", 1);
+var allowedOrigins = [
+  process.env.APP_BASE_URL,
+  process.env.PUBLIC_APP_URL,
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173"
+].filter(Boolean);
 app.use(
   (0, import_cors.default)({
-    origin: true,
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin) return callback(null, true);
+      if (process.env.NODE_ENV !== "production" || allowedOrigins.includes(requestOrigin) || requestOrigin.endsWith(".vercel.app")) {
+        return callback(null, true);
+      }
+      return callback(new Error("Blocked by CORS policy"));
+    },
     credentials: true
   })
 );
-app.use(import_express9.default.json({ limit: "25mb" }));
-app.use(import_express9.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express9.default.json({ limit: "2mb" }));
+app.use(import_express9.default.urlencoded({ extended: true, limit: "2mb" }));
 app.use((0, import_cookie_parser.default)());
 app.use((req, res, next) => {
   const start = Date.now();
@@ -52844,7 +53061,7 @@ var handleHealth = async (req, res) => {
     res.status(500).json({
       status: "error",
       database: "disconnected",
-      message: err.message
+      message: process.env.NODE_ENV === "production" ? "Database connection error" : err.message
     });
   }
 };
@@ -52867,12 +53084,30 @@ app.get("/api/health", handleHealth);
 app.get("/health", handleHealth);
 app.get("/api/settings/email-status", handleEmailStatus);
 app.get("/settings/email-status", handleEmailStatus);
-app.all(["/api/admin/migrate", "/admin/migrate"], async (req, res) => {
+app.post(["/api/admin/migrate", "/admin/migrate"], requireAuth, async (req, res) => {
   try {
-    await seedDatabase(true);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ status: "error", message: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId);
+    if (!isLead) {
+      return res.status(403).json({ status: "error", message: "Forbidden: Admin privileges required" });
+    }
+    const migrationSecret = process.env.ADMIN_MIGRATION_SECRET;
+    if (migrationSecret) {
+      const headerSecret = req.headers["x-migration-secret"];
+      if (headerSecret !== migrationSecret) {
+        return res.status(403).json({ status: "error", message: "Forbidden: Invalid migration secret" });
+      }
+    }
+    await seedDatabase(false);
     res.json({ status: "ok", message: "Database schema migration executed successfully" });
   } catch (err) {
-    res.status(500).json({ status: "error", message: err.message });
+    res.status(500).json({
+      status: "error",
+      message: process.env.NODE_ENV === "production" ? "Migration execution failed" : err.message
+    });
   }
 });
 app.get("/", (req, res) => res.json({ name: "TaskFlow Nexus Enterprise API", status: "ok" }));

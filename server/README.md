@@ -83,6 +83,6 @@ npm run dev
 
 ---
 
-## 🔒 User Isolation
+## 🔒 Authentication & Authorization
 
-The API supports an optional `x-user-id` HTTP header. If omitted, it defaults to `"user-om"` (Om Thakkar). When different users log in on the frontend, each user's tasks, comments, and activities remain strictly scoped to their account in PostgreSQL.
+All API endpoints are protected using standard JWT Bearer tokens or `httpOnly` authentication cookies (`taskflow_token`). Unauthenticated requests are rejected with `401 Unauthorized`. Users only have access to projects, tasks, comments, and activities permitted by their workspace and project roles.

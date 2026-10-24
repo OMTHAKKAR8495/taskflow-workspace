@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { pool, query } from "./db.js";
 import { SCHEMA_SQL } from "./schemaSql.js";
 
@@ -485,26 +486,26 @@ export async function seedDatabase(force = false) {
     await query(SCHEMA_SQL);
   }
 
-  // Check if force is requested or if projects need updating
+  // Check if force is requested or if users already exist
   const existingUsers = await query("SELECT COUNT(*) as count FROM users");
   const count = parseInt(existingUsers.rows[0]?.count || "0", 10);
   if (count > 0 && !force) {
-    console.log("ℹ️ Database schema up to date. Applying Nexus seed data...");
-  } else {
-    console.log("🌱 Seeding TaskFlow Nexus Enterprise Database...");
+    console.log("ℹ️ Database already initialized with users. Preserving user accounts and passwords.");
+    return;
   }
+
+  console.log("🌱 Initializing TaskFlow Nexus seed data...");
 
   // 2. Ensure default users exist with bcrypt hash
   const defaultUserId = "user-om";
-  const defaultPasswordHash = await bcrypt.hash("thakkar2912", 10);
+  const initialAdminPass =
+    process.env.ADMIN_INITIAL_PASSWORD ||
+    (process.env.NODE_ENV === "production" ? crypto.randomBytes(16).toString("hex") : "DevAdmin#2026!");
+  const defaultPasswordHash = await bcrypt.hash(initialAdminPass, 10);
   await query(
     `INSERT INTO users (id, username, full_name, email, avatar_url, password_hash, role)
      VALUES ($1, $2, $3, $4, $5, $6, 'admin')
-     ON CONFLICT (username) DO UPDATE SET
-       full_name = EXCLUDED.full_name,
-       email = EXCLUDED.email,
-       password_hash = EXCLUDED.password_hash,
-       role = 'admin';`,
+     ON CONFLICT (username) DO NOTHING;`,
     [defaultUserId, "omthakkar", "Om Thakkar", "omthakkar@example.com", "", defaultPasswordHash],
   );
 
@@ -523,15 +524,14 @@ export async function seedDatabase(force = false) {
     // Skip creating duplicate user account for Om Thakkar
     if (m.id === "team-om" || m.email === "omthakkar@example.com") continue;
 
-    // Ensure each team member has a corresponding user account for assignment & login
+    // Ensure each team member has their own distinct account with a unique random password
     const username = m.email.split("@")[0].replace(".", "");
+    const memberPasswordHash = await bcrypt.hash(crypto.randomBytes(16).toString("hex"), 10);
     await query(
       `INSERT INTO users (id, username, full_name, email, password_hash, role)
        VALUES ($1, $2, $3, $4, $5, 'member')
-       ON CONFLICT (username) DO UPDATE SET
-         full_name = EXCLUDED.full_name,
-         email = EXCLUDED.email`,
-      [m.id, username, m.name, m.email, defaultPasswordHash],
+       ON CONFLICT (username) DO NOTHING;`,
+      [m.id, username, m.name, m.email, memberPasswordHash],
     );
   }
 

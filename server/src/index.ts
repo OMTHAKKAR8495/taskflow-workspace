@@ -14,21 +14,47 @@ import { isEmailConfigured, getAppBaseUrl } from "./email.js";
 import { pool, query } from "./db.js";
 import { seedDatabase } from "./seed.js";
 
+import { requireAuth, type AuthenticatedRequest } from "./auth.js";
+import { isWorkspaceAdminOrLead } from "./permissions.js";
+
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
 
-// Enable CORS for frontend Vite dev server
+// Trust reverse proxy (Vercel / Cloudflare / Nginx) for accurate IP resolution
+app.set("trust proxy", 1);
+
+// Allowed origins for credentialed CORS
+const allowedOrigins = [
+  process.env.APP_BASE_URL,
+  process.env.PUBLIC_APP_URL,
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173",
+].filter(Boolean) as string[];
+
 app.use(
   cors({
-    origin: true,
+    origin: (requestOrigin, callback) => {
+      // Allow requests with no origin (e.g. server-to-server, curl)
+      if (!requestOrigin) return callback(null, true);
+      if (
+        process.env.NODE_ENV !== "production" ||
+        allowedOrigins.includes(requestOrigin) ||
+        requestOrigin.endsWith(".vercel.app")
+      ) {
+        return callback(null, true);
+      }
+      return callback(new Error("Blocked by CORS policy"));
+    },
     credentials: true,
   }),
 );
 
-app.use(express.json({ limit: "25mb" }));
-app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use(cookieParser());
 
 // Request logger in dev
@@ -57,7 +83,7 @@ const handleHealth = async (req: express.Request, res: express.Response) => {
     res.status(500).json({
       status: "error",
       database: "disconnected",
-      message: err.message,
+      message: process.env.NODE_ENV === "production" ? "Database connection error" : err.message,
     });
   }
 };
@@ -88,12 +114,32 @@ app.get("/api/health", handleHealth);
 app.get("/health", handleHealth);
 app.get("/api/settings/email-status", handleEmailStatus);
 app.get("/settings/email-status", handleEmailStatus);
-app.all(["/api/admin/migrate", "/admin/migrate"], async (req, res) => {
+
+// Protected admin migration endpoint (POST only, requires authentication & admin role)
+app.post(["/api/admin/migrate", "/admin/migrate"], requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    await seedDatabase(true);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ status: "error", message: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId);
+    if (!isLead) {
+      return res.status(403).json({ status: "error", message: "Forbidden: Admin privileges required" });
+    }
+    const migrationSecret = process.env.ADMIN_MIGRATION_SECRET;
+    if (migrationSecret) {
+      const headerSecret = req.headers["x-migration-secret"];
+      if (headerSecret !== migrationSecret) {
+        return res.status(403).json({ status: "error", message: "Forbidden: Invalid migration secret" });
+      }
+    }
+    await seedDatabase(false);
     res.json({ status: "ok", message: "Database schema migration executed successfully" });
   } catch (err: any) {
-    res.status(500).json({ status: "error", message: err.message });
+    res.status(500).json({
+      status: "error",
+      message: process.env.NODE_ENV === "production" ? "Migration execution failed" : err.message,
+    });
   }
 });
 app.get("/", (req, res) => res.json({ name: "TaskFlow Nexus Enterprise API", status: "ok" }));
