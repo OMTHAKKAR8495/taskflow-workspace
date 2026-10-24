@@ -354,6 +354,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
+          "x-user-id": user.id,
+          "x-user-role": targetRole,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         credentials: "include",

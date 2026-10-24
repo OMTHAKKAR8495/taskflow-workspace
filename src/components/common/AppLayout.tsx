@@ -48,7 +48,7 @@ import {
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
-import { cn } from "@/lib/utils";
+import { cn, parseSafeDate } from "@/lib/utils";
 import { isOverdue } from "@/lib/task-utils";
 import { NotificationsBell } from "@/components/common/NotificationsBell";
 import { CommandPalette } from "@/components/common/CommandPalette";
@@ -270,8 +270,8 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
         color: projectColor,
         priority: projectPriority,
         status: projectStatus,
-        startDate: projectStartDate ? new Date(projectStartDate).toISOString() : null,
-        deadline: projectDueDate ? new Date(projectDueDate).toISOString() : null,
+        startDate: parseSafeDate(projectStartDate),
+        deadline: parseSafeDate(projectDueDate),
         health: "on_track",
         progress: 0,
       });
