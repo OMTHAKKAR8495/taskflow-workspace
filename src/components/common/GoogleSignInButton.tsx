@@ -98,27 +98,30 @@ export function GoogleSignInButton({ label = "Continue with Google" }: { label?:
   const handleManualClick = async () => {
     setLoading(true);
     try {
-      if (window.google?.accounts?.id) {
+      if (window.google?.accounts?.id && activeClientId) {
         window.google.accounts.id.prompt((notification: any) => {
           if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            getGoogleLoginUrl().then((url) => {
-              window.location.href = url;
-            });
+            getGoogleLoginUrl()
+              .then((url) => {
+                window.location.href = url;
+              })
+              .catch((err) => {
+                toast.error(err?.message || "Google Sign-In is not configured yet.");
+                setLoading(false);
+              });
           }
         });
       } else {
         const url = await getGoogleLoginUrl();
         window.location.href = url;
       }
-    } catch (e) {
-      console.error(e);
-      try {
-        const url = await getGoogleLoginUrl();
-        window.location.href = url;
-      } catch {
-        toast.error("Unable to initialize Google Sign-In redirect.");
-        setLoading(false);
-      }
+    } catch (e: any) {
+      console.error("Google sign in trigger error:", e);
+      toast.error(
+        e?.message ||
+          "Google Sign-In is not configured on this deployment. Please set GOOGLE_CLIENT_ID in Vercel settings.",
+      );
+      setLoading(false);
     }
   };
 
