@@ -6,7 +6,6 @@ import {
   FolderKanban,
   Users,
   Calendar,
-  BarChart3,
   Bell,
   Settings,
   Menu,
@@ -231,20 +230,6 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
       active: pathname.startsWith("/my-work"),
       badge: needsReviewCount > 0 ? `${needsReviewCount}` : undefined,
       badgeColor: "bg-purple-500/20 text-purple-300 border-purple-500/30",
-    },
-    {
-      id: "activity",
-      label: "Activity",
-      href: "/dashboard#activity",
-      icon: Clock,
-      active: false,
-    },
-    {
-      id: "reports",
-      label: "Reports",
-      href: "/reports",
-      icon: BarChart3,
-      active: pathname.startsWith("/reports"),
     },
     {
       id: "settings",
