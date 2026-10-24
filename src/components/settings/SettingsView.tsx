@@ -41,25 +41,29 @@ export function SettingsView() {
     return connectionStatus.subscribe((m) => setBackendMode(m));
   }, []);
 
-  const handleCheckHealth = async () => {
-    setTestingConnection(true);
+  const handleCheckHealth = async (interactive = false) => {
+    if (interactive) setTestingConnection(true);
     try {
       const res = await fetch(`${getApiBaseUrl()}/health`);
       if (res.ok) {
         const data = await res.json();
         setHealthInfo(data);
         connectionStatus.setMode("connected");
-        toast.success("PostgreSQL backend is connected and healthy!");
-        void reload();
+        if (interactive) {
+          toast.success("PostgreSQL backend is connected and healthy!");
+          void reload();
+        }
       } else {
         throw new Error("API returned non-200");
       }
     } catch (err: any) {
       setHealthInfo({ status: "disconnected", message: err.message });
       connectionStatus.setMode("offline");
-      toast.warning("API server unreachable, fallback mode active.");
+      if (interactive) {
+        toast.warning("API server unreachable, fallback mode active.");
+      }
     } finally {
-      setTestingConnection(false);
+      if (interactive) setTestingConnection(false);
     }
   };
 
@@ -203,7 +207,7 @@ export function SettingsView() {
           <Button
             size="sm"
             variant="outline"
-            onClick={handleCheckHealth}
+            onClick={() => handleCheckHealth(true)}
             disabled={testingConnection}
             className="text-xs gap-1.5 cursor-pointer h-8"
           >

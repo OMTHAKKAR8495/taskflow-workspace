@@ -318,7 +318,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
     <div className="flex h-full flex-col bg-slate-950 text-slate-300">
       {/* Brand Header */}
       <div className="flex h-16 items-center justify-between border-b border-slate-800/80 px-5">
-        <Link to="/dashboard" className="flex items-center gap-2.5">
+        <Link to="/dashboard" preload="intent" className="flex items-center gap-2.5">
           <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white shadow-md shadow-indigo-600/30">
             <Sparkles className="size-5" />
           </div>
@@ -349,6 +349,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               <Link
                 key={item.id}
                 to={item.href}
+                preload="intent"
                 onClick={() => setMobileOpen(false)}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold transition-all group",
@@ -412,6 +413,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                       key={proj.id}
                       to="/projects/$id"
                       params={{ id: proj.id }}
+                      preload="intent"
                       onClick={() => setMobileOpen(false)}
                       className={cn(
                         "flex items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium transition-all group",
@@ -438,6 +440,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                 {projects.length > 6 && (
                   <Link
                     to="/projects"
+                    preload="intent"
                     onClick={() => setMobileOpen(false)}
                     className="block px-3 py-1 text-[11px] font-medium text-indigo-400 hover:underline"
                   >
@@ -462,6 +465,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                 <div className="space-y-0.5">
                   <Link
                     to="/tasks"
+                    preload="intent"
                     onClick={() => {
                       setActiveFilter("all");
                       setMobileOpen(false);
@@ -550,6 +554,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
 
         <Link
           to="/profile"
+          preload="intent"
           className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-slate-900"
         >
           <Avatar className="size-8 border border-slate-700">
@@ -606,7 +611,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                     <span key={crumb.label} className="flex items-center gap-1.5">
                       {idx > 0 && <span>/</span>}
                       {crumb.href ? (
-                        <Link to={crumb.href} className="hover:text-foreground transition-colors font-medium">
+                        <Link to={crumb.href} preload="intent" className="hover:text-foreground transition-colors font-medium">
                           {crumb.label}
                         </Link>
                       ) : (
@@ -744,7 +749,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/profile" className="flex items-center gap-2 cursor-pointer">
+                  <Link to="/profile" preload="intent" className="flex items-center gap-2 cursor-pointer">
                     <User className="size-4" />
                     <span>My Profile</span>
                   </Link>
@@ -757,7 +762,7 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                   <span>Export & Import Data</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link to="/settings" className="flex items-center gap-2 cursor-pointer">
+                  <Link to="/settings" preload="intent" className="flex items-center gap-2 cursor-pointer">
                     <Settings className="size-4" />
                     <span>Workspace Settings</span>
                   </Link>
