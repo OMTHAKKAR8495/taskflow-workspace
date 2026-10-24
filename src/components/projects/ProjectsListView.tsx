@@ -40,7 +40,7 @@ import {
 import type { Project, TaskPriority } from "@/types";
 
 export function ProjectsListView() {
-  const { projects, createProject, archiveProject, deleteProject } = useTasks();
+  const { projects, createProject, archiveProject, deleteProject, state, reload } = useTasks();
   const navigate = useNavigate();
 
   const [search, setSearch] = useState("");
@@ -253,7 +253,23 @@ export function ProjectsListView() {
       </div>
 
       {/* Projects Grid */}
-      {filteredProjects.length === 0 ? (
+      {state === "loading" && projects.length === 0 ? (
+        <div className="rounded-2xl border border-dashed p-16 text-center bg-card/40 flex flex-col items-center justify-center">
+          <Loader2 className="size-8 animate-spin text-primary mb-3" />
+          <p className="text-sm font-medium text-muted-foreground">Loading workspace projects from Supabase database...</p>
+        </div>
+      ) : state === "error" && projects.length === 0 ? (
+        <div className="rounded-2xl border border-red-500/20 p-12 text-center bg-red-500/5">
+          <AlertTriangle className="mx-auto size-12 text-red-500 mb-3" />
+          <h3 className="text-base font-semibold text-foreground">Database Connection Error</h3>
+          <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">
+            Unable to load projects from the Supabase database. Please verify your connection or authentication.
+          </p>
+          <Button onClick={() => void reload()} variant="outline" className="mt-4 gap-2 text-xs">
+            Retry Connection
+          </Button>
+        </div>
+      ) : filteredProjects.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-12 text-center bg-card/40">
           <FolderKanban className="mx-auto size-12 text-muted-foreground/40 mb-3" />
           <h3 className="text-base font-semibold text-foreground">No projects found</h3>

@@ -40,7 +40,7 @@ export const SEED_PROJECTS: Project[] = [
   },
   {
     id: "proj-security",
-    name: "Security & Compliance",
+    name: "Security & Enterprise Compliance",
     key: "SEC",
     description: "Role-based access control, cryptographic verification, and audit trail logging.",
     color: "#ec4899", // Rose

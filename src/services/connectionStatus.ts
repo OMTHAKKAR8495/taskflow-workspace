@@ -2,7 +2,7 @@ import { getApiBaseUrl } from "@/lib/api-config";
 
 export type BackendMode = "connected" | "offline";
 
-let currentMode: BackendMode = "offline";
+let currentMode: BackendMode = "connected";
 const listeners = new Set<(mode: BackendMode) => void>();
 
 export const connectionStatus = {

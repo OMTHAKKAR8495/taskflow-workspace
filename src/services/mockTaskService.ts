@@ -47,21 +47,6 @@ function getSharedProjects(): Project[] | null {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-
-    // Recover any custom projects previously saved under user keys (like taskflow:store:user-om)
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const k = window.localStorage.key(i);
-      if (k && k.startsWith("taskflow:store:")) {
-        const storedRaw = window.localStorage.getItem(k);
-        if (storedRaw) {
-          const s = JSON.parse(storedRaw);
-          if (s && Array.isArray(s.projects) && s.projects.length > 4) {
-            saveSharedProjects(s.projects);
-            return s.projects;
-          }
-        }
-      }
-    }
   } catch {}
   return null;
 }

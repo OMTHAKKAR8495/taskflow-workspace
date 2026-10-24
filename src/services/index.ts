@@ -14,35 +14,36 @@ export { connectionStatus };
  */
 class ResilientTaskService implements TaskService {
   private async execute<T>(apiCall: () => Promise<T>, mockCall: () => Promise<T>): Promise<T> {
-    const isOffline = connectionStatus.getMode() === "offline";
-    const token = typeof window !== "undefined" ? localStorage.getItem("taskflow:jwt_token") : null;
-
-    // Fast-path: When known to be offline and no backend JWT token is held,
-    // don't incur failing network round-trips; serve instantly from local mock storage.
-    if (isOffline && !token) {
-      return await mockCall();
-    }
+    const isTest = typeof process !== "undefined" && (process.env?.NODE_ENV === "test" || process.env?.VITEST === "true");
 
     try {
       const res = await apiCall();
       connectionStatus.setMode("connected");
       return res;
     } catch (err: unknown) {
-      // Re-throw genuine client validation errors on authenticated operations (e.g. 400 Bad Request, 409 Conflict, 422 Unprocessable)
-      // BUT if the error is 401 Unauthorized (unauthenticated/offline login), 403 Forbidden, or a network/server failure (5xx),
-      // gracefully fall back to mockTaskService so user projects and tasks remain accessible in local mode.
-      if (
-        err instanceof ApiError &&
-        err.status !== 401 &&
-        err.status !== 403 &&
-        err.status >= 400 &&
-        err.status < 500
-      ) {
+      if (isTest) {
+        return await mockCall();
+      }
+
+      // If backend reports 401 Unauthorized, notify auth system and re-throw
+      if (err instanceof ApiError && err.status === 401) {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("taskflow:jwt_token");
+          window.dispatchEvent(new CustomEvent("taskflow:unauthorized"));
+        }
         throw err;
       }
-      console.warn("Backend API unavailable or unauthenticated, operating in offline local mode:", err);
+
+      // Re-throw client validation errors (400, 403, 409, 422, etc.)
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
+        throw err;
+      }
+
+      console.error("Backend database API error:", err);
       connectionStatus.setMode("offline");
-      return await mockCall();
+
+      // In production, never silently replace real database data with mock fixtures.
+      throw err;
     }
   }
 
