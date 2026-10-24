@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { getApiBaseUrl } from "@/lib/api-config";
+import { taskService } from "@/services";
 
 export function SettingsView() {
   const { theme, setTheme } = useTheme();

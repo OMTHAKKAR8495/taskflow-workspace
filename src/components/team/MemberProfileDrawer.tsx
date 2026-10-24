@@ -69,7 +69,7 @@ export function MemberProfileDrawer({
       if (t.assigneeId && t.assigneeId.toLowerCase() === mid) return true;
       if (t.assignee?.id && t.assignee.id.toLowerCase() === mid) return true;
       if (t.assignee?.email && memail && t.assignee.email.toLowerCase() === memail) return true;
-      if (t.assigneeName && mname && t.assigneeName.toLowerCase() === mname) return true;
+      if ((t as any).assigneeName && mname && (t as any).assigneeName.toLowerCase() === mname) return true;
       if ((t as any).assignee_id && (t as any).assignee_id.toLowerCase() === mid) return true;
       return false;
     });
