@@ -456,29 +456,33 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const createProject = useCallback(async (data: Partial<Project>) => {
     const p = await taskService.createProject(data);
     setProjects((prev) => [...prev, p]);
+    void reload();
     toast.success(`Project "${p.name}" created!`);
     return p;
-  }, []);
+  }, [reload]);
 
   const updateProject = useCallback(async (id: string, data: Partial<Project>) => {
     const p = await taskService.updateProject(id, data);
     setProjects((prev) => prev.map((x) => (x.id === id ? p : x)));
+    void reload();
     toast.success(`Project "${p.name}" updated!`);
     return p;
-  }, []);
+  }, [reload]);
 
   const archiveProject = useCallback(async (id: string) => {
     const p = await taskService.archiveProject(id);
     setProjects((prev) => prev.map((x) => (x.id === id ? p : x)));
+    void reload();
     toast.success(p.status === "archived" ? "Project archived" : "Project restored");
     return p;
-  }, []);
+  }, [reload]);
 
   const deleteProject = useCallback(async (id: string) => {
     await taskService.deleteProject(id);
     setProjects((prev) => prev.filter((x) => x.id !== id));
+    void reload();
     toast.success("Project deleted");
-  }, []);
+  }, [reload]);
 
   const markNotificationRead = useCallback(async (id: string) => {
     if (taskService.markNotificationRead) {

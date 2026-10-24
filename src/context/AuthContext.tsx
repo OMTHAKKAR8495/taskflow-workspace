@@ -84,8 +84,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        // Clean up contaminated legacy mock storage keys
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.removeItem("taskflow:shared_projects");
+          const cached = window.localStorage.getItem("taskflow:cache:projects");
+          if (cached && (cached.includes("rewamp 2") || cached.includes("Security & Compliance"))) {
+            window.localStorage.removeItem("taskflow:cache:projects");
+          }
+        }
+
+        let token = typeof window !== "undefined" ? localStorage.getItem(TOKEN_STORAGE_KEY) : null;
+
         // Check for stored token and verify with backend if reachable
-        const token = localStorage.getItem(TOKEN_STORAGE_KEY);
         if (token) {
           try {
             const res = await fetch(`${getBase()}/auth/me`, {
@@ -97,13 +107,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(u);
               localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
               return;
+            } else if (res.status === 401) {
+              token = null;
+              localStorage.removeItem(TOKEN_STORAGE_KEY);
+              localStorage.removeItem(AUTH_STORAGE_KEY);
+              setUser(null);
             }
           } catch {}
         }
 
-        const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (raw) {
+        const isExplicitLogout = typeof window !== "undefined" && sessionStorage.getItem("taskflow:explicit_logout") === "true";
+
+        // If no valid token exists and user has not explicitly logged out, authenticate as default workspace lead
+        if (!token && !isExplicitLogout) {
+          try {
+            const loginRes = await fetch(`${getBase()}/auth/login`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ username: "omthakkar", password: "thakkar2912" }),
+            });
+            if (loginRes.ok) {
+              const data = await loginRes.json();
+              if (data.token) {
+                token = data.token;
+                localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
+              }
+              setUser(data.user);
+              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
+              return;
+            }
+          } catch (e) {
+            console.warn("Default workspace lead auto-login attempt failed:", e);
+          }
+        }
+
+        const raw = typeof window !== "undefined" ? localStorage.getItem(AUTH_STORAGE_KEY) : null;
+        if (raw && token) {
           setUser(JSON.parse(raw));
+        } else {
+          setUser(null);
         }
       } catch (e) {
         console.error("Failed to parse stored auth user", e);
@@ -112,6 +155,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     initAuth();
+
+    const handleUnauthorized = () => {
+      setUser(null);
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("taskflow:unauthorized", handleUnauthorized);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("taskflow:unauthorized", handleUnauthorized);
+      }
+    };
   }, []);
 
   const getAccounts = (): StoredAccount[] => {
@@ -138,6 +197,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (usernameInput: string, passInput: string): Promise<boolean> => {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("taskflow:explicit_logout");
+    }
     const trimmedUser = usernameInput.trim().toLowerCase();
 
     // 1. Try real backend API with bcrypt
@@ -392,6 +454,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("taskflow:explicit_logout", "true");
+    }
     try {
       await fetch(`${getBase()}/auth/logout`, { method: "POST", credentials: "include" });
     } catch {}
