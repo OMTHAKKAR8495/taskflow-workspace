@@ -19,12 +19,15 @@ function getNormalizedDatabaseUrl(): string | undefined {
   let url = process.env.DATABASE_URL;
   if (!url) return undefined;
 
-  // Automatically migrate legacy IPv6-only Supabase direct host to IPv4 Supavisor pooler
-  if (url.includes("db.ciqhtdrunnnwsiyobtvp.supabase.co")) {
+  // Generic migration from direct host to Supavisor pooler if needed
+  const directMatch = url.match(/db\.([a-z0-9]+)\.supabase\.co/i);
+  if (directMatch) {
+    const ref = directMatch[1];
+    const region = process.env.SUPABASE_REGION || "aws-0-ap-northeast-1";
     url = url
-      .replace("postgres:", "postgres.ciqhtdrunnnwsiyobtvp:")
-      .replace("db.ciqhtdrunnnwsiyobtvp.supabase.co:5432", "aws-0-ap-northeast-1.pooler.supabase.com:6543")
-      .replace("db.ciqhtdrunnnwsiyobtvp.supabase.co", "aws-0-ap-northeast-1.pooler.supabase.com:6543");
+      .replace("postgres:", `postgres.${ref}:`)
+      .replace(`db.${ref}.supabase.co:5432`, `${region}.pooler.supabase.com:6543`)
+      .replace(`db.${ref}.supabase.co`, `${region}.pooler.supabase.com:6543`);
   }
 
   // Switch Supavisor pooler from session mode (port 5432) to transaction mode (port 6543)
@@ -46,13 +49,18 @@ const isRemoteDb = Boolean(
       process.env.DB_SSL === "true")
 );
 
+const rejectUnauthorized =
+  process.env.DB_ALLOW_INSECURE_TLS === "true"
+    ? false
+    : process.env.DB_REJECT_UNAUTHORIZED !== "false";
+
 export const pool = new Pool({
   connectionString:
     resolvedDbUrl ||
     `postgresql://${process.env.PGUSER || process.env.USER || "postgres"}:${process.env.PGPASSWORD || ""}@${
       process.env.PGHOST || "localhost"
     }:${process.env.PGPORT || 5432}/${process.env.PGDATABASE || "taskflow_db"}`,
-  ssl: isRemoteDb ? { rejectUnauthorized: false } : undefined,
+  ssl: isRemoteDb ? { rejectUnauthorized } : undefined,
   max: process.env.VERCEL ? 3 : 10,
   idleTimeoutMillis: 10000,
   connectionTimeoutMillis: 10000,

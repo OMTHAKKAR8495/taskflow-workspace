@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { query } from "../db.js";
-import { extractToken, verifyToken, optionalAuth, requireAuth, type AuthenticatedRequest } from "../auth.js";
+import { requireAuth, generateId, type AuthenticatedRequest } from "../auth.js";
 import { wouldCreateCycle } from "../dependencies.js";
 import {
   canUserEditTask,
@@ -24,15 +24,7 @@ export const VALID_STATUSES = [
 export const VALID_PRIORITIES = ["critical", "high", "medium", "low"];
 
 function getUserId(req: AuthenticatedRequest): string {
-  if (req.user?.userId) return req.user.userId;
-  if (req.userId) return req.userId;
-  const token = extractToken(req);
-  if (token) {
-    const decoded = verifyToken(token);
-    if (decoded?.userId) return decoded.userId;
-  }
-  const custom = req.headers["x-user-id"] as string;
-  return custom && custom.trim() ? custom.trim() : "user-om";
+  return req.user?.userId || req.userId || "";
 }
 
 function formatTask(
@@ -184,12 +176,15 @@ function formatTask(
 }
 
 // 1. GET /tasks/stats - Get dashboard statistics
-router.get("/stats", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/stats", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { projectId } = req.query;
 
-    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId, req.user);
     let isProjLead = false;
     if (projectId && typeof projectId === "string" && projectId !== "all") {
       isProjLead = await isProjectLeader(userId, projectId);
@@ -264,9 +259,12 @@ router.get("/stats", optionalAuth, async (req: AuthenticatedRequest, res: Respon
 });
 
 // 2. GET /tasks/my-work - Cockpit for current user
-router.get("/my-work", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/my-work", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
     const userTasksRes = await query(
       `SELECT * FROM tasks
@@ -327,10 +325,13 @@ router.get("/my-work", optionalAuth, async (req: AuthenticatedRequest, res: Resp
 });
 
 // 2b. GET /tasks/review-queue - Tasks awaiting team leader review
-router.get("/review-queue", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/review-queue", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
-    const isLead = await isWorkspaceAdminOrLead(userId);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
 
     let sql = `SELECT t.*,
               (SELECT json_build_object(
@@ -375,12 +376,15 @@ router.get("/review-queue", optionalAuth, async (req: AuthenticatedRequest, res:
 });
 
 // 3. GET /tasks - List tasks with project, status, and search filters
-router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { projectId, status, priority, assigneeId, search, isTrash } = req.query;
 
-    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId, req.user);
     let isProjLead = false;
     if (projectId && typeof projectId === "string" && projectId !== "all") {
       isProjLead = await isProjectLeader(userId, projectId);
@@ -430,30 +434,42 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 
     sql += " ORDER BY created_at DESC";
 
-    // Fetch tasks, comments, and dependencies in parallel to minimize cross-region latency
-    const [tasksRes, commentsRes, depsRes] = await Promise.all([
-      query(sql, params),
-      query("SELECT * FROM task_comments ORDER BY created_at ASC"),
-      query(
-        `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
-         FROM task_dependencies td
-         JOIN tasks t ON td.depends_on_task_id = t.id`,
-      ),
-    ]);
+    const tasksRes = await query(sql, params);
+    const taskRows = tasksRes.rows;
+    const taskIds = taskRows.map((r: any) => r.id);
+
+    let commentsRows: any[] = [];
+    let depsRows: any[] = [];
+
+    if (taskIds.length > 0) {
+      // Scalable query: Fetch ONLY comments and dependencies for the returned task IDs
+      const [commentsRes, depsRes] = await Promise.all([
+        query("SELECT * FROM task_comments WHERE task_id = ANY($1) ORDER BY created_at ASC", [taskIds]),
+        query(
+          `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
+           FROM task_dependencies td
+           JOIN tasks t ON td.depends_on_task_id = t.id
+           WHERE td.task_id = ANY($1)`,
+          [taskIds],
+        ),
+      ]);
+      commentsRows = commentsRes.rows;
+      depsRows = depsRes.rows;
+    }
 
     const commentsByTask: Record<string, any[]> = {};
-    for (const c of commentsRes.rows) {
+    for (const c of commentsRows) {
       if (!commentsByTask[c.task_id]) commentsByTask[c.task_id] = [];
       commentsByTask[c.task_id].push(c);
     }
 
     const depsByTask: Record<string, any[]> = {};
-    for (const d of depsRes.rows) {
+    for (const d of depsRows) {
       if (!depsByTask[d.task_id]) depsByTask[d.task_id] = [];
       depsByTask[d.task_id].push(d);
     }
 
-    const tasks = tasksRes.rows.map((row) =>
+    const tasks = taskRows.map((row) =>
       formatTask(row, commentsByTask[row.id] || [], depsByTask[row.id] || []),
     );
 
@@ -465,10 +481,13 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 });
 
 // 4. GET /tasks/:id - Single task
-router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
@@ -620,7 +639,7 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
       }
     }
 
-    const taskId = `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const taskId = generateId("task");
     const now = new Date().toISOString();
 
     const result = await query(
@@ -669,7 +688,7 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     );
 
     // Record activity
-    const actId = `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const actId = generateId("act");
     await query(
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, 'task_created', $6, $7)`,
@@ -690,7 +709,7 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, created_at)
          VALUES ($1, $2, $3, $4, 'assignment', $5, $6, 'task', $7, $8)`,
         [
-          `notif-${Date.now()}`,
+          generateId("notif"),
           assigneeId,
           userId,
           req.user?.username || "A teammate",
@@ -919,7 +938,7 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, created_at)
          VALUES ($1, $2, $3, $4, 'review', $5, $6, 'task', $7, $8)`,
         [
-          `notif-${Date.now()}`,
+          generateId("notif"),
           reviewerId,
           userId,
           req.user?.username || "A teammate",
@@ -943,7 +962,7 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
-        `act-${Date.now()}`,
+        generateId("act"),
         userId,
         projectId || current.project_id,
         id,
@@ -978,6 +997,9 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
 router.post("/:id/status", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     const { status, blockedReason } = req.body;
 
@@ -1036,7 +1058,7 @@ router.post("/:id/status", requireAuth, async (req: AuthenticatedRequest, res: R
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, 'status_changed', $6, $7)`,
       [
-        `act-${Date.now()}`,
+        generateId("act"),
         userId,
         current.project_id,
         id,
@@ -1109,7 +1131,7 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
     const userRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
     const userName = userRes.rows[0]?.full_name || userRes.rows[0]?.username || "Team Member";
 
-    const updateId = `prog-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const updateId = generateId("prog");
     const now = new Date().toISOString();
     const completedAt = targetStatus === "completed" ? now : null;
     const cleanBlockedReason = targetStatus === "blocked" ? blockers.trim() : (task.status === "blocked" && targetStatus !== "blocked" ? "" : task.blocked_reason);
@@ -1186,7 +1208,7 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
       [
-        `act-${Date.now()}`,
+        generateId("act"),
         userId,
         task.project_id,
         id,
@@ -1204,7 +1226,7 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
       ],
     );
 
-    const recipientId = task.reviewer_id || (task.project_id ? (await query("SELECT owner_id FROM projects WHERE id = $1", [task.project_id])).rows[0]?.owner_id : "user-om") || "user-om";
+    const recipientId = task.reviewer_id || (task.project_id ? (await query("SELECT owner_id FROM projects WHERE id = $1", [task.project_id])).rows[0]?.owner_id : null);
 
     if (recipientId && recipientId !== userId) {
       let notifTitle = `Progress Update: ${task.identifier || task.title}`;
@@ -1224,7 +1246,7 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
       await query(
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'task', $8, FALSE, NOW())`,
-        [`notif-${Date.now()}`, recipientId, userId, userName, notifType, notifTitle, notifMessage, id],
+        [generateId("notif"), recipientId, userId, userName, notifType, notifTitle, notifMessage, id],
       );
     }
 
@@ -1253,15 +1275,18 @@ router.post("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res:
     });
   } catch (err: any) {
     console.error("Error submitting progress update:", err);
-    res.status(500).json({ error: "Failed to submit progress update: " + err.message });
+    res.status(500).json({ error: "Failed to submit progress update" });
   }
 });
 
 // 7c. GET /tasks/:id/progress - Historical progress update log
-router.get("/:id/progress", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id/progress", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
@@ -1309,6 +1334,9 @@ router.get("/:id/progress", optionalAuth, async (req: AuthenticatedRequest, res:
 router.post("/:id/review", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     const { decision, feedback, progressUpdateId } = req.body;
 
@@ -1333,7 +1361,7 @@ router.post("/:id/review", requireAuth, async (req: AuthenticatedRequest, res: R
     const reviewerRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
     const reviewerName = reviewerRes.rows[0]?.full_name || reviewerRes.rows[0]?.username || "Team Leader";
 
-    const reviewId = `rev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const reviewId = generateId("rev");
     const now = new Date().toISOString();
 
     const revInsert = await query(
@@ -1382,7 +1410,7 @@ router.post("/:id/review", requireAuth, async (req: AuthenticatedRequest, res: R
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
       [
-        `act-${Date.now()}`,
+        generateId("act"),
         userId,
         task.project_id,
         id,
@@ -1403,7 +1431,7 @@ router.post("/:id/review", requireAuth, async (req: AuthenticatedRequest, res: R
       await query(
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, 'review', $5, $6, 'task', $7, FALSE, NOW())`,
-        [`notif-${Date.now()}`, task.assignee_id, userId, reviewerName, notifTitle, notifMessage, id],
+        [generateId("notif"), task.assignee_id, userId, reviewerName, notifTitle, notifMessage, id],
       );
     }
 
@@ -1423,15 +1451,18 @@ router.post("/:id/review", requireAuth, async (req: AuthenticatedRequest, res: R
     });
   } catch (err: any) {
     console.error("Error submitting review:", err);
-    res.status(500).json({ error: "Failed to submit review: " + err.message });
+    res.status(500).json({ error: "Failed to submit review" });
   }
 });
 
 // 7e. GET /tasks/:id/reviews - Review decision history
-router.get("/:id/reviews", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id/reviews", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
@@ -1467,10 +1498,13 @@ router.get("/:id/reviews", optionalAuth, async (req: AuthenticatedRequest, res: 
 });
 
 // 8. Task Dependencies API with Circular Dependency Prevention
-router.get("/:id/dependencies", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id/dependencies", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
@@ -1499,6 +1533,10 @@ router.get("/:id/dependencies", optionalAuth, async (req: AuthenticatedRequest, 
 
 router.post("/:id/dependencies", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     const { dependsOnTaskId, dependencyType = "blocked_by" } = req.body;
 
@@ -1509,10 +1547,22 @@ router.post("/:id/dependencies", requireAuth, async (req: AuthenticatedRequest, 
       return res.status(400).json({ error: "A task cannot depend on itself" });
     }
 
-    // Verify both tasks exist
-    const checkRes = await query("SELECT id FROM tasks WHERE id = $1 OR id = $2", [id, dependsOnTaskId]);
-    if (checkRes.rowCount !== 2) {
-      return res.status(404).json({ error: "One or both tasks could not be found" });
+    // Verify task exists and caller has permission to edit this task
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to modify dependencies for this task" });
+    }
+
+    // Verify prerequisite task exists
+    const targetTaskRes = await query("SELECT id, title, status FROM tasks WHERE id = $1", [dependsOnTaskId]);
+    if (targetTaskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Prerequisite task could not be found" });
     }
 
     // Run directed acyclic graph cycle check
@@ -1523,7 +1573,7 @@ router.post("/:id/dependencies", requireAuth, async (req: AuthenticatedRequest, 
       });
     }
 
-    const depId = `dep-${Date.now()}`;
+    const depId = generateId("dep");
     await query(
       `INSERT INTO task_dependencies (id, task_id, depends_on_task_id, dependency_type, created_at)
        VALUES ($1, $2, $3, $4, NOW())
@@ -1533,11 +1583,11 @@ router.post("/:id/dependencies", requireAuth, async (req: AuthenticatedRequest, 
 
     // If dependencyType is 'blocked_by', optionally mark task as 'blocked'
     if (dependencyType === "blocked_by") {
-      const targetTask = await query("SELECT title, status FROM tasks WHERE id = $1", [dependsOnTaskId]);
-      if (targetTask.rows[0]?.status !== "completed") {
+      const targetTask = targetTaskRes.rows[0];
+      if (targetTask.status !== "completed") {
         await query(
           "UPDATE tasks SET status = 'blocked', blocked_reason = $1 WHERE id = $2 AND status != 'completed'",
-          [`Blocked by prerequisite: "${targetTask.rows[0]?.title}"`, id],
+          [`Blocked by prerequisite: "${targetTask.title}"`, id],
         );
       }
     }
@@ -1551,7 +1601,28 @@ router.post("/:id/dependencies", requireAuth, async (req: AuthenticatedRequest, 
 
 router.delete("/:id/dependencies/:depId", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { depId } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const { id, depId } = req.params;
+
+    const depRes = await query(
+      `SELECT td.*, t.user_id, t.assignee_id, t.project_id
+       FROM task_dependencies td
+       JOIN tasks t ON td.task_id = t.id
+       WHERE td.id = $1 AND td.task_id = $2`,
+      [depId, id],
+    );
+    if (depRes.rowCount === 0) {
+      return res.status(404).json({ error: "Dependency not found" });
+    }
+
+    const perm = await canUserEditTask(userId, String(id), depRes.rows[0]);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to remove dependency for this task" });
+    }
+
     await query("DELETE FROM task_dependencies WHERE id = $1", [depId]);
     res.json({ success: true });
   } catch (err: any) {
@@ -1560,10 +1631,13 @@ router.delete("/:id/dependencies/:depId", requireAuth, async (req: Authenticated
   }
 });
 
-// 9. Subtasks, Bookmark, Delete, Comments
+// 9. Subtasks, Trash, Bookmark, Comments
 router.post("/:id/subtasks/:subtaskId/toggle", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id, subtaskId } = req.params;
 
     const currentRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
@@ -1571,6 +1645,11 @@ router.post("/:id/subtasks/:subtaskId/toggle", requireAuth, async (req: Authenti
       return res.status(404).json({ error: "Task not found" });
     }
     const current = currentRes.rows[0];
+
+    const perm = await canUserEditTask(userId, String(id), current);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to update subtasks for this task" });
+    }
 
     let subtasks: any[] = [];
     try {
@@ -1599,9 +1678,49 @@ router.post("/:id/subtasks/:subtaskId/toggle", requireAuth, async (req: Authenti
   }
 });
 
+// Empty trash - registered BEFORE /:id to prevent route shadowing
+router.delete("/trash/empty", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
+    if (isLead) {
+      await query("DELETE FROM tasks WHERE is_trash = TRUE");
+    } else {
+      await query(
+        "DELETE FROM tasks WHERE is_trash = TRUE AND (user_id = $1 OR assignee_id = $1)",
+        [userId],
+      );
+    }
+    res.status(204).send();
+  } catch (err: any) {
+    console.error("Error emptying trash:", err);
+    res.status(500).json({ error: "Failed to empty trash" });
+  }
+});
+
 router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
+
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to move this task to trash" });
+    }
+
     await query(
       "UPDATE tasks SET is_trash = TRUE, deleted_at = NOW(), updated_at = NOW() WHERE id = $1",
       [id],
@@ -1615,7 +1734,23 @@ router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
 router.post("/:id/restore", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
+
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to restore this task" });
+    }
+
     const updateRes = await query(
       `UPDATE tasks
        SET is_trash = FALSE, deleted_at = NULL, updated_at = NOW()
@@ -1623,45 +1758,65 @@ router.post("/:id/restore", requireAuth, async (req: AuthenticatedRequest, res: 
        RETURNING *`,
       [id],
     );
-    if (updateRes.rowCount === 0) return res.status(404).json({ error: "Task not found" });
     res.json(formatTask(updateRes.rows[0]));
   } catch (err: any) {
+    console.error("Error restoring task:", err);
     res.status(500).json({ error: "Failed to restore task" });
   }
 });
 
 router.delete("/:id/permanent", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
+
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to permanently delete this task" });
+    }
+
     await query("DELETE FROM tasks WHERE id = $1", [id]);
     res.status(204).send();
   } catch (err: any) {
+    console.error("Error permanently deleting task:", err);
     res.status(500).json({ error: "Failed to delete task" });
-  }
-});
-
-router.delete("/trash/empty", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await query("DELETE FROM tasks WHERE is_trash = TRUE");
-    res.status(204).send();
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to empty trash" });
   }
 });
 
 router.post("/:id/bookmark", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
-    const currentRes = await query("SELECT is_bookmarked FROM tasks WHERE id = $1", [id]);
-    if (currentRes.rowCount === 0) return res.status(404).json({ error: "Task not found" });
 
-    const nextBookmarked = !currentRes.rows[0].is_bookmarked;
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) return res.status(404).json({ error: "Task not found" });
+    const task = taskRes.rows[0];
+
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden" });
+    }
+
+    const nextBookmarked = !task.is_bookmarked;
     const updateRes = await query(
       "UPDATE tasks SET is_bookmarked = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
       [nextBookmarked, id],
     );
     res.json(formatTask(updateRes.rows[0]));
   } catch (err: any) {
+    console.error("Error toggling bookmark:", err);
     res.status(500).json({ error: "Failed to toggle bookmark" });
   }
 });
@@ -1669,8 +1824,11 @@ router.post("/:id/bookmark", requireAuth, async (req: AuthenticatedRequest, res:
 router.post("/:id/comments", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
-    const { content, author } = req.body;
+    const { content } = req.body;
 
     if (!content || !content.trim()) {
       return res.status(400).json({ error: "Comment content is required" });
@@ -1687,11 +1845,15 @@ router.post("/:id/comments", requireAuth, async (req: AuthenticatedRequest, res:
       return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
     }
 
+    // Prevent author impersonation: Lookup authenticated user name in database
+    const userRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
+    const verifiedAuthor = userRes.rows[0]?.full_name || userRes.rows[0]?.username || req.user?.username || "Team Member";
+
     // Extract @mentions if any
     const mentionsMatch = content.match(/@(\w+)/g);
     const mentions = mentionsMatch ? mentionsMatch.map((m: string) => m.substring(1)) : [];
 
-    const commentId = `comm-${Date.now()}`;
+    const commentId = generateId("comm");
     await query(
       `INSERT INTO task_comments (id, task_id, user_id, author, content, mentions, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
@@ -1699,7 +1861,7 @@ router.post("/:id/comments", requireAuth, async (req: AuthenticatedRequest, res:
         commentId,
         id,
         userId,
-        author && author.trim() ? author.trim() : req.user?.username || "Teammate",
+        verifiedAuthor,
         content.trim(),
         JSON.stringify(mentions),
       ],
@@ -1708,15 +1870,15 @@ router.post("/:id/comments", requireAuth, async (req: AuthenticatedRequest, res:
     // If there are mentions, generate notifications for mentioned users
     for (const mention of mentions) {
       const uRes = await query("SELECT id FROM users WHERE LOWER(username) = $1", [mention.toLowerCase()]);
-      if (uRes.rowCount && uRes.rowCount > 0) {
+      if (uRes.rowCount && uRes.rowCount > 0 && uRes.rows[0].id !== userId) {
         await query(
           `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, created_at)
            VALUES ($1, $2, $3, $4, 'mention', 'Mentioned in a comment', $5, 'task', $6, NOW())`,
           [
-            `notif-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+            generateId("notif"),
             uRes.rows[0].id,
             userId,
-            author || "A teammate",
+            verifiedAuthor,
             `Mentioned you in task comments: "${content.trim().slice(0, 80)}"`,
             id,
           ],

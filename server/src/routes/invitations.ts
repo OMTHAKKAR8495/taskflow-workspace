@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import crypto from "crypto";
 import { pool, query } from "../db.js";
-import { requireAuth, type AuthenticatedRequest } from "../auth.js";
+import { requireAuth, generateId, type AuthenticatedRequest } from "../auth.js";
 import { sendInvitationEmail, getAppBaseUrl, isEmailConfigured, type SendInvitationResult } from "../email.js";
 
 export const invitationsRouter = Router();
@@ -196,7 +196,7 @@ invitationsRouter.post(
       // 7. Generate cryptographically secure token & SHA-256 hash
       const rawToken = crypto.randomBytes(32).toString("hex");
       const tokenHash = hashToken(rawToken);
-      const inviteId = `inv-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+      const inviteId = generateId("inv");
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
       // Fetch inviter's name
@@ -233,12 +233,8 @@ invitationsRouter.post(
         ],
       );
 
-      // Formulate acceptance URL using request origin if available
-      let originBase = getAppBaseUrl();
-      const originHeader = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer as string).origin : null);
-      if (originHeader && !originHeader.includes("localhost") && !originHeader.includes("127.0.0.1")) {
-        originBase = originHeader.replace(/\/$/, "");
-      }
+      // Formulate acceptance URL strictly from configured application base URL (prevent host header injection)
+      const originBase = getAppBaseUrl();
       const invitationUrl = `${originBase}/invitations/accept?token=${rawToken}`;
 
       // 9. Dispatch Email if deliveryMethod is 'email'
@@ -574,7 +570,7 @@ invitationsRouter.post(
       }
 
       // 4. Add member to project_members (idempotent / ignore duplicate)
-      const memberId = `pm-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+      const memberId = generateId("pm");
       await client.query(
         `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
          VALUES ($1, $2, $3, $4, NOW())
@@ -594,10 +590,10 @@ invitationsRouter.post(
         `INSERT INTO team_members (id, name, email, role, avatar_url, initials)
          VALUES ($1, $2, $3, $4, '', $5)
          ON CONFLICT (id) DO UPDATE SET
-           name = EXCLUDED.name,
-           email = EXCLUDED.email,
-           role = EXCLUDED.role,
-           initials = EXCLUDED.initials`,
+            name = EXCLUDED.name,
+            email = EXCLUDED.email,
+            role = EXCLUDED.role,
+            initials = EXCLUDED.initials`,
         [user.id, user.full_name, user.email, memberRole, initials],
       );
 
@@ -610,7 +606,7 @@ invitationsRouter.post(
       );
 
       // 6. Record Activity
-      const activityId = `act-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+      const activityId = generateId("act");
       await client.query(
         `INSERT INTO activities (id, user_id, project_id, task_id, type, task_title, user_name, details, at)
          VALUES ($1, $2, $3, 'system', 'project_updated', $4, $5, $6, NOW())`,
@@ -625,7 +621,7 @@ invitationsRouter.post(
       );
 
       // 7. Dispatch in-app notification to inviter
-      const notifId = `notif-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+      const notifId = generateId("notif");
       await client.query(
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, 'system', $5, $6, 'project', $7, FALSE, NOW())`,
@@ -641,7 +637,7 @@ invitationsRouter.post(
       );
 
       // 7b. Dispatch in-app welcome notification to invitee
-      const welcomeNotifId = `notif-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+      const welcomeNotifId = generateId("notif");
       await client.query(
         `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, 'system', $5, $6, 'project', $7, FALSE, NOW())`,
@@ -766,11 +762,7 @@ invitationsRouter.post(
       const inviterName = inviterRes.rows[0]?.full_name || inviterRes.rows[0]?.username || "A project manager";
 
       const { deliveryMethod = "link" } = req.body || {};
-      let originBase = getAppBaseUrl();
-      const originHeader = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer as string).origin : null);
-      if (originHeader && !originHeader.includes("localhost") && !originHeader.includes("127.0.0.1")) {
-        originBase = originHeader.replace(/\/$/, "");
-      }
+      const originBase = getAppBaseUrl();
       const invitationUrl = `${originBase}/invitations/accept?token=${rawToken}`;
 
       // 4. Send email if deliveryMethod is 'email'

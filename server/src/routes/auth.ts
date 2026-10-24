@@ -6,6 +6,7 @@ import {
   generateToken,
   requireAuth,
   authRateLimiter,
+  generateId,
   type AuthenticatedRequest,
 } from "../auth.js";
 
@@ -14,7 +15,7 @@ const router = Router();
 // POST /api/auth/register
 router.post("/register", authRateLimiter, async (req: Request, res: Response) => {
   try {
-    const { fullName, email, username, password, role = "member" } = req.body;
+    const { fullName, email, username, password } = req.body;
 
     if (!fullName || typeof fullName !== "string" || !fullName.trim()) {
       return res.status(400).json({ error: "Full name is required" });
@@ -32,7 +33,8 @@ router.post("/register", authRateLimiter, async (req: Request, res: Response) =>
     const cleanUsername = username.trim().toLowerCase();
     const cleanEmail = email.trim().toLowerCase();
     const cleanFullName = fullName.trim();
-    const cleanRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
+    // Default all public self-registrations to standard "member" role (no self-service privilege escalation)
+    const cleanRole = "member";
 
     // Check if user exists
     const existing = await query(
@@ -44,7 +46,7 @@ router.post("/register", authRateLimiter, async (req: Request, res: Response) =>
     }
 
     const hashedPassword = await hashPassword(password);
-    const userId = `user-${Date.now()}`;
+    const userId = generateId("user");
     const now = new Date().toISOString();
 
     const insertRes = await query(
@@ -108,24 +110,14 @@ router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
     let isValid = false;
 
     if (user.password_hash) {
-      // Check bcrypt hash
-      if (user.password_hash.startsWith("$2a$") || user.password_hash.startsWith("$2b$")) {
-        isValid = await verifyPassword(password, user.password_hash);
-      } else {
-        // Plain text legacy fallback -> auto-upgrade to bcrypt
-        isValid = user.password_hash === password;
-        if (isValid) {
-          const newHash = await hashPassword(password);
-          await query("UPDATE users SET password_hash = $1 WHERE id = $2", [newHash, user.id]);
-        }
-      }
+      isValid = await verifyPassword(password, user.password_hash);
     }
 
     if (!isValid) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const effectiveRole = user.role || (user.id === "user-om" ? "leader" : "member");
+    const effectiveRole = user.role || "member";
     const token = generateToken({ userId: user.id, username: user.username, role: effectiveRole });
 
     res.cookie("taskflow_token", token, {
@@ -173,7 +165,7 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
     }
 
     const u = result.rows[0];
-    const effectiveRole = u.role || (u.id === "user-om" ? "leader" : "member");
+    const effectiveRole = u.role || "member";
     res.json({
       id: u.id,
       username: u.username,
@@ -188,12 +180,34 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
   }
 });
 
-// PATCH /api/auth/role - Switch active role
+// PATCH /api/auth/role - Switch active role (restricted to users holding leader/admin privileges)
 router.patch("/role", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { role } = req.body;
     const targetRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
+
+    // Verify user's actual base role in database
+    const userDbRes = await query("SELECT role FROM users WHERE id = $1", [userId]);
+    if (!userDbRes.rowCount || userDbRes.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const currentBaseRole = (userDbRes.rows[0].role || "member").toLowerCase();
+
+    // Prevent privilege escalation: only users already possessing admin/leader roles can activate leader view
+    if (
+      targetRole === "leader" &&
+      currentBaseRole !== "leader" &&
+      currentBaseRole !== "admin" &&
+      currentBaseRole !== "lead"
+    ) {
+      return res.status(403).json({
+        error: "Unauthorized: Only users with leader or administrator privileges can switch to leader role",
+      });
+    }
 
     const updateRes = await query(
       `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2
@@ -289,13 +303,15 @@ async function processGoogleUser(googleProfile: {
   );
 
   let user: any;
-  const isLeadCandidate =
-    cleanEmail === "omthakkar@example.com" ||
-    cleanEmail === "omthakkar168@gmail.com" ||
-    cleanEmail.startsWith("omthakkar");
+  const isLeadCandidate = Boolean(
+    process.env.ADMIN_EMAIL && cleanEmail === process.env.ADMIN_EMAIL.trim().toLowerCase(),
+  );
 
   if (existingUserRes.rowCount && existingUserRes.rowCount > 0) {
     user = existingUserRes.rows[0];
+    if (user.google_id && user.google_id !== googleId) {
+      throw new Error("This email is already associated with a different Google account");
+    }
     // Update google_id and avatar_url if missing or changed
     const updatedRes = await query(
       `UPDATE users
@@ -324,7 +340,7 @@ async function processGoogleUser(googleProfile: {
       username = `${baseUsername}${Math.floor(100 + Math.random() * 900)}`;
     }
 
-    const userId = `user-g-${Date.now()}`;
+    const userId = generateId("user-g");
     const initialRole = isLeadCandidate ? "leader" : "member";
 
     const insertRes = await query(
@@ -364,6 +380,15 @@ router.post("/google", async (req: Request, res: Response) => {
       const payload = (await tokenResp.json()) as any;
       if (!payload.email) {
         return res.status(400).json({ error: "Google account does not contain a verified email" });
+      }
+      if (GOOGLE_CLIENT_ID && payload.aud !== GOOGLE_CLIENT_ID) {
+        return res.status(401).json({ error: "Invalid Google token audience" });
+      }
+      if (!GOOGLE_CLIENT_ID && process.env.NODE_ENV === "production") {
+        return res.status(500).json({ error: "Google authentication is not properly configured on server" });
+      }
+      if (payload.email_verified !== true && payload.email_verified !== "true") {
+        return res.status(401).json({ error: "Google account email is not verified" });
       }
 
       googleProfile = {
@@ -500,7 +525,7 @@ router.get("/google/callback", async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    return res.redirect(`${appBase}/dashboard?login=google_success#token=${token}`);
+    return res.redirect(`${appBase}/dashboard?login=google_success`);
   } catch (err: unknown) {
     console.error("Google callback exception:", err);
     const appBase = process.env.APP_BASE_URL || "/";

@@ -4,15 +4,13 @@ import { requireAuth, type AuthenticatedRequest } from "../auth.js";
 
 const router = Router();
 
-function getUserId(req: AuthenticatedRequest): string {
-  if (req.userId) return req.userId;
-  return "user-om";
-}
-
 // GET /api/notifications - List user's notifications
 router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { unreadOnly, type, limit = 50 } = req.query;
 
     let sql = "SELECT * FROM notifications WHERE user_id = $1";
@@ -67,7 +65,10 @@ router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =>
 // POST /api/notifications/:id/read - Mark one notification as read
 router.post("/:id/read", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
 
     const result = await query(
@@ -89,7 +90,10 @@ router.post("/:id/read", requireAuth, async (req: AuthenticatedRequest, res: Res
 // POST /api/notifications/read-all - Mark all as read
 router.post("/read-all", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     await query("UPDATE notifications SET is_read = TRUE WHERE user_id = $1", [userId]);
     res.json({ success: true });
   } catch (err: any) {
@@ -98,28 +102,34 @@ router.post("/read-all", requireAuth, async (req: AuthenticatedRequest, res: Res
   }
 });
 
+// DELETE /api/notifications/clear-all - Delete all read notifications (registered BEFORE /:id)
+router.delete("/clear-all", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    await query("DELETE FROM notifications WHERE user_id = $1 AND is_read = TRUE", [userId]);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Error clearing notifications:", err);
+    res.status(500).json({ error: "Failed to clear notifications" });
+  }
+});
+
 // DELETE /api/notifications/:id - Delete single notification
 router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { id } = req.params;
     await query("DELETE FROM notifications WHERE id = $1 AND user_id = $2", [id, userId]);
     res.json({ success: true });
   } catch (err: any) {
     console.error("Error deleting notification:", err);
     res.status(500).json({ error: "Failed to delete notification" });
-  }
-});
-
-// DELETE /api/notifications/clear-all - Delete all read notifications
-router.delete("/clear-all", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    await query("DELETE FROM notifications WHERE user_id = $1 AND is_read = TRUE", [userId]);
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error("Error clearing notifications:", err);
-    res.status(500).json({ error: "Failed to clear notifications" });
   }
 });
 

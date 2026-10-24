@@ -1,21 +1,9 @@
 import { Router, type Response } from "express";
 import { query } from "../db.js";
-import { requireAuth, optionalAuth, extractToken, verifyToken, type AuthenticatedRequest } from "../auth.js";
+import { requireAuth, generateId, type AuthenticatedRequest } from "../auth.js";
 import { isWorkspaceAdminOrLead, isProjectLeader, isProjectMember } from "../permissions.js";
 
 const router = Router();
-
-function getUserId(req: AuthenticatedRequest): string {
-  if (req.user?.userId) return req.user.userId;
-  if (req.userId) return req.userId;
-  const token = extractToken(req);
-  if (token) {
-    const decoded = verifyToken(token);
-    if (decoded?.userId) return decoded.userId;
-  }
-  const custom = req.headers["x-user-id"] as string;
-  return custom && custom.trim() ? custom.trim() : "user-om";
-}
 
 function parseSafeDate(val: unknown): string | null {
   if (!val) return null;
@@ -54,12 +42,15 @@ function parseSafeDate(val: unknown): string | null {
 }
 
 // 1. GET /api/projects - List all projects with aggregated statistics
-router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const { status, search } = req.query;
 
-    const isLead = await isWorkspaceAdminOrLead(userId);
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
 
     let sql = "SELECT * FROM projects WHERE 1=1";
     const params: any[] = [];
@@ -197,10 +188,12 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 // 2. POST /api/projects - Create a new project
 router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
-    const userRole = (req.headers["x-user-role"] as string) || req.user?.role || "leader";
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
-    const isLead = await isWorkspaceAdminOrLead(userId, { role: userRole, id: userId });
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only team leaders and administrators can create projects" });
     }
@@ -271,21 +264,19 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     const userRes = await query("SELECT id, full_name, username FROM users WHERE id = $1", [userId]);
     let creatorName = req.user?.username || "Lead";
     if (userRes.rows.length === 0) {
-      const fallbackName = userId === "user-om" ? "Om Thakkar" : (req.user?.username || "Workspace Leader");
-      const fallbackEmail = userId === "user-om" ? "omthakkar@example.com" : `${userId}@taskflow.local`;
+      creatorName = req.user?.username || "Workspace Leader";
       await query(
         `INSERT INTO users (id, username, full_name, email, role)
-         VALUES ($1, $2, $3, $4, 'admin')
+         VALUES ($1, $2, $3, $4, 'member')
          ON CONFLICT (id) DO NOTHING`,
-        [userId, userId, fallbackName, fallbackEmail],
+        [userId, req.user?.username || userId, creatorName, `${userId}@taskflow.local`],
       );
-      creatorName = fallbackName;
     } else {
       creatorName = userRes.rows[0].full_name || userRes.rows[0].username || creatorName;
     }
 
     const cleanLead = (lead && typeof lead === "string" && lead.trim()) ? lead.trim() : creatorName;
-    const projectId = `proj-${Date.now()}`;
+    const projectId = generateId("proj");
     const now = new Date().toISOString();
 
     const insertRes = await query(
@@ -317,14 +308,14 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
       `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
        VALUES ($1, $2, $3, 'owner', $4)
        ON CONFLICT (project_id, user_id) DO NOTHING`,
-      [`pm-${Date.now()}`, projectId, userId, now],
+      [generateId("pm"), projectId, userId, now],
     );
 
     // Record activity
     await query(
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, '', $4, 'project_created', $5, $6)`,
-      [`act-${Date.now()}`, userId, projectId, cleanName, JSON.stringify({ key: cleanKey }), now],
+      [generateId("act"), userId, projectId, cleanName, JSON.stringify({ key: cleanKey }), now],
     );
 
     const p = insertRes.rows[0];
@@ -349,15 +340,18 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     });
   } catch (err: any) {
     console.error("Error creating project:", err);
-    res.status(500).json({ error: err?.message || "Failed to create project" });
+    res.status(500).json({ error: "Failed to create project" });
   }
 });
 
 // 3. GET /api/projects/:id - Single project workspace detail
-router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const projectRes = await query("SELECT * FROM projects WHERE id = $1", [id]);
 
     if (!projectRes.rowCount || projectRes.rowCount === 0) {
@@ -366,7 +360,7 @@ router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response
 
     const p = projectRes.rows[0];
 
-    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId, req.user);
     const isProjLead = isGlobalLead || (await isProjectLeader(userId, String(id)));
     const isMember = isProjLead || (await isProjectMember(userId, String(id)));
 
@@ -495,7 +489,16 @@ router.get("/:id", optionalAuth, async (req: AuthenticatedRequest, res: Response
 router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isLead = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectLeader(userId, String(id)));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can update project settings" });
+    }
+
     const updates = req.body;
 
     const fields: string[] = [];
@@ -542,7 +545,7 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
     await query(
       `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
        VALUES ($1, $2, $3, '', $4, 'project_updated', $5, NOW())`,
-      [`act-${Date.now()}`, userId, id, updated.name, JSON.stringify(updates)],
+      [generateId("act"), userId, id, updated.name, JSON.stringify(updates)],
     );
 
     res.json(updated);
@@ -556,6 +559,16 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
 router.post("/:id/archive", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isLead = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectLeader(userId, String(id)));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can archive projects" });
+    }
+
     const projectRes = await query("SELECT status, archived_at FROM projects WHERE id = $1", [id]);
     if (!projectRes.rowCount || projectRes.rowCount === 0) {
       return res.status(404).json({ error: "Project not found" });
@@ -581,6 +594,16 @@ router.post("/:id/archive", requireAuth, async (req: AuthenticatedRequest, res: 
 router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isLead = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectLeader(userId, String(id)));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can delete projects" });
+    }
+
     const del = await query("DELETE FROM projects WHERE id = $1 RETURNING name", [id]);
     if (!del.rowCount || del.rowCount === 0) {
       return res.status(404).json({ error: "Project not found" });
@@ -593,9 +616,19 @@ router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respon
 });
 
 // 7. Project Members management
-router.get("/:id/members", async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id/members", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isMember = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectMember(userId, String(id)));
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
+
     const result = await query(
       `SELECT pm.id, pm.role, pm.joined_at,
               COALESCE(u.id, tm.id) as user_id,
@@ -620,14 +653,20 @@ router.get("/:id/members", async (req: AuthenticatedRequest, res: Response) => {
 router.post("/:id/members", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const currentUserId = getUserId(req);
+    const currentUserId = req.user?.userId;
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
-    const isLead = await isProjectLeader(currentUserId, String(id));
+    const isLead = (await isWorkspaceAdminOrLead(currentUserId, req.user)) || (await isProjectLeader(currentUserId, String(id)));
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only project leaders can add members to a project" });
     }
 
     const { userId, userIds, role = "member" } = req.body;
+    const allowedRoles = ["member", "lead", "viewer"];
+    const targetRole = allowedRoles.includes(role) ? role : "member";
+
     const targetUserIds: string[] = Array.isArray(userIds)
       ? userIds.filter((u: any) => typeof u === "string" && u.trim()).map((u: string) => u.trim())
       : userId && typeof userId === "string" && userId.trim()
@@ -641,10 +680,9 @@ router.post("/:id/members", requireAuth, async (req: AuthenticatedRequest, res: 
     const added: string[] = [];
 
     for (const uid of targetUserIds) {
-      // Ensure user exists in users table to satisfy foreign key constraint
+      // Validate user existence in users or team_members
       const uRes = await query("SELECT id FROM users WHERE id = $1", [uid]);
       if (uRes.rows.length === 0) {
-        // Sync from team_members if present
         const tmRes = await query("SELECT * FROM team_members WHERE id = $1", [uid]);
         if (tmRes.rows.length > 0) {
           const tm = tmRes.rows[0];
@@ -655,22 +693,17 @@ router.post("/:id/members", requireAuth, async (req: AuthenticatedRequest, res: 
             [tm.id, tm.id, tm.name, tm.email],
           );
         } else {
-          // Create placeholder user
-          await query(
-            `INSERT INTO users (id, username, full_name, email, role)
-             VALUES ($1, $2, $3, $4, 'member')
-             ON CONFLICT (id) DO NOTHING`,
-            [uid, uid, `Member ${uid}`, `${uid}@taskflow.local`],
-          );
+          // Do not create placeholder accounts for arbitrary unrecognized user IDs
+          continue;
         }
       }
 
-      const memberId = `pm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const memberId = generateId("pm");
       await query(
         `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
          VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-        [memberId, id, uid, role],
+        [memberId, id, uid, targetRole],
       );
       added.push(uid);
 
@@ -678,23 +711,30 @@ router.post("/:id/members", requireAuth, async (req: AuthenticatedRequest, res: 
       await query(
         `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
          VALUES ($1, $2, $3, '', '', 'member_joined', $4, NOW())`,
-        [`act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`, currentUserId, id, JSON.stringify({ userId: uid, role })],
+        [generateId("act"), currentUserId, id, JSON.stringify({ userId: uid, role: targetRole })],
       );
     }
 
-    res.status(201).json({ success: true, count: added.length, addedUserIds: added, role });
+    if (added.length === 0) {
+      return res.status(400).json({ error: "No valid existing users found to add to project" });
+    }
+
+    res.status(201).json({ success: true, count: added.length, addedUserIds: added, role: targetRole });
   } catch (err: any) {
     console.error("Error adding project member:", err);
-    res.status(500).json({ error: err?.message || "Failed to add member to project" });
+    res.status(500).json({ error: "Failed to add member to project" });
   }
 });
 
 router.delete("/:id/members/:userId", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id, userId } = req.params;
-    const currentUserId = getUserId(req);
+    const currentUserId = req.user?.userId;
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
-    const isLead = await isProjectLeader(currentUserId, String(id));
+    const isLead = (await isWorkspaceAdminOrLead(currentUserId, req.user)) || (await isProjectLeader(currentUserId, String(id)));
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only project leaders can remove project members" });
     }
@@ -708,9 +748,19 @@ router.delete("/:id/members/:userId", requireAuth, async (req: AuthenticatedRequ
 });
 
 // 8. Project Milestones
-router.get("/:id/milestones", async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id/milestones", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isMember = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectMember(userId, String(id)));
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
+
     const result = await query(
       "SELECT * FROM milestones WHERE project_id = $1 ORDER BY target_date ASC",
       [id],
@@ -725,6 +775,16 @@ router.get("/:id/milestones", async (req: AuthenticatedRequest, res: Response) =
 router.post("/:id/milestones", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isLead = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectLeader(userId, String(id)));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can create milestones" });
+    }
+
     const { title, description = "", targetDate, status = "pending" } = req.body;
 
     if (!title || !title.trim()) {
@@ -734,7 +794,7 @@ router.post("/:id/milestones", requireAuth, async (req: AuthenticatedRequest, re
       return res.status(400).json({ error: "Milestone target date is required" });
     }
 
-    const milestoneId = `ms-${Date.now()}`;
+    const milestoneId = generateId("ms");
     const parsedTarget = parseSafeDate(targetDate) || new Date().toISOString();
     const result = await query(
       `INSERT INTO milestones (id, project_id, title, description, target_date, status, created_at, updated_at)
@@ -752,7 +812,17 @@ router.post("/:id/milestones", requireAuth, async (req: AuthenticatedRequest, re
 
 router.patch("/:id/milestones/:milestoneId", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { milestoneId } = req.params;
+    const { id, milestoneId } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isLead = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectLeader(userId, String(id)));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can update milestones" });
+    }
+
     const { title, description, targetDate, status } = req.body;
 
     const fields: string[] = [];
@@ -777,9 +847,10 @@ router.patch("/:id/milestones/:milestoneId", requireAuth, async (req: Authentica
 
     fields.push("updated_at = NOW()");
     values.push(milestoneId);
+    values.push(id);
 
     const result = await query(
-      `UPDATE milestones SET ${fields.join(", ")} WHERE id = $${values.length} RETURNING *`,
+      `UPDATE milestones SET ${fields.join(", ")} WHERE id = $${values.length - 1} AND project_id = $${values.length} RETURNING *`,
       values,
     );
 
@@ -796,8 +867,21 @@ router.patch("/:id/milestones/:milestoneId", requireAuth, async (req: Authentica
 
 router.delete("/:id/milestones/:milestoneId", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { milestoneId } = req.params;
-    await query("DELETE FROM milestones WHERE id = $1", [milestoneId]);
+    const { id, milestoneId } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isLead = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectLeader(userId, String(id)));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can delete milestones" });
+    }
+
+    const del = await query("DELETE FROM milestones WHERE id = $1 AND project_id = $2 RETURNING id", [milestoneId, id]);
+    if (!del.rowCount || del.rowCount === 0) {
+      return res.status(404).json({ error: "Milestone not found" });
+    }
     res.json({ success: true });
   } catch (err: any) {
     console.error("Error deleting milestone:", err);
@@ -806,13 +890,21 @@ router.delete("/:id/milestones/:milestoneId", requireAuth, async (req: Authentic
 });
 
 // 9. Project Submissions & Deliverables
-router.get("/:id/submissions", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id/submissions", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
-    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId, req.user);
     const isProjLead = isGlobalLead || (await isProjectLeader(userId, String(id)));
+    const isMember = isProjLead || (await isProjectMember(userId, String(id)));
+
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
 
     let sql = `
       SELECT pu.*, t.title as task_title, t.identifier as task_identifier, t.assignee_id,
@@ -895,9 +987,19 @@ router.get("/:id/submissions", optionalAuth, async (req: AuthenticatedRequest, r
 });
 
 // 10. Project Activity History
-router.get("/:id/activity", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/:id/activity", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isMember = (await isWorkspaceAdminOrLead(userId, req.user)) || (await isProjectMember(userId, String(id)));
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
+
     const result = await query(
       `SELECT a.*, COALESCE(u.full_name, u.username, 'Team Member') as user_name, COALESCE(u.avatar_url, '') as user_avatar
        FROM activities a

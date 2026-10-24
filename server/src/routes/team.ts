@@ -1,26 +1,17 @@
 import { Router, type Response } from "express";
 import { query } from "../db.js";
-import { requireAuth, optionalAuth, extractToken, verifyToken, type AuthenticatedRequest } from "../auth.js";
+import { requireAuth, generateId, type AuthenticatedRequest } from "../auth.js";
 import { isWorkspaceAdminOrLead } from "../permissions.js";
 
 const router = Router();
 
-function getUserId(req: AuthenticatedRequest): string {
-  if (req.user?.userId) return req.user.userId;
-  if (req.userId) return req.userId;
-  const token = extractToken(req);
-  if (token) {
-    const decoded = verifyToken(token);
-    if (decoded?.userId) return decoded.userId;
-  }
-  const custom = req.headers["x-user-id"] as string;
-  return custom && custom.trim() ? custom.trim() : "user-om";
-}
-
 // GET /api/team - Team directory with workload metrics & active projects
-router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     // Fetch role permissions, members, task workloads, and project memberships in parallel
     const [isLead, membersRes, tasksRes, projectMembersRes] = await Promise.all([
       isWorkspaceAdminOrLead(userId),
@@ -133,7 +124,10 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 // POST /api/team - Add new team member
 router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     const isLead = await isWorkspaceAdminOrLead(userId);
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only team leaders can add team members" });
@@ -149,7 +143,7 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     }
 
     const cleanInitials = initials && initials.trim() ? initials.trim().toUpperCase().slice(0, 3) : name.slice(0, 2).toUpperCase();
-    const memberId = `team-${Date.now()}`;
+    const memberId = generateId("team");
 
     const insertRes = await query(
       `INSERT INTO team_members (id, name, email, role, avatar_url, initials)
