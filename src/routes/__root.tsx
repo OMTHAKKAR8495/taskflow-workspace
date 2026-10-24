@@ -48,6 +48,13 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
 
+  const isChunkOrScriptError =
+    error?.message?.includes("Failed to fetch dynamically imported module") ||
+    error?.message?.includes("Importing a module script failed") ||
+    error?.message?.includes("error loading dynamically imported module") ||
+    error?.message?.includes("Unexpected token '<'") ||
+    error?.message?.includes("is not defined");
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -55,15 +62,21 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
           This page didn't load
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+          {error?.message && !isChunkOrScriptError
+            ? error.message
+            : "Something went wrong on our end. You can try refreshing or head back home."}
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
-              router.invalidate();
-              reset();
+              if (isChunkOrScriptError && typeof window !== "undefined") {
+                window.location.reload();
+              } else {
+                router.invalidate();
+                reset();
+              }
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 cursor-pointer"
           >
             Try again
           </button>
@@ -151,6 +164,16 @@ function TaskProviderWrapper({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    const handlePreloadError = () => {
+      window.location.reload();
+    };
+    window.addEventListener("vite:preloadError", handlePreloadError);
+    return () => {
+      window.removeEventListener("vite:preloadError", handlePreloadError);
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
