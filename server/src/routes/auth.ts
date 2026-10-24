@@ -232,4 +232,275 @@ router.patch("/role", requireAuth, async (req: AuthenticatedRequest, res: Respon
   }
 });
 
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+
+// GET /api/auth/google/config - Expose public Google client ID to frontend
+router.get("/google/config", (_req: Request, res: Response) => {
+  res.json({
+    clientId: GOOGLE_CLIENT_ID,
+  });
+});
+
+// GET /api/auth/google/url - Generate OAuth 2.0 authorization redirect URL
+router.get("/google/url", (req: Request, res: Response) => {
+  const host = req.get("host") || "localhost:4000";
+  const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
+  const defaultRedirectUri = `${protocol}://${host}/api/auth/google/callback`;
+  const redirectUri = (req.query.redirect_uri as string) || defaultRedirectUri;
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "select_account",
+  });
+
+  res.json({
+    url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+  });
+});
+
+// Helper to provision or update user from Google profile
+async function processGoogleUser(googleProfile: {
+  sub: string;
+  email: string;
+  name?: string;
+  picture?: string;
+}) {
+  const googleId = String(googleProfile.sub);
+  const cleanEmail = String(googleProfile.email).trim().toLowerCase();
+  const fullName = String(googleProfile.name || cleanEmail.split("@")[0]).trim();
+  const avatarUrl = String(googleProfile.picture || "").trim();
+
+  // 1. Check if user already exists by google_id or email
+  const existingUserRes = await query(
+    `SELECT id, username, full_name, email, avatar_url, role, google_id
+     FROM users
+     WHERE google_id = $1 OR LOWER(email) = $2`,
+    [googleId, cleanEmail],
+  );
+
+  let user: any;
+  const isLeadCandidate =
+    cleanEmail === "omthakkar@example.com" ||
+    cleanEmail === "omthakkar168@gmail.com" ||
+    cleanEmail.startsWith("omthakkar");
+
+  if (existingUserRes.rowCount && existingUserRes.rowCount > 0) {
+    user = existingUserRes.rows[0];
+    // Update google_id and avatar_url if missing or changed
+    const updatedRes = await query(
+      `UPDATE users
+       SET google_id = COALESCE(google_id, $1),
+           avatar_url = CASE WHEN avatar_url = '' OR avatar_url IS NULL THEN $2 ELSE avatar_url END,
+           auth_provider = 'google',
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING id, username, full_name, email, avatar_url, role`,
+      [googleId, avatarUrl, user.id],
+    );
+    user = updatedRes.rows[0];
+  } else {
+    // Generate unique username
+    const baseUsername = cleanEmail
+      .split("@")[0]
+      .replace(/[^a-zA-Z0-9_]/g, "")
+      .toLowerCase()
+      .slice(0, 20) || "user";
+    let username = baseUsername;
+    const checkUsername = await query(
+      "SELECT id FROM users WHERE LOWER(username) = $1",
+      [username],
+    );
+    if (checkUsername.rowCount && checkUsername.rowCount > 0) {
+      username = `${baseUsername}${Math.floor(100 + Math.random() * 900)}`;
+    }
+
+    const userId = `user-g-${Date.now()}`;
+    const initialRole = isLeadCandidate ? "leader" : "member";
+
+    const insertRes = await query(
+      `INSERT INTO users (id, username, full_name, email, avatar_url, role, google_id, auth_provider, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'google', NOW(), NOW())
+       RETURNING id, username, full_name, email, avatar_url, role`,
+      [userId, username, fullName, cleanEmail, avatarUrl, initialRole, googleId],
+    );
+    user = insertRes.rows[0];
+  }
+
+  const effectiveRole = user.role || (isLeadCandidate ? "leader" : "member");
+  const token = generateToken({
+    userId: user.id,
+    username: user.username,
+    role: effectiveRole,
+  });
+
+  return { user, effectiveRole, token };
+}
+
+// POST /api/auth/google - Authenticate via Google ID Token or Auth Code
+router.post("/google", async (req: Request, res: Response) => {
+  try {
+    const { credential, code, redirectUri } = req.body;
+
+    let googleProfile: { sub: string; email: string; name?: string; picture?: string };
+
+    if (credential) {
+      // 1. Verify Google ID token via Google Tokeninfo
+      const verifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
+      const tokenResp = await fetch(verifyUrl);
+      if (!tokenResp.ok) {
+        return res.status(401).json({ error: "Failed to verify Google identity credential" });
+      }
+
+      const payload = (await tokenResp.json()) as any;
+      if (!payload.email) {
+        return res.status(400).json({ error: "Google account does not contain a verified email" });
+      }
+
+      googleProfile = {
+        sub: payload.sub,
+        email: payload.email,
+        name: payload.name || payload.given_name,
+        picture: payload.picture,
+      };
+    } else if (code) {
+      // 2. Exchange authorization code for tokens
+      const tokenUrl = "https://oauth2.googleapis.com/token";
+      const params = new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri || `${req.protocol}://${req.get("host")}/api/auth/google/callback`,
+        grant_type: "authorization_code",
+      });
+
+      const exchangeResp = await fetch(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      });
+
+      if (!exchangeResp.ok) {
+        const errText = await exchangeResp.text();
+        console.error("Google token exchange error:", errText);
+        return res.status(400).json({ error: "Google authorization code exchange failed" });
+      }
+
+      const tokenData = (await exchangeResp.json()) as any;
+      const userinfoResp = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+
+      if (!userinfoResp.ok) {
+        return res.status(400).json({ error: "Failed to fetch user profile from Google" });
+      }
+
+      const userInfo = (await userinfoResp.json()) as any;
+      googleProfile = {
+        sub: userInfo.sub,
+        email: userInfo.email,
+        name: userInfo.name,
+        picture: userInfo.picture,
+      };
+    } else {
+      return res.status(400).json({ error: "Missing Google credential or authorization code" });
+    }
+
+    const { user, effectiveRole, token } = await processGoogleUser(googleProfile);
+
+    res.cookie("taskflow_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        fullName: user.full_name,
+        email: user.email,
+        role: effectiveRole,
+        avatarUrl: user.avatar_url || googleProfile.picture || "",
+      },
+      token,
+    });
+  } catch (err: unknown) {
+    console.error("Google login error:", err);
+    res.status(500).json({ error: "Google authentication failed" });
+  }
+});
+
+// GET /api/auth/google/callback - Handle OAuth 2.0 browser redirect flow
+router.get("/google/callback", async (req: Request, res: Response) => {
+  try {
+    const { code, error } = req.query;
+
+    const host = req.get("host") || "localhost:4000";
+    const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
+    const appBase = process.env.APP_BASE_URL || `${protocol}://${host}`;
+
+    if (error || !code) {
+      console.warn("Google OAuth callback error:", error);
+      return res.redirect(`${appBase}/?error=google_cancelled`);
+    }
+
+    const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+    const tokenUrl = "https://oauth2.googleapis.com/token";
+    const params = new URLSearchParams({
+      code: String(code),
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    });
+
+    const exchangeResp = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+
+    if (!exchangeResp.ok) {
+      console.error("Google token exchange error:", await exchangeResp.text());
+      return res.redirect(`${appBase}/?error=google_exchange_failed`);
+    }
+
+    const tokenData = (await exchangeResp.json()) as any;
+    const userinfoResp = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+
+    if (!userinfoResp.ok) {
+      return res.redirect(`${appBase}/?error=google_profile_failed`);
+    }
+
+    const userInfo = (await userinfoResp.json()) as any;
+    const { token } = await processGoogleUser({
+      sub: userInfo.sub,
+      email: userInfo.email,
+      name: userInfo.name,
+      picture: userInfo.picture,
+    });
+
+    res.cookie("taskflow_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.redirect(`${appBase}/dashboard?login=google_success#token=${token}`);
+  } catch (err: unknown) {
+    console.error("Google callback exception:", err);
+    const appBase = process.env.APP_BASE_URL || "/";
+    return res.redirect(`${appBase}/?error=google_auth_error`);
+  }
+});
+
 export default router;
