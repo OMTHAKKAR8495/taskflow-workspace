@@ -51046,11 +51046,15 @@ invitationsRouter.post(
       const inviterId = req.userId;
       const {
         email,
+        recipientEmail,
         role = "member",
         message = "",
         fullName = "",
+        recipientName = "",
         skills = [],
-        designation = ""
+        designation = "",
+        deliveryMethod = "link"
+        // "link" | "email"
       } = req.body;
       if (!projectId || projectId === "undefined") {
         return res.status(400).json({ error: "Project ID is required" });
@@ -51061,10 +51065,12 @@ invitationsRouter.post(
           error: "Unauthorized: Only project managers or owners can invite members"
         });
       }
-      if (!email || typeof email !== "string" || !email.includes("@")) {
+      const rawEmail = (email || recipientEmail || "").toString().trim().toLowerCase();
+      const rawFullName = (fullName || recipientName || "").toString().trim();
+      if (!rawEmail || typeof rawEmail !== "string" || !rawEmail.includes("@")) {
         return res.status(400).json({ error: "A valid email address is required" });
       }
-      const cleanEmail = email.trim().toLowerCase();
+      const cleanEmail = rawEmail;
       const validRoles = ["owner", "lead", "developer", "designer", "reviewer", "viewer", "member"];
       const cleanRole = String(role).trim().toLowerCase();
       if (!validRoles.includes(cleanRole)) {
@@ -51112,6 +51118,12 @@ invitationsRouter.post(
         inviterId
       ]);
       const inviterName = inviterRes.rows[0]?.full_name || inviterRes.rows[0]?.username || "A team lead";
+      let parsedSkills = [];
+      if (Array.isArray(skills)) {
+        parsedSkills = skills.map((s) => String(s).trim()).filter(Boolean);
+      } else if (typeof skills === "string" && skills.trim()) {
+        parsedSkills = skills.split(",").map((s) => s.trim()).filter(Boolean);
+      }
       await query(
         `INSERT INTO project_invitations
          (id, project_id, inviter_id, recipient_email, role, token_hash, status, message, expires_at, recipient_name, skills, designation, created_at, updated_at)
@@ -51125,21 +51137,29 @@ invitationsRouter.post(
           tokenHash,
           message.trim(),
           expiresAt,
-          fullName ? String(fullName).trim() : "",
-          JSON.stringify(Array.isArray(skills) ? skills : []),
+          rawFullName,
+          JSON.stringify(parsedSkills),
           designation ? String(designation).trim() : ""
         ]
       );
-      const invitationUrl = `${getAppBaseUrl()}/invitations/accept?token=${rawToken}`;
-      const emailResult = await sendInvitationEmail({
-        recipientEmail: cleanEmail,
-        projectName: project.name,
-        inviterName,
-        role: cleanRole,
-        invitationUrl,
-        expiresAt,
-        message: message.trim() || void 0
-      });
+      let originBase = getAppBaseUrl();
+      const originHeader = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+      if (originHeader && !originHeader.includes("localhost") && !originHeader.includes("127.0.0.1")) {
+        originBase = originHeader.replace(/\/$/, "");
+      }
+      const invitationUrl = `${originBase}/invitations/accept?token=${rawToken}`;
+      let emailResult = { delivered: false };
+      if (deliveryMethod === "email") {
+        emailResult = await sendInvitationEmail({
+          recipientEmail: cleanEmail,
+          projectName: project.name,
+          inviterName,
+          role: cleanRole,
+          invitationUrl,
+          expiresAt,
+          message: message.trim() || void 0
+        });
+      }
       res.status(201).json({
         success: true,
         invitation: {
@@ -51147,6 +51167,7 @@ invitationsRouter.post(
           projectId,
           projectName: project.name,
           recipientEmail: cleanEmail,
+          recipientName: rawFullName || void 0,
           role: cleanRole,
           status: "pending",
           message: message.trim(),
@@ -51156,8 +51177,10 @@ invitationsRouter.post(
         },
         rawToken,
         invitationUrl,
-        emailSent: emailResult.delivered,
-        emailError: emailResult.delivered ? void 0 : emailResult.error
+        deliveryMethod,
+        emailSent: deliveryMethod === "email" ? emailResult.delivered : false,
+        emailSkipped: deliveryMethod === "link",
+        emailError: deliveryMethod === "email" && !emailResult.delivered ? emailResult.error : void 0
       });
     } catch (err) {
       console.error("Error creating invitation:", err);
@@ -51541,24 +51564,45 @@ invitationsRouter.post(
       );
       const inviterRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
       const inviterName = inviterRes.rows[0]?.full_name || inviterRes.rows[0]?.username || "A project manager";
-      const invitationUrl = `${getAppBaseUrl()}/invitations/accept?token=${rawToken}`;
-      const emailResult = await sendInvitationEmail({
-        recipientEmail: inv.recipient_email,
-        projectName: inv.project_name,
-        inviterName,
-        role: inv.role,
-        invitationUrl,
-        expiresAt: newExpiresAt,
-        message: inv.message || void 0
-      });
+      const { deliveryMethod = "link" } = req.body || {};
+      let originBase = getAppBaseUrl();
+      const originHeader = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+      if (originHeader && !originHeader.includes("localhost") && !originHeader.includes("127.0.0.1")) {
+        originBase = originHeader.replace(/\/$/, "");
+      }
+      const invitationUrl = `${originBase}/invitations/accept?token=${rawToken}`;
+      let emailResult = { delivered: false };
+      if (deliveryMethod === "email") {
+        emailResult = await sendInvitationEmail({
+          recipientEmail: inv.recipient_email,
+          projectName: inv.project_name,
+          inviterName,
+          role: inv.role,
+          invitationUrl,
+          expiresAt: newExpiresAt,
+          message: inv.message || void 0
+        });
+      }
       res.json({
         success: true,
         message: "Invitation resent with rotated token",
         rawToken,
         invitationUrl,
         expiresAt: newExpiresAt.toISOString(),
-        emailSent: emailResult.delivered,
-        emailError: emailResult.delivered ? void 0 : emailResult.error
+        deliveryMethod,
+        emailSent: deliveryMethod === "email" ? emailResult.delivered : false,
+        emailSkipped: deliveryMethod === "link",
+        emailError: deliveryMethod === "email" && !emailResult.delivered ? emailResult.error : void 0,
+        invitation: {
+          id: inv.id,
+          projectId: inv.project_id,
+          projectName: inv.project_name,
+          recipientEmail: inv.recipient_email,
+          recipientName: inv.recipient_name,
+          role: inv.role,
+          status: "pending",
+          expiresAt: newExpiresAt.toISOString()
+        }
       });
     } catch (err) {
       console.error("Error resending invitation:", err);

@@ -746,13 +746,27 @@ export const mockTaskService: TaskService = {
     return list.filter((i) => i.projectId === projectId);
   },
 
-  async createProjectInvitation(projectId: string, data: { email: string; role: string; message?: string }) {
+  async createProjectInvitation(
+    projectId: string,
+    data: {
+      email?: string;
+      recipientEmail?: string;
+      role?: string;
+      message?: string;
+      deliveryMethod?: "link" | "email";
+    },
+  ) {
     await wait();
     const store = load();
     if (!store.invitations) store.invitations = [];
     if (!store.rawTokens) store.rawTokens = {};
 
-    const cleanEmail = data.email.trim().toLowerCase();
+    const rawEmail = data.email || data.recipientEmail || "";
+    const cleanEmail = rawEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      throw new Error("A valid email address is required");
+    }
+
     const existing = store.invitations.find(
       (i) => i.projectId === projectId && i.recipientEmail.toLowerCase() === cleanEmail && i.status === "pending"
     );
@@ -766,6 +780,7 @@ export const mockTaskService: TaskService = {
     const inviteId = `inv-mock-${Date.now()}`;
     const rawToken = `mock-token-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const deliveryMethod = data.deliveryMethod || "link";
 
     const invitation = {
       id: inviteId,
@@ -792,8 +807,13 @@ export const mockTaskService: TaskService = {
       invitation,
       rawToken,
       invitationUrl,
+      deliveryMethod,
       emailSent: false,
-      emailError: "Local development mode: Shareable link generated. Email dispatch unavailable.",
+      emailSkipped: deliveryMethod === "link",
+      emailError:
+        deliveryMethod === "email"
+          ? "Local development mode: SMTP is not configured. Use the 'Open in Gmail / Email App' button to send."
+          : undefined,
     };
   },
 

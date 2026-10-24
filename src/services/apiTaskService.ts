@@ -199,8 +199,11 @@ export const apiTaskService: TaskService = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  resendProjectInvitation: (invitationId) =>
-    request(`/invitations/${invitationId}/resend`, { method: "POST" }),
+  resendProjectInvitation: (invitationId, data) =>
+    request(`/invitations/${invitationId}/resend`, {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }),
   revokeProjectInvitation: (invitationId) =>
     request(`/invitations/${invitationId}/revoke`, { method: "POST" }),
   validateInvitationToken: (token) =>
