@@ -48,6 +48,7 @@ import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { AssignTaskModal } from "@/components/tasks/AssignTaskModal";
 import { MemberProfileDrawer } from "./MemberProfileDrawer";
 import { toast } from "sonner";
+import { parseSafeDate } from "@/lib/utils";
 import type { Task, TeamMember, ProjectInvitation, CreateInvitationResponse, TaskPriority } from "@/types";
 
 export function TeamView() {
@@ -112,8 +113,8 @@ export function TeamView() {
         color: projectColor,
         priority: projectPriority,
         status: projectStatus,
-        startDate: projectStartDate ? new Date(projectStartDate).toISOString() : null,
-        deadline: projectDueDate ? new Date(projectDueDate).toISOString() : null,
+        startDate: parseSafeDate(projectStartDate),
+        deadline: parseSafeDate(projectDueDate),
         health: "on_track",
         progress: 0,
       });

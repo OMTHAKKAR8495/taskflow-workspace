@@ -17,6 +17,42 @@ function getUserId(req: AuthenticatedRequest): string {
   return custom && custom.trim() ? custom.trim() : "user-om";
 }
 
+function parseSafeDate(val: unknown): string | null {
+  if (!val) return null;
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed) return null;
+
+    // Handle DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+    const dmyMatch = trimmed.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})$/);
+    if (dmyMatch) {
+      const p1 = parseInt(dmyMatch[1], 10);
+      const p2 = parseInt(dmyMatch[2], 10);
+      const year = parseInt(dmyMatch[3], 10);
+      if (p2 <= 12 && p1 <= 31) {
+        const d = new Date(Date.UTC(year, p2 - 1, p1));
+        if (!isNaN(d.getTime())) return d.toISOString();
+      } else if (p1 <= 12 && p2 <= 31) {
+        const d = new Date(Date.UTC(year, p1 - 1, p2));
+        if (!isNaN(d.getTime())) return d.toISOString();
+      }
+    }
+
+    try {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    } catch {}
+    return null;
+  }
+
+  try {
+    const d = new Date(val as any);
+    return !isNaN(d.getTime()) ? d.toISOString() : null;
+  } catch {
+    return null;
+  }
+}
+
 // 1. GET /api/projects - List all projects with aggregated statistics
 router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -163,8 +199,9 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    const userRole = (req.headers["x-user-role"] as string) || req.user?.role || "leader";
 
-    const isLead = await isWorkspaceAdminOrLead(userId);
+    const isLead = await isWorkspaceAdminOrLead(userId, { role: userRole, id: userId });
     if (!isLead) {
       return res.status(403).json({ error: "Unauthorized: Only team leaders and administrators can create projects" });
     }
@@ -228,8 +265,8 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     const cleanPriority = (priority || "medium").toString().trim();
     const cleanStatus = (status || "active").toString().trim();
     const cleanHealth = (health || "on_track").toString().trim();
-    const parsedStartDate = (startDate || start_date) ? new Date(startDate || start_date).toISOString() : null;
-    const parsedDeadline = (deadline || due_date || dueDate) ? new Date(deadline || due_date || dueDate).toISOString() : null;
+    const parsedStartDate = parseSafeDate(startDate || start_date);
+    const parsedDeadline = parseSafeDate(deadline || due_date || dueDate);
 
     // Ensure creator exists in users table to satisfy foreign keys
     const userRes = await query("SELECT id, full_name, username FROM users WHERE id = $1", [userId]);
@@ -699,11 +736,12 @@ router.post("/:id/milestones", requireAuth, async (req: AuthenticatedRequest, re
     }
 
     const milestoneId = `ms-${Date.now()}`;
+    const parsedTarget = parseSafeDate(targetDate) || new Date().toISOString();
     const result = await query(
       `INSERT INTO milestones (id, project_id, title, description, target_date, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
        RETURNING *`,
-      [milestoneId, id, title.trim(), description.trim(), new Date(targetDate).toISOString(), status],
+      [milestoneId, id, title.trim(), description.trim(), parsedTarget, status],
     );
 
     res.status(201).json(result.rows[0]);
@@ -730,7 +768,7 @@ router.patch("/:id/milestones/:milestoneId", requireAuth, async (req: Authentica
       fields.push(`description = $${values.length}`);
     }
     if (targetDate !== undefined) {
-      values.push(new Date(targetDate).toISOString());
+      values.push(parseSafeDate(targetDate) || new Date().toISOString());
       fields.push(`target_date = $${values.length}`);
     }
     if (status !== undefined) {

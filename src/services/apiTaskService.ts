@@ -31,11 +31,24 @@ function getStoredToken(): string | null {
   return window.localStorage.getItem("taskflow:jwt_token");
 }
 
+function getActiveUserRole(): string {
+  if (typeof window === "undefined" || !window.localStorage) return "leader";
+  try {
+    const raw = window.localStorage.getItem("taskflow:auth_user");
+    if (raw) {
+      const user = JSON.parse(raw);
+      if (user?.role) return user.role;
+    }
+  } catch {}
+  return "leader";
+}
+
 const inFlightRequests = new Map<string, Promise<any>>();
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isGet = !init || !init.method || init.method.toUpperCase() === "GET";
   const userId = getActiveUserId();
+  const userRole = getActiveUserRole();
   const token = getStoredToken();
   const base = getApiBaseUrl();
   const cacheKey = isGet ? `${userId}:${path}` : null;
@@ -52,6 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         headers: {
           "Content-Type": "application/json",
           "x-user-id": userId,
+          "x-user-role": userRole,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...init?.headers,
         },

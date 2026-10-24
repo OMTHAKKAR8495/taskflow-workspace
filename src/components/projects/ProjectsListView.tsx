@@ -15,7 +15,10 @@ import {
   ArrowRight,
   TrendingUp,
   SlidersHorizontal,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
+import { parseSafeDate } from "@/lib/utils";
 import { useTasks } from "@/context/TaskContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +57,7 @@ export function ProjectsListView() {
   const [startDate, setStartDate] = useState("");
   const [deadline, setDeadline] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((p) => {
@@ -81,43 +85,73 @@ export function ProjectsListView() {
 
   const handleNameChange = (val: string) => {
     setName(val);
+    setFormError(null);
     if (!key || key.length <= 4) {
-      const generated = val
-        .replace(/[^a-zA-Z0-9 ]/g, "")
-        .split(" ")
-        .filter(Boolean)
-        .map((w) => w[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 5);
-      if (generated) setKey(generated);
+      const words = val.replace(/[^a-zA-Z0-9 ]/g, "").split(" ").filter(Boolean);
+      if (words.length > 0) {
+        let candidate = "";
+        if (words.length === 1) {
+          candidate = words[0].slice(0, 3).toUpperCase();
+        } else {
+          candidate = words.map((w) => w[0]).join("").toUpperCase().slice(0, 5);
+        }
+        if (candidate) {
+          let uniqueCandidate = candidate;
+          let counter = 1;
+          while (projects.some((p) => p.key.toUpperCase() === uniqueCandidate)) {
+            counter++;
+            uniqueCandidate = `${candidate}${counter}`.slice(0, 6);
+          }
+          setKey(uniqueCandidate);
+        }
+      }
     }
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !key.trim()) return;
+    setFormError(null);
+
+    const cleanName = name.trim();
+    const cleanKey = key.trim().toUpperCase();
+
+    if (!cleanName) {
+      setFormError("Project Name is required.");
+      return;
+    }
+    if (!cleanKey) {
+      setFormError("Project Key is required.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const p = await createProject({
-        name: name.trim(),
-        key: key.trim().toUpperCase(),
+        name: cleanName,
+        key: cleanKey,
         description: description.trim(),
         color,
         priority,
         health: "on_track",
-        lead: lead.trim(),
-        startDate: startDate ? new Date(startDate).toISOString() : null,
-        deadline: deadline ? new Date(deadline).toISOString() : null,
+        lead: lead.trim() || "Om Thakkar",
+        startDate: parseSafeDate(startDate),
+        deadline: parseSafeDate(deadline),
       });
+
       setCreateModalOpen(false);
       setName("");
       setKey("");
       setDescription("");
+      setStartDate("");
+      setDeadline("");
+      setFormError(null);
+
       navigate({ to: "/projects/$id", params: { id: p.id } });
     } catch (err: any) {
-      toast.error(err?.message || "Failed to create project");
+      console.error("Project creation failed:", err);
+      const msg = err?.message || "Failed to create project";
+      setFormError(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -351,6 +385,13 @@ export function ProjectsListView() {
           </DialogHeader>
 
           <form onSubmit={handleCreateProject} className="space-y-4 pt-2">
+            {formError && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-400 flex items-start gap-2">
+                <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                <div className="flex-1 font-medium">{formError}</div>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground">Project Name *</label>
               <input
@@ -371,7 +412,10 @@ export function ProjectsListView() {
                   required
                   maxLength={6}
                   value={key}
-                  onChange={(e) => setKey(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    setKey(e.target.value.toUpperCase());
+                    setFormError(null);
+                  }}
                   placeholder="e.g. NEX"
                   className="w-full h-9 rounded-lg border border-input bg-card px-3 font-mono text-xs uppercase focus:ring-1 focus:ring-primary"
                 />
@@ -455,13 +499,23 @@ export function ProjectsListView() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setCreateModalOpen(false)}
+                onClick={() => {
+                  setCreateModalOpen(false);
+                  setFormError(null);
+                }}
                 className="cursor-pointer text-xs"
               >
                 Cancel
               </Button>
               <Button type="submit" size="sm" disabled={isSubmitting} className="cursor-pointer text-xs">
-                {isSubmitting ? "Creating..." : "Create Project"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                    Creating Project...
+                  </>
+                ) : (
+                  "Create Project"
+                )}
               </Button>
             </div>
           </form>
