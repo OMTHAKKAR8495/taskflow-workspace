@@ -235,16 +235,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getGoogleLoginUrl = async (): Promise<string> => {
+    const redirectUri = `${window.location.origin}/api/auth/google/callback`;
     try {
-      const redirectUri = `${window.location.origin}/api/auth/google/callback`;
       const res = await fetch(`${getBase()}/auth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.url) return data.url;
+      } else {
+        const errData = await res.json().catch(() => null);
+        if (errData?.error) throw new Error(errData.error);
       }
-    } catch {}
+    } catch (e: any) {
+      if (e?.message && e.message.includes("Google OAuth")) throw e;
+    }
     const clientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || "";
-    const redirectUri = `${window.location.origin}/api/auth/google/callback`;
+    if (!clientId) {
+      throw new Error(
+        "Google Sign-In is not configured yet. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your Vercel Environment Variables.",
+      );
+    }
     return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       redirectUri,
     )}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=select_account`;

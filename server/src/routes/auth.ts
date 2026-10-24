@@ -244,6 +244,11 @@ router.get("/google/config", (_req: Request, res: Response) => {
 
 // GET /api/auth/google/url - Generate OAuth 2.0 authorization redirect URL
 router.get("/google/url", (req: Request, res: Response) => {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_ID.trim()) {
+    return res.status(400).json({
+      error: "Google OAuth is not configured on this deployment. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your Vercel Environment Variables.",
+    });
+  }
   const host = req.get("host") || "localhost:4000";
   const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
   const defaultRedirectUri = `${protocol}://${host}/api/auth/google/callback`;
