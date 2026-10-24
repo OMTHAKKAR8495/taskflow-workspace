@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import { GoogleSignInButton } from "@/components/common/GoogleSignInButton";
 
 export function AuthModal() {
   const { login, register, getRegisteredAccounts } = useAuth();
@@ -114,6 +115,17 @@ export function AuthModal() {
               Sign In <ArrowRight className="size-4 ml-1.5" />
             </Button>
 
+            <div className="relative my-3">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground font-medium">Or continue with</span>
+              </div>
+            </div>
+
+            <GoogleSignInButton label="Sign in with Google" />
+
             <div className="rounded-lg bg-muted/60 p-2.5 text-center text-xs text-muted-foreground border">
               Default access: <span className="font-medium text-foreground">omthakkar</span> /{" "}
               <span className="font-medium text-foreground">thakkar2912</span>
@@ -207,6 +219,17 @@ export function AuthModal() {
             <Button type="submit" className="w-full h-10 font-semibold shadow-sm shadow-primary/25">
               Complete Registration <ArrowRight className="size-4 ml-1.5" />
             </Button>
+
+            <div className="relative my-3">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground font-medium">Or sign up with</span>
+              </div>
+            </div>
+
+            <GoogleSignInButton label="Sign up with Google" />
 
             <div className="pt-2 text-center text-xs text-muted-foreground">
               Already have an ID?{" "}

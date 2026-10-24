@@ -208,6 +208,9 @@ CREATE TABLE IF NOT EXISTS task_reviews (
 
 -- Idempotent schema migrations for existing databases
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'member';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'local';
+CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS priority VARCHAR(50) NOT NULL DEFAULT 'medium';
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS health VARCHAR(50) NOT NULL DEFAULT 'on_track';
