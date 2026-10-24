@@ -14,7 +14,7 @@ const router = Router();
 // POST /api/auth/register
 router.post("/register", authRateLimiter, async (req: Request, res: Response) => {
   try {
-    const { fullName, email, username, password } = req.body;
+    const { fullName, email, username, password, role = "member" } = req.body;
 
     if (!fullName || typeof fullName !== "string" || !fullName.trim()) {
       return res.status(400).json({ error: "Full name is required" });
@@ -32,6 +32,7 @@ router.post("/register", authRateLimiter, async (req: Request, res: Response) =>
     const cleanUsername = username.trim().toLowerCase();
     const cleanEmail = email.trim().toLowerCase();
     const cleanFullName = fullName.trim();
+    const cleanRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
 
     // Check if user exists
     const existing = await query(
@@ -47,14 +48,14 @@ router.post("/register", authRateLimiter, async (req: Request, res: Response) =>
     const now = new Date().toISOString();
 
     const insertRes = await query(
-      `INSERT INTO users (id, username, full_name, email, password_hash, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, username, full_name, email, avatar_url, created_at`,
-      [userId, cleanUsername, cleanFullName, cleanEmail, hashedPassword, now, now],
+      `INSERT INTO users (id, username, full_name, email, password_hash, role, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, username, full_name, email, avatar_url, role, created_at`,
+      [userId, cleanUsername, cleanFullName, cleanEmail, hashedPassword, cleanRole, now, now],
     );
 
     const user = insertRes.rows[0];
-    const token = generateToken({ userId: user.id, username: user.username });
+    const token = generateToken({ userId: user.id, username: user.username, role: user.role });
 
     // Set cookie
     res.cookie("taskflow_token", token, {
@@ -70,6 +71,7 @@ router.post("/register", authRateLimiter, async (req: Request, res: Response) =>
         username: user.username,
         fullName: user.full_name,
         email: user.email,
+        role: user.role || "member",
         avatarUrl: user.avatar_url || "",
       },
       token,
@@ -92,7 +94,7 @@ router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
     const cleanUsername = String(username).trim().toLowerCase();
 
     const result = await query(
-      `SELECT id, username, full_name, email, avatar_url, password_hash
+      `SELECT id, username, full_name, email, avatar_url, role, password_hash
        FROM users
        WHERE LOWER(username) = $1 OR LOWER(email) = $1`,
       [cleanUsername],
@@ -123,7 +125,8 @@ router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const token = generateToken({ userId: user.id, username: user.username });
+    const effectiveRole = user.role || (user.id === "user-om" ? "leader" : "member");
+    const token = generateToken({ userId: user.id, username: user.username, role: effectiveRole });
 
     res.cookie("taskflow_token", token, {
       httpOnly: true,
@@ -138,6 +141,7 @@ router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
         username: user.username,
         fullName: user.full_name,
         email: user.email,
+        role: effectiveRole,
         avatarUrl: user.avatar_url || "",
       },
       token,
@@ -159,7 +163,7 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
   try {
     const userId = req.userId;
     const result = await query(
-      `SELECT id, username, full_name, email, avatar_url, created_at
+      `SELECT id, username, full_name, email, avatar_url, role, created_at
        FROM users WHERE id = $1`,
       [userId],
     );
@@ -169,16 +173,62 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
     }
 
     const u = result.rows[0];
+    const effectiveRole = u.role || (u.id === "user-om" ? "leader" : "member");
     res.json({
       id: u.id,
       username: u.username,
       fullName: u.full_name,
       email: u.email,
+      role: effectiveRole,
       avatarUrl: u.avatar_url || "",
     });
   } catch (err: unknown) {
     console.error("Auth me error:", err);
     res.status(500).json({ error: "Failed to fetch user profile" });
+  }
+});
+
+// PATCH /api/auth/role - Switch active role
+router.patch("/role", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const { role } = req.body;
+    const targetRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
+
+    const updateRes = await query(
+      `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2
+       RETURNING id, username, full_name, email, avatar_url, role`,
+      [targetRole, userId],
+    );
+
+    if (updateRes.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const u = updateRes.rows[0];
+    const token = generateToken({ userId: u.id, username: u.username, role: targetRole });
+
+    res.cookie("taskflow_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      user: {
+        id: u.id,
+        username: u.username,
+        fullName: u.full_name,
+        email: u.email,
+        role: u.role,
+        avatarUrl: u.avatar_url || "",
+      },
+      token,
+    });
+  } catch (err: unknown) {
+    console.error("Role update error:", err);
+    res.status(500).json({ error: "Failed to update role" });
   }
 });
 

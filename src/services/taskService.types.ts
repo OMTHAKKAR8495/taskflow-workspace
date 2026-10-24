@@ -13,6 +13,10 @@ import type {
   TaskInput,
   TaskStatus,
   TeamMember,
+  TaskProgressUpdate,
+  TaskProgressUpdateInput,
+  TaskReview,
+  TaskReviewInput,
 } from "@/types";
 
 /**
@@ -79,14 +83,42 @@ export interface TaskService {
   addTaskDependency?(taskId: string, dependsOnTaskId: string, dependencyType: string): Promise<void>;
   removeTaskDependency?(taskId: string, depId: string): Promise<void>;
 
+  // Progress updates & Reviews
+  submitProgressUpdate?(
+    taskId: string,
+    data: TaskProgressUpdateInput,
+  ): Promise<{ success: boolean; task: Task; progressUpdate: TaskProgressUpdate }>;
+  getTaskProgressUpdates?(taskId: string): Promise<TaskProgressUpdate[]>;
+  submitTaskReview?(
+    taskId: string,
+    data: TaskReviewInput,
+  ): Promise<{ success: boolean; task: Task; review: TaskReview }>;
+  getTaskReviews?(taskId: string): Promise<TaskReview[]>;
+  getReviewQueue?(): Promise<Task[]>;
+
   // Team & Personal Cockpit
   getTeamMembers(): Promise<TeamMember[]>;
   addTeamMember?(data: { name: string; email: string; role: string; avatarUrl?: string }): Promise<TeamMember>;
   getMyWorkTasks?(): Promise<{
+    stats?: {
+      totalAssigned: number;
+      notStarted: number;
+      inProgress: number;
+      inReview: number;
+      blocked: number;
+      completed: number;
+      overdue: number;
+      upcomingCount: number;
+    };
     assignedToMe: Task[];
+    notStarted?: Task[];
+    inProgress?: Task[];
+    inReview?: Task[];
+    blocked?: Task[];
     reviewing: Task[];
     createdByMe: Task[];
     overdue: Task[];
+    upcomingDeadlines?: Task[];
     completedRecently: Task[];
     totalActive: number;
   }>;

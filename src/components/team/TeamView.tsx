@@ -57,9 +57,12 @@ export function TeamView() {
 
   // Invite Member modal state
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteFullName, setInviteFullName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteProjectId, setInviteProjectId] = useState("");
   const [inviteRole, setInviteRole] = useState("developer");
+  const [inviteSkills, setInviteSkills] = useState("");
+  const [inviteDesignation, setInviteDesignation] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
   const [isInviting, setIsInviting] = useState(false);
 
@@ -178,14 +181,20 @@ export function TeamView() {
 
       const res = await taskService.createProjectInvitation(inviteProjectId, {
         email: cleanEmail,
+        fullName: inviteFullName.trim() || undefined,
         role: inviteRole,
+        skills: inviteSkills.trim() || undefined,
+        designation: inviteDesignation.trim() || undefined,
         message: inviteMessage.trim() || undefined,
       });
 
       setInviteResult(res);
       setInviteModalOpen(false);
       setInviteResultModalOpen(true);
+      setInviteFullName("");
       setInviteEmail("");
+      setInviteSkills("");
+      setInviteDesignation("");
       setInviteMessage("");
       void loadInvitations();
 
@@ -688,6 +697,18 @@ export function TeamView() {
           </DialogHeader>
 
           <form onSubmit={handleSendInvitation} className="space-y-4 pt-2">
+            {/* Full Name */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Full Name (Optional)</label>
+              <input
+                type="text"
+                value={inviteFullName}
+                onChange={(e) => setInviteFullName(e.target.value)}
+                placeholder="e.g. Alex Morgan"
+                className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+              />
+            </div>
+
             {/* Recipient Email */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground">Email Address *</label>
@@ -720,7 +741,7 @@ export function TeamView() {
 
             {/* Role Selector */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Role *</label>
+              <label className="text-xs font-semibold text-foreground">Role or Responsibility *</label>
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value)}
@@ -733,6 +754,30 @@ export function TeamView() {
                 <option value="viewer">Viewer</option>
                 <option value="member">Member</option>
               </select>
+            </div>
+
+            {/* Skills & Designation */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Skills (Optional)</label>
+                <input
+                  type="text"
+                  value={inviteSkills}
+                  onChange={(e) => setInviteSkills(e.target.value)}
+                  placeholder="e.g. React, Node.js"
+                  className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Designation (Optional)</label>
+                <input
+                  type="text"
+                  value={inviteDesignation}
+                  onChange={(e) => setInviteDesignation(e.target.value)}
+                  placeholder="e.g. Software Engineer"
+                  className="w-full h-9 rounded-lg border border-input bg-card px-3 text-xs"
+                />
+              </div>
             </div>
 
             {/* Optional Personal Note */}

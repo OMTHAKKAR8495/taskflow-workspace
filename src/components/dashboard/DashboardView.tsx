@@ -16,6 +16,7 @@ import {
   Users,
   Eye,
   Check,
+  ShieldCheck,
 } from "lucide-react";
 import {
   BarChart,
@@ -36,10 +37,12 @@ import { ActivityFeed } from "@/components/common/ActivityFeed";
 import { LoadingState, ErrorState } from "@/components/common/states";
 import { StatusBadge, PriorityBadge } from "@/components/tasks/badges";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
+import { MemberDashboardView } from "./MemberDashboardView";
+import { TaskReviewModal } from "@/components/tasks/TaskReviewModal";
 import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
 import { isOverdue } from "@/lib/task-utils";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, fmtRelative } from "@/lib/format";
 import type { Task } from "@/types";
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -50,13 +53,17 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 
 export function DashboardView() {
-  const { tasks, stats, profile, activity, state, reload, projects, team, setSelectedProjectId } =
+  const { tasks, stats, profile, activity, state, reload, projects, team, setSelectedProjectId, reviewQueue } =
     useTasks();
-  const { user } = useAuth();
+  const { user, switchRole } = useAuth();
   const navigate = useNavigate();
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [reviewingTask, setReviewingTask] = useState<Task | null>(null);
   const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [viewPerspective, setViewPerspective] = useState<"leader" | "member">(
+    user?.role === "member" ? "member" : "leader",
+  );
 
   const displayName = user?.fullName || profile?.fullName || "Om Thakkar";
 
@@ -137,12 +144,43 @@ export function DashboardView() {
     ].filter((d) => d.value > 0);
   }, [stats]);
 
+  const tasksAwaitingReview = useMemo(() => {
+    return nonTrashTasks.filter((t) => t.status === "in_review");
+  }, [nonTrashTasks]);
+
   if (state === "loading") {
     return <LoadingState rows={4} />;
   }
 
   if (state === "error") {
     return <ErrorState onRetry={reload} />;
+  }
+
+  // Render dedicated Member Dashboard when switched to Member perspective
+  if (viewPerspective === "member") {
+    return (
+      <div className="space-y-4">
+        {/* Perspective Switcher Toolbar */}
+        <div className="flex items-center justify-between p-3.5 rounded-xl border bg-muted/20">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground">Active Perspective:</span>
+            <span className="text-xs font-bold text-foreground">👤 Team Member Dashboard</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setViewPerspective("leader");
+              void switchRole("leader");
+            }}
+            className="h-8 text-xs font-semibold gap-1.5 cursor-pointer border-indigo-500/30 text-indigo-600 hover:bg-indigo-500/10"
+          >
+            👑 Switch to Team Leader View
+          </Button>
+        </div>
+        <MemberDashboardView />
+      </div>
+    );
   }
 
   return (
@@ -152,10 +190,10 @@ export function DashboardView() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-              Portfolio Overview
+              Team Leader Portfolio Overview
             </h1>
             <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
-              TaskFlow Nexus
+              Leader View
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -167,7 +205,18 @@ export function DashboardView() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setViewPerspective("member");
+              void switchRole("member");
+            }}
+            className="text-xs gap-1.5 cursor-pointer border-blue-500/30 text-blue-600 hover:bg-blue-500/10"
+          >
+            👤 Member View
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -185,6 +234,76 @@ export function DashboardView() {
           </Button>
         </div>
       </div>
+
+      {/* Leader Review Queue (Section 8 Requirement) */}
+      {tasksAwaitingReview.length > 0 && (
+        <div className="rounded-2xl border border-purple-500/30 bg-purple-500/5 p-5 space-y-3 shadow-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-purple-700 dark:text-purple-300">
+              <ShieldCheck className="size-5 text-purple-600" />
+              <h2 className="text-sm font-bold uppercase tracking-wider">
+                Submissions Awaiting Leader Review ({tasksAwaitingReview.length})
+              </h2>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              Evaluate submitted work, approve or request revisions with written feedback
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {tasksAwaitingReview.map((t) => {
+              const latestUpdate = t.latestProgress || t.progressUpdates?.[0];
+              return (
+                <div
+                  key={t.id}
+                  className="rounded-xl border bg-card p-4 space-y-2.5 shadow-2xs hover:border-purple-500/40 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-bold text-primary px-2 py-0.5 rounded bg-primary/10">
+                        {t.identifier}
+                      </span>
+                      <span className="text-xs font-semibold text-foreground truncate max-w-[200px]">
+                        {t.title}
+                      </span>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] border-purple-500/30 text-purple-600 font-semibold shrink-0">
+                      In Review
+                    </Badge>
+                  </div>
+
+                  {latestUpdate && (
+                    <div className="text-xs text-muted-foreground bg-muted/20 p-2.5 rounded-lg space-y-1">
+                      <p className="line-clamp-2 italic text-foreground">
+                        "{latestUpdate.workCompleted}"
+                      </p>
+                      {latestUpdate.workRemaining && (
+                        <p className="text-[11px] text-muted-foreground line-clamp-1">
+                          Remaining: {latestUpdate.workRemaining}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1 border-t text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1 font-medium text-foreground">
+                      <Users className="size-3 text-muted-foreground" />
+                      {t.assignee?.name || "Team Member"}
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={() => setReviewingTask(t)}
+                      className="h-7 text-xs font-semibold gap-1 bg-purple-600 hover:bg-purple-700 text-white cursor-pointer"
+                    >
+                      <ShieldCheck className="size-3.5" /> Review Submission
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* KPI Metric Strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -458,37 +577,81 @@ export function DashboardView() {
                 (t) => t.assignee?.id === member.id || t.assigneeId === member.id,
               );
               const active = mTasks.filter((t) => t.status !== "completed").length;
+              const inProg = mTasks.filter((t) => t.status === "in_progress").length;
+              const blocked = mTasks.filter((t) => t.status === "blocked").length;
+              const overdue = mTasks.filter(
+                (t) => t.status !== "completed" && isOverdue(t.dueDate),
+              ).length;
               const done = mTasks.filter((t) => t.status === "completed").length;
               const cap = Math.min(Math.round((active / 8) * 100), 100);
+
+              // Find latest progress report for this member
+              const latestUpdateTask = mTasks.find((t) => t.latestProgress || (t.progressUpdates && t.progressUpdates.length > 0));
+              const latestUpdate = latestUpdateTask?.latestProgress || latestUpdateTask?.progressUpdates?.[0];
 
               return (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between rounded-lg border bg-muted/20 p-3 text-xs"
+                  className="rounded-xl border bg-muted/20 p-3.5 text-xs space-y-2 hover:border-primary/30 transition-colors"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs">
-                      {member.initials}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs shrink-0">
+                        {member.initials}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-foreground text-sm">{member.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{member.role} · {member.email}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-semibold text-foreground text-sm">{member.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{member.role}</p>
+
+                    <div className="flex items-center gap-3 text-right">
+                      <div>
+                        <span className="block font-bold text-foreground">{mTasks.length}</span>
+                        <span className="text-[10px] text-muted-foreground uppercase">Assigned</span>
+                      </div>
+                      <div>
+                        <span className="block font-semibold text-blue-600">{inProg}</span>
+                        <span className="text-[10px] text-muted-foreground uppercase">In Prog</span>
+                      </div>
+                      {blocked > 0 && (
+                        <div>
+                          <span className="block font-bold text-rose-600">{blocked}</span>
+                          <span className="text-[10px] text-rose-600 uppercase">Blocked</span>
+                        </div>
+                      )}
+                      {overdue > 0 && (
+                        <div>
+                          <span className="block font-bold text-amber-600">{overdue}</span>
+                          <span className="text-[10px] text-amber-600 uppercase">Overdue</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="block font-semibold text-emerald-600">{done}</span>
+                        <span className="text-[10px] text-muted-foreground uppercase">Done</span>
+                      </div>
+                      <div className="w-16 hidden sm:block">
+                        <Progress value={cap} className="h-1.5" />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4 text-right">
-                    <div>
-                      <span className="block font-semibold text-primary">{active}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">Active</span>
+                  {/* Latest Progress Report Preview */}
+                  {latestUpdate ? (
+                    <div className="pt-1.5 border-t border-border/40 text-[11px] text-muted-foreground flex items-center justify-between gap-2">
+                      <span className="truncate">
+                        <span className="font-semibold text-foreground">Latest: </span>
+                        {latestUpdate.workCompleted.slice(0, 60)}...
+                      </span>
+                      <span className="shrink-0 opacity-75">
+                        {fmtRelative(latestUpdate.createdAt)}
+                      </span>
                     </div>
-                    <div>
-                      <span className="block font-semibold text-emerald-600">{done}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">Done</span>
+                  ) : (
+                    <div className="pt-1 border-t border-border/40 text-[10px] text-muted-foreground italic">
+                      No daily progress reports submitted yet.
                     </div>
-                    <div className="w-16 hidden sm:block">
-                      <Progress value={cap} className="h-1.5" />
-                    </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -562,6 +725,20 @@ export function DashboardView() {
           task={selectedTask}
           open={!!selectedTask}
           onClose={() => setSelectedTask(null)}
+        />
+      )}
+
+      {/* Task Review Modal for Leader Approvals */}
+      {reviewingTask && (
+        <TaskReviewModal
+          task={reviewingTask}
+          open={!!reviewingTask}
+          onOpenChange={(open) => {
+            if (!open) setReviewingTask(null);
+          }}
+          onSuccess={() => {
+            reload();
+          }}
         />
       )}
     </div>

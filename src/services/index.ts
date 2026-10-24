@@ -120,6 +120,41 @@ class ResilientTaskService implements TaskService {
     );
   }
 
+  submitProgressUpdate(taskId: string, data: any) {
+    return this.execute(
+      () => apiTaskService.submitProgressUpdate!(taskId, data),
+      () => mockTaskService.submitProgressUpdate!(taskId, data),
+    );
+  }
+
+  getTaskProgressUpdates(taskId: string) {
+    return this.execute(
+      () => apiTaskService.getTaskProgressUpdates!(taskId),
+      () => mockTaskService.getTaskProgressUpdates!(taskId),
+    );
+  }
+
+  submitTaskReview(taskId: string, data: any) {
+    return this.execute(
+      () => apiTaskService.submitTaskReview!(taskId, data),
+      () => mockTaskService.submitTaskReview!(taskId, data),
+    );
+  }
+
+  getTaskReviews(taskId: string) {
+    return this.execute(
+      () => apiTaskService.getTaskReviews!(taskId),
+      () => mockTaskService.getTaskReviews!(taskId),
+    );
+  }
+
+  getReviewQueue() {
+    return this.execute(
+      () => apiTaskService.getReviewQueue!(),
+      () => mockTaskService.getReviewQueue!(),
+    );
+  }
+
   // Projects
   getProjects(params?: any) {
     return this.execute(

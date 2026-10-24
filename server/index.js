@@ -34681,7 +34681,7 @@ function authRateLimiter(req, res, next) {
 var router = (0, import_express.Router)();
 router.post("/register", authRateLimiter, async (req, res) => {
   try {
-    const { fullName, email, username, password } = req.body;
+    const { fullName, email, username, password, role = "member" } = req.body;
     if (!fullName || typeof fullName !== "string" || !fullName.trim()) {
       return res.status(400).json({ error: "Full name is required" });
     }
@@ -34697,6 +34697,7 @@ router.post("/register", authRateLimiter, async (req, res) => {
     const cleanUsername = username.trim().toLowerCase();
     const cleanEmail = email.trim().toLowerCase();
     const cleanFullName = fullName.trim();
+    const cleanRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
     const existing = await query(
       "SELECT id FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $2",
       [cleanUsername, cleanEmail]
@@ -34708,13 +34709,13 @@ router.post("/register", authRateLimiter, async (req, res) => {
     const userId = `user-${Date.now()}`;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const insertRes = await query(
-      `INSERT INTO users (id, username, full_name, email, password_hash, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, username, full_name, email, avatar_url, created_at`,
-      [userId, cleanUsername, cleanFullName, cleanEmail, hashedPassword, now, now]
+      `INSERT INTO users (id, username, full_name, email, password_hash, role, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, username, full_name, email, avatar_url, role, created_at`,
+      [userId, cleanUsername, cleanFullName, cleanEmail, hashedPassword, cleanRole, now, now]
     );
     const user = insertRes.rows[0];
-    const token = generateToken({ userId: user.id, username: user.username });
+    const token = generateToken({ userId: user.id, username: user.username, role: user.role });
     res.cookie("taskflow_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -34727,6 +34728,7 @@ router.post("/register", authRateLimiter, async (req, res) => {
         username: user.username,
         fullName: user.full_name,
         email: user.email,
+        role: user.role || "member",
         avatarUrl: user.avatar_url || ""
       },
       token
@@ -34744,7 +34746,7 @@ router.post("/login", authRateLimiter, async (req, res) => {
     }
     const cleanUsername = String(username).trim().toLowerCase();
     const result = await query(
-      `SELECT id, username, full_name, email, avatar_url, password_hash
+      `SELECT id, username, full_name, email, avatar_url, role, password_hash
        FROM users
        WHERE LOWER(username) = $1 OR LOWER(email) = $1`,
       [cleanUsername]
@@ -34768,7 +34770,8 @@ router.post("/login", authRateLimiter, async (req, res) => {
     if (!isValid) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
-    const token = generateToken({ userId: user.id, username: user.username });
+    const effectiveRole = user.role || (user.id === "user-om" ? "leader" : "member");
+    const token = generateToken({ userId: user.id, username: user.username, role: effectiveRole });
     res.cookie("taskflow_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -34781,6 +34784,7 @@ router.post("/login", authRateLimiter, async (req, res) => {
         username: user.username,
         fullName: user.full_name,
         email: user.email,
+        role: effectiveRole,
         avatarUrl: user.avatar_url || ""
       },
       token
@@ -34798,7 +34802,7 @@ router.get("/me", requireAuth, async (req, res) => {
   try {
     const userId = req.userId;
     const result = await query(
-      `SELECT id, username, full_name, email, avatar_url, created_at
+      `SELECT id, username, full_name, email, avatar_url, role, created_at
        FROM users WHERE id = $1`,
       [userId]
     );
@@ -34806,16 +34810,55 @@ router.get("/me", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
     const u = result.rows[0];
+    const effectiveRole = u.role || (u.id === "user-om" ? "leader" : "member");
     res.json({
       id: u.id,
       username: u.username,
       fullName: u.full_name,
       email: u.email,
+      role: effectiveRole,
       avatarUrl: u.avatar_url || ""
     });
   } catch (err) {
     console.error("Auth me error:", err);
     res.status(500).json({ error: "Failed to fetch user profile" });
+  }
+});
+router.patch("/role", requireAuth, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { role } = req.body;
+    const targetRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
+    const updateRes = await query(
+      `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2
+       RETURNING id, username, full_name, email, avatar_url, role`,
+      [targetRole, userId]
+    );
+    if (updateRes.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const u = updateRes.rows[0];
+    const token = generateToken({ userId: u.id, username: u.username, role: targetRole });
+    res.cookie("taskflow_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1e3
+    });
+    res.json({
+      user: {
+        id: u.id,
+        username: u.username,
+        fullName: u.full_name,
+        email: u.email,
+        role: u.role,
+        avatarUrl: u.avatar_url || ""
+      },
+      token
+    });
+  } catch (err) {
+    console.error("Role update error:", err);
+    res.status(500).json({ error: "Failed to update role" });
   }
 });
 var auth_default = router;
@@ -34863,6 +34906,162 @@ async function wouldCreateCycle(taskId, dependsOnTaskId) {
   return false;
 }
 
+// src/permissions.ts
+async function isWorkspaceAdminOrLead(userId, userRecord) {
+  if (userRecord && userRecord.role) {
+    const r = userRecord.role.toLowerCase();
+    return r === "admin" || r === "leader" || r === "lead";
+  }
+  const res = await query("SELECT role FROM users WHERE id = $1", [userId]);
+  if (res.rows.length > 0) {
+    const role = (res.rows[0].role || "").toLowerCase();
+    return role === "admin" || role === "leader" || role === "lead";
+  }
+  if (userId === "user-om" || userId === "omthakkar") return true;
+  return false;
+}
+async function isProjectLeader(userId, projectId, projectRecord) {
+  if (!projectId) return false;
+  if (await isWorkspaceAdminOrLead(userId)) return true;
+  if (projectRecord) {
+    const owner = projectRecord.owner_id || projectRecord.ownerId;
+    if (owner === userId) return true;
+    if (projectRecord.members) {
+      const m = projectRecord.members.find((x) => x.id === userId || x.userId === userId);
+      if (m && m.role) {
+        const r = m.role.toLowerCase();
+        if (r === "owner" || r === "lead" || r === "admin") return true;
+      }
+    }
+  }
+  const projRes = await query("SELECT owner_id FROM projects WHERE id = $1", [projectId]);
+  if (projRes.rows.length > 0 && projRes.rows[0].owner_id === userId) {
+    return true;
+  }
+  const pmRes = await query(
+    `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
+    [projectId, userId]
+  );
+  if (pmRes.rows.length > 0) {
+    const r = (pmRes.rows[0].role || "").toLowerCase();
+    return r === "owner" || r === "lead" || r === "admin";
+  }
+  return false;
+}
+async function isProjectMember(userId, projectId, projectRecord) {
+  if (!projectId) return false;
+  if (await isWorkspaceAdminOrLead(userId)) return true;
+  if (projectRecord) {
+    const owner = projectRecord.owner_id || projectRecord.ownerId;
+    if (owner === userId) return true;
+    if (projectRecord.members) {
+      const isM = projectRecord.members.some((x) => x.id === userId || x.userId === userId);
+      if (isM) return true;
+    }
+  }
+  const projRes = await query("SELECT owner_id FROM projects WHERE id = $1", [projectId]);
+  if (projRes.rows.length > 0 && projRes.rows[0].owner_id === userId) {
+    return true;
+  }
+  const pmRes = await query(
+    `SELECT id FROM project_members WHERE project_id = $1 AND user_id = $2`,
+    [projectId, userId]
+  );
+  return pmRes.rows.length > 0;
+}
+async function canUserEditTask(userId, taskId, taskRecord, projectRecord) {
+  let task = taskRecord;
+  if (!task) {
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    if (taskRes.rows.length === 0) {
+      return { allowed: false, isLeader: false, reason: "Task not found" };
+    }
+    task = taskRes.rows[0];
+  }
+  const projectId = task.project_id || task.projectId;
+  const taskUserId = task.user_id || task.userId;
+  const assigneeId = task.assignee_id || task.assigneeId || task.assignee?.id;
+  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer?.id;
+  if (!projectId) {
+    const allowed = taskUserId === userId || await isWorkspaceAdminOrLead(userId);
+    return { allowed, isLeader: allowed, reason: allowed ? void 0 : "Personal task owned by another user" };
+  }
+  const isLead = await isProjectLeader(userId, projectId, projectRecord);
+  if (isLead) {
+    return { allowed: true, isLeader: true };
+  }
+  const isAssignee = assigneeId === userId;
+  const isCreator = taskUserId === userId;
+  const isReviewer = reviewerId === userId;
+  if (isAssignee || isCreator || isReviewer) {
+    return { allowed: true, isLeader: false };
+  }
+  return {
+    allowed: false,
+    isLeader: false,
+    reason: "Unauthorized: Members cannot edit tasks assigned to other team members"
+  };
+}
+async function canUserReviewTask(userId, taskId, taskRecord, projectRecord) {
+  let task = taskRecord;
+  if (!task) {
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    if (taskRes.rows.length === 0) {
+      return { allowed: false, reason: "Task not found" };
+    }
+    task = taskRes.rows[0];
+  }
+  const projectId = task.project_id || task.projectId;
+  const assigneeId = task.assignee_id || task.assigneeId || task.assignee?.id;
+  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer?.id;
+  const isLead = projectId ? await isProjectLeader(userId, projectId, projectRecord) : await isWorkspaceAdminOrLead(userId);
+  const isReviewer = reviewerId === userId;
+  if (assigneeId === userId && !isLead) {
+    return {
+      allowed: false,
+      reason: "Self-review forbidden: Team members cannot approve their own work"
+    };
+  }
+  if (isLead || isReviewer) {
+    return { allowed: true };
+  }
+  return {
+    allowed: false,
+    reason: "Unauthorized: Only project leaders or designated reviewers can review task submissions"
+  };
+}
+async function canUserViewTask(userId, taskId, taskRecord, projectRecord) {
+  let task = taskRecord;
+  if (!task) {
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    if (taskRes.rows.length === 0) {
+      return { allowed: false, isLeader: false, reason: "Task not found" };
+    }
+    task = taskRes.rows[0];
+  }
+  const projectId = task.project_id || task.projectId;
+  const taskUserId = task.user_id || task.userId;
+  const assigneeId = task.assignee_id || task.assigneeId || task.assignee && task.assignee.id;
+  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer && task.reviewer.id;
+  if (await isWorkspaceAdminOrLead(userId)) {
+    return { allowed: true, isLeader: true };
+  }
+  if (projectId) {
+    const isLead = await isProjectLeader(userId, projectId, projectRecord);
+    if (isLead) {
+      return { allowed: true, isLeader: true };
+    }
+  }
+  if (assigneeId === userId || taskUserId === userId || reviewerId === userId) {
+    return { allowed: true, isLeader: false };
+  }
+  return {
+    allowed: false,
+    isLeader: false,
+    reason: "Forbidden: You do not have permission to access this task"
+  };
+}
+
 // src/routes/tasks.ts
 var router2 = (0, import_express2.Router)();
 var VALID_STATUSES = [
@@ -34877,6 +35076,8 @@ var VALID_STATUSES = [
 ];
 var VALID_PRIORITIES = ["critical", "high", "medium", "low"];
 function getUserId(req) {
+  if (req.user?.userId) return req.user.userId;
+  if (req.userId) return req.userId;
   const token = extractToken(req);
   if (token) {
     const decoded = verifyToken(token);
@@ -34885,7 +35086,7 @@ function getUserId(req) {
   const custom = req.headers["x-user-id"];
   return custom && custom.trim() ? custom.trim() : "user-om";
 }
-function formatTask(row, comments = [], dependencies = []) {
+function formatTask(row, comments = [], dependencies = [], progressUpdates = [], reviews = []) {
   let tags = [];
   try {
     tags = typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags || [];
@@ -34933,6 +35134,8 @@ function formatTask(row, comments = [], dependencies = []) {
     estimatedHours: parseFloat(row.estimated_hours || "0") || 0,
     actualHours: parseFloat(row.actual_hours || "0") || 0,
     estimate: row.estimate || "3 pts",
+    progressPercent: row.progress_percent !== null && row.progress_percent !== void 0 ? parseInt(row.progress_percent, 10) : 0,
+    lastProgressUpdateAt: row.last_progress_update_at ? new Date(row.last_progress_update_at).toISOString() : null,
     tags,
     subtasks,
     acceptanceCriteria,
@@ -34960,15 +35163,51 @@ function formatTask(row, comments = [], dependencies = []) {
       dependsOnTaskStatus: d.depends_on_status || "backlog",
       dependencyType: d.dependency_type
     })),
+    progressUpdates: progressUpdates.map((p) => ({
+      id: p.id,
+      taskId: p.task_id,
+      userId: p.user_id,
+      userName: p.user_name,
+      status: p.status,
+      progressPercent: parseInt(p.progress_percent || "0", 10),
+      workCompleted: p.work_completed,
+      workRemaining: p.work_remaining || "",
+      blockers: p.blockers || "",
+      nextSteps: p.next_steps || "",
+      timeSpentHours: parseFloat(p.time_spent_hours || "0") || 0,
+      evidenceUrl: p.evidence_url || "",
+      createdAt: new Date(p.created_at).toISOString()
+    })),
+    reviews: reviews.map((r) => ({
+      id: r.id,
+      taskId: r.task_id,
+      reviewerId: r.reviewer_id,
+      reviewerName: r.reviewer_name,
+      progressUpdateId: r.progress_update_id || void 0,
+      decision: r.decision,
+      feedback: r.feedback,
+      createdAt: new Date(r.created_at).toISOString()
+    })),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString()
   };
 }
 router2.get("/stats", optionalAuth, async (req, res) => {
   try {
+    const userId = getUserId(req);
     const { projectId } = req.query;
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    let isProjLead = false;
+    if (projectId && typeof projectId === "string" && projectId !== "all") {
+      isProjLead = await isProjectLeader(userId, projectId);
+    }
+    const isAuthorizedLead = isGlobalLead || isProjLead;
     let sql = "SELECT * FROM tasks WHERE is_trash = FALSE";
     const params = [];
+    if (!isAuthorizedLead) {
+      params.push(userId);
+      sql += ` AND (assignee_id = $${params.length} OR user_id = $${params.length} OR reviewer_id = $${params.length})`;
+    }
     if (projectId && typeof projectId === "string" && projectId !== "all") {
       params.push(projectId);
       sql += ` AND project_id = $${params.length}`;
@@ -35030,16 +35269,40 @@ router2.get("/my-work", optionalAuth, async (req, res) => {
     );
     const now = /* @__PURE__ */ new Date();
     const tasks = userTasksRes.rows.map((row) => formatTask(row));
-    const assignedToMe = tasks.filter((t) => t.assignee?.id === userId && t.status !== "completed");
+    const allAssigned = tasks.filter((t) => t.assignee?.id === userId || t.userId === userId);
+    const assignedToMe = tasks.filter((t) => (t.assignee?.id === userId || !t.assignee?.id && t.userId === userId) && t.status !== "completed");
+    const notStarted = assignedToMe.filter((t) => t.status === "ready" || t.status === "backlog" || t.status === "pending");
+    const inProgress = assignedToMe.filter((t) => t.status === "in_progress");
+    const inReview = assignedToMe.filter((t) => t.status === "in_review");
+    const blocked = assignedToMe.filter((t) => t.status === "blocked");
     const reviewing = tasks.filter((t) => t.reviewer?.id === userId && t.status === "in_review");
     const createdByMe = tasks.filter((t) => t.userId === userId && t.status !== "completed");
     const overdue = assignedToMe.filter((t) => t.dueDate && new Date(t.dueDate) < now);
-    const completedRecently = tasks.filter((t) => t.status === "completed");
+    const completed = tasks.filter((t) => (t.assignee?.id === userId || t.userId === userId) && t.status === "completed");
+    const completedRecently = completed.slice(0, 15);
+    const upcomingLimit = /* @__PURE__ */ new Date();
+    upcomingLimit.setDate(now.getDate() + 14);
+    const upcomingDeadlines = assignedToMe.filter((t) => t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= upcomingLimit).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     res.json({
+      stats: {
+        totalAssigned: allAssigned.length,
+        notStarted: notStarted.length,
+        inProgress: inProgress.length,
+        inReview: inReview.length,
+        blocked: blocked.length,
+        completed: completed.length,
+        overdue: overdue.length,
+        upcomingCount: upcomingDeadlines.length
+      },
       assignedToMe,
+      notStarted,
+      inProgress,
+      inReview,
+      blocked,
       reviewing,
       createdByMe,
       overdue,
+      upcomingDeadlines,
       completedRecently,
       totalActive: assignedToMe.length + reviewing.length
     });
@@ -35048,15 +35311,68 @@ router2.get("/my-work", optionalAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch my-work tasks" });
   }
 });
+router2.get("/review-queue", optionalAuth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const isLead = await isWorkspaceAdminOrLead(userId);
+    let sql = `SELECT t.*,
+              (SELECT json_build_object(
+                 'id', pu.id,
+                 'workCompleted', pu.work_completed,
+                 'workRemaining', pu.work_remaining,
+                 'progressPercent', pu.progress_percent,
+                 'timeSpentHours', pu.time_spent_hours,
+                 'evidenceUrl', pu.evidence_url,
+                 'userName', pu.user_name,
+                 'createdAt', pu.created_at
+               ) FROM task_progress_updates pu WHERE pu.task_id = t.id ORDER BY pu.created_at DESC LIMIT 1) as latest_progress
+       FROM tasks t
+       WHERE t.is_trash = FALSE AND t.status = 'in_review'`;
+    const params = [];
+    if (!isLead) {
+      const ledProjectsRes = await query("SELECT id FROM projects WHERE owner_id = $1", [userId]);
+      const ledProjectIds = ledProjectsRes.rows.map((r) => r.id);
+      if (ledProjectIds.length > 0) {
+        params.push(ledProjectIds, userId);
+        sql += ` AND (t.project_id = ANY($1) OR t.reviewer_id = $2)`;
+      } else {
+        params.push(userId);
+        sql += ` AND t.reviewer_id = $1`;
+      }
+    }
+    sql += ` ORDER BY t.updated_at DESC`;
+    const result = await query(sql, params);
+    res.json(
+      result.rows.map((r) => ({
+        ...formatTask(r),
+        latestProgress: r.latest_progress || null
+      }))
+    );
+  } catch (err) {
+    console.error("Error fetching review queue:", err);
+    res.status(500).json({ error: "Failed to fetch review queue" });
+  }
+});
 router2.get("/", optionalAuth, async (req, res) => {
   try {
+    const userId = getUserId(req);
     const { projectId, status, priority, assigneeId, search, isTrash } = req.query;
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    let isProjLead = false;
+    if (projectId && typeof projectId === "string" && projectId !== "all") {
+      isProjLead = await isProjectLeader(userId, projectId);
+    }
+    const isAuthorizedLead = isGlobalLead || isProjLead;
     let sql = "SELECT * FROM tasks WHERE 1=1";
     const params = [];
     if (isTrash === "true") {
       sql += " AND is_trash = TRUE";
     } else {
       sql += " AND is_trash = FALSE";
+    }
+    if (!isAuthorizedLead) {
+      params.push(userId);
+      sql += ` AND (assignee_id = $${params.length} OR user_id = $${params.length} OR reviewer_id = $${params.length})`;
     }
     if (projectId && typeof projectId === "string" && projectId !== "all") {
       params.push(projectId);
@@ -35110,9 +35426,15 @@ router2.get("/", optionalAuth, async (req, res) => {
 router2.get("/:id", optionalAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = getUserId(req);
     const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
     if (taskRes.rowCount === 0) {
       return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
     }
     const commentsRes = await query(
       "SELECT * FROM task_comments WHERE task_id = $1 ORDER BY created_at ASC",
@@ -35125,7 +35447,23 @@ router2.get("/:id", optionalAuth, async (req, res) => {
        WHERE td.task_id = $1`,
       [id]
     );
-    res.json(formatTask(taskRes.rows[0], commentsRes.rows, depsRes.rows));
+    const progressRes = await query(
+      "SELECT * FROM task_progress_updates WHERE task_id = $1 ORDER BY created_at DESC",
+      [id]
+    );
+    const reviewsRes = await query(
+      "SELECT * FROM task_reviews WHERE task_id = $1 ORDER BY created_at DESC",
+      [id]
+    );
+    res.json(
+      formatTask(
+        task,
+        commentsRes.rows,
+        depsRes.rows,
+        progressRes.rows,
+        reviewsRes.rows
+      )
+    );
   } catch (err) {
     console.error("Error fetching task:", err);
     res.status(500).json({ error: "Failed to fetch task" });
@@ -35162,6 +35500,16 @@ router2.post("/", requireAuth, async (req, res) => {
     }
     if (priority && !VALID_PRIORITIES.includes(priority)) {
       return res.status(400).json({ error: `Invalid priority. Must be one of: ${VALID_PRIORITIES.join(", ")}` });
+    }
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    let isProjLead = false;
+    if (projectId) {
+      isProjLead = await isProjectLeader(userId, projectId);
+    }
+    if (!isGlobalLead && !isProjLead) {
+      if (assigneeId && assigneeId !== userId) {
+        return res.status(403).json({ error: "Unauthorized: Only team leaders can assign tasks to other team members" });
+      }
     }
     let projectName = null;
     let projectColor = null;
@@ -35298,6 +35646,24 @@ router2.patch("/:id", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "Task not found" });
     }
     const current = currentRes.rows[0];
+    const taskId = String(id);
+    const perm = await canUserEditTask(userId, taskId, current);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to update this task" });
+    }
+    if (!perm.isLeader) {
+      if (req.body.assigneeId !== void 0 && req.body.assigneeId !== current.assignee_id) {
+        return res.status(403).json({ error: "Unauthorized: Team members cannot reassign tasks to other members" });
+      }
+      if (req.body.projectId !== void 0 && req.body.projectId !== current.project_id) {
+        return res.status(403).json({ error: "Unauthorized: Team members cannot move tasks between projects" });
+      }
+      if (req.body.status === "completed" && current.reviewer_id && current.reviewer_id !== userId && current.status !== "completed") {
+        return res.status(400).json({
+          error: "This task requires leader/reviewer sign-off. Please submit your work for review instead."
+        });
+      }
+    }
     if (req.body.title !== void 0) {
       if (typeof req.body.title !== "string" || !req.body.title.trim()) {
         return res.status(400).json({ error: "Title must be a non-empty string" });
@@ -35322,6 +35688,7 @@ router2.patch("/:id", requireAuth, async (req, res) => {
     const estimate = req.body.estimate !== void 0 ? req.body.estimate : current.estimate;
     const isBookmarked = req.body.isBookmarked !== void 0 ? req.body.isBookmarked : current.is_bookmarked;
     const milestoneId = req.body.milestoneId !== void 0 ? req.body.milestoneId : current.milestone_id;
+    const progressPercent = req.body.progressPercent !== void 0 ? Math.max(0, Math.min(100, parseInt(req.body.progressPercent, 10) || 0)) : current.progress_percent || 0;
     const tags = req.body.tags !== void 0 ? JSON.stringify(req.body.tags) : current.tags;
     const subtasks = req.body.subtasks !== void 0 ? JSON.stringify(req.body.subtasks) : current.subtasks;
     const acceptanceCriteria = req.body.acceptanceCriteria !== void 0 ? JSON.stringify(req.body.acceptanceCriteria) : current.acceptance_criteria;
@@ -35393,8 +35760,8 @@ router2.patch("/:id", requireAuth, async (req, res) => {
            assignee_id = $15, assignee_name = $16, assignee_role = $17, assignee_initials = $18,
            reviewer_id = $19, reviewer_name = $20, milestone_id = $21,
            tags = $22, subtasks = $23, acceptance_criteria = $24, is_bookmarked = $25,
-           completed_at = $26, updated_at = $27
-       WHERE id = $28
+           completed_at = $26, progress_percent = $27, updated_at = $28
+       WHERE id = $29
        RETURNING *`,
       [
         title,
@@ -35423,6 +35790,7 @@ router2.patch("/:id", requireAuth, async (req, res) => {
         acceptanceCriteria,
         isBookmarked,
         completedAt,
+        progressPercent,
         now,
         id
       ]
@@ -35488,6 +35856,15 @@ router2.post("/:id/status", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "Task not found" });
     }
     const current = currentRes.rows[0];
+    const perm = await canUserEditTask(userId, String(id), current);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to update this task" });
+    }
+    if (status === "completed" && !perm.isLeader && current.reviewer_id && current.reviewer_id !== userId) {
+      return res.status(400).json({
+        error: "This task requires leader/reviewer approval. Submit for review instead."
+      });
+    }
     if (status === "completed") {
       const blockersRes = await query(
         `SELECT t.id, t.title, t.identifier, t.status
@@ -35531,9 +35908,325 @@ router2.post("/:id/status", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to update status" });
   }
 });
-router2.get("/:id/dependencies", async (req, res) => {
+router2.post("/:id/progress", requireAuth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const {
+      status,
+      progressPercent,
+      workCompleted,
+      workRemaining = "",
+      blockers = "",
+      nextSteps = "",
+      timeSpentHours = 0,
+      evidenceUrl = ""
+    } = req.body;
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const perm = await canUserEditTask(userId, String(id), task);
+    if (!perm.allowed) {
+      return res.status(403).json({ error: perm.reason || "Unauthorized to update this task" });
+    }
+    if (!workCompleted || typeof workCompleted !== "string" || !workCompleted.trim()) {
+      return res.status(400).json({ error: "Work completed description is required" });
+    }
+    const pct = parseInt(progressPercent !== void 0 ? progressPercent : task.progress_percent || 0, 10);
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      return res.status(400).json({ error: "Progress percentage must be an integer between 0 and 100" });
+    }
+    const validProgressStatuses = ["ready", "in_progress", "in_review", "blocked", "completed", "backlog"];
+    const targetStatus = status && validProgressStatuses.includes(status) ? status : task.status;
+    if (targetStatus === "blocked" && (!blockers || !blockers.trim())) {
+      return res.status(400).json({ error: "A blocker or issue reason is required when marking a task as Blocked" });
+    }
+    if (targetStatus === "completed" && !perm.isLeader && task.reviewer_id && task.reviewer_id !== userId) {
+      return res.status(400).json({
+        error: "This task requires leader/reviewer approval. Please submit for review instead."
+      });
+    }
+    const userRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
+    const userName = userRes.rows[0]?.full_name || userRes.rows[0]?.username || "Team Member";
+    const updateId = `prog-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const completedAt = targetStatus === "completed" ? now : null;
+    const cleanBlockedReason = targetStatus === "blocked" ? blockers.trim() : task.status === "blocked" && targetStatus !== "blocked" ? "" : task.blocked_reason;
+    const addedHours = parseFloat(timeSpentHours) || 0;
+    const newActualHours = (parseFloat(task.actual_hours) || 0) + addedHours;
+    const progInsert = await query(
+      `INSERT INTO task_progress_updates
+       (id, task_id, user_id, user_name, status, progress_percent, work_completed, work_remaining, blockers, next_steps, time_spent_hours, evidence_url, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+       RETURNING *`,
+      [
+        updateId,
+        id,
+        userId,
+        userName,
+        targetStatus,
+        pct,
+        workCompleted.trim(),
+        workRemaining ? workRemaining.trim() : "",
+        blockers ? blockers.trim() : "",
+        nextSteps ? nextSteps.trim() : "",
+        addedHours,
+        evidenceUrl ? evidenceUrl.trim() : ""
+      ]
+    );
+    const taskUpdateRes = await query(
+      `UPDATE tasks
+       SET status = $1,
+           progress_percent = $2,
+           blocked_reason = $3,
+           actual_hours = $4,
+           last_progress_update_at = NOW(),
+           completed_at = COALESCE($5, completed_at),
+           updated_at = NOW()
+       WHERE id = $6
+       RETURNING *`,
+      [targetStatus, pct, cleanBlockedReason, newActualHours, completedAt, id]
+    );
+    const actType = targetStatus === "in_review" ? "review_requested" : targetStatus === "blocked" ? "task_blocked" : targetStatus === "completed" ? "task_completed" : "progress_updated";
+    await query(
+      `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+      [
+        `act-${Date.now()}`,
+        userId,
+        task.project_id,
+        id,
+        task.title,
+        actType,
+        JSON.stringify({
+          status: targetStatus,
+          progressPercent: pct,
+          workCompleted: workCompleted.trim(),
+          userName
+        })
+      ]
+    );
+    const recipientId = task.reviewer_id || (task.project_id ? (await query("SELECT owner_id FROM projects WHERE id = $1", [task.project_id])).rows[0]?.owner_id : "user-om") || "user-om";
+    if (recipientId && recipientId !== userId) {
+      let notifTitle = `Progress Update: ${task.identifier || task.title}`;
+      let notifMessage = `${userName} updated progress to ${pct}%: ${workCompleted.trim().slice(0, 100)}`;
+      let notifType = "system";
+      if (targetStatus === "in_review") {
+        notifTitle = `Review Requested: ${task.identifier || task.title}`;
+        notifMessage = `${userName} submitted work for review (${pct}% complete).`;
+        notifType = "review";
+      } else if (targetStatus === "blocked") {
+        notifTitle = `Task Blocked: ${task.identifier || task.title}`;
+        notifMessage = `${userName} reported a blocker: ${blockers.trim().slice(0, 100)}`;
+        notifType = "system";
+      }
+      await query(
+        `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'task', $8, FALSE, NOW())`,
+        [`notif-${Date.now()}`, recipientId, userId, userName, notifType, notifTitle, notifMessage, id]
+      );
+    }
+    res.status(201).json({
+      success: true,
+      task: formatTask(taskUpdateRes.rows[0]),
+      progressUpdate: {
+        id: progInsert.rows[0].id,
+        taskId: id,
+        userId,
+        userName,
+        status: targetStatus,
+        progressPercent: pct,
+        workCompleted: workCompleted.trim(),
+        workRemaining: workRemaining.trim(),
+        blockers: blockers.trim(),
+        nextSteps: nextSteps.trim(),
+        timeSpentHours: addedHours,
+        evidenceUrl: evidenceUrl.trim(),
+        createdAt: new Date(progInsert.rows[0].created_at).toISOString()
+      }
+    });
+  } catch (err) {
+    console.error("Error submitting progress update:", err);
+    res.status(500).json({ error: "Failed to submit progress update: " + err.message });
+  }
+});
+router2.get("/:id/progress", optionalAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = getUserId(req);
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
+    }
+    const result = await query(
+      "SELECT * FROM task_progress_updates WHERE task_id = $1 ORDER BY created_at DESC",
+      [id]
+    );
+    res.json(
+      result.rows.map((p) => ({
+        id: p.id,
+        taskId: p.task_id,
+        userId: p.user_id,
+        userName: p.user_name,
+        status: p.status,
+        progressPercent: parseInt(p.progress_percent || "0", 10),
+        workCompleted: p.work_completed,
+        workRemaining: p.work_remaining || "",
+        blockers: p.blockers || "",
+        nextSteps: p.next_steps || "",
+        timeSpentHours: parseFloat(p.time_spent_hours || "0") || 0,
+        evidenceUrl: p.evidence_url || "",
+        createdAt: new Date(p.created_at).toISOString()
+      }))
+    );
+  } catch (err) {
+    console.error("Error fetching progress updates:", err);
+    res.status(500).json({ error: "Failed to fetch progress updates" });
+  }
+});
+router2.post("/:id/review", requireAuth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const { decision, feedback, progressUpdateId } = req.body;
+    if (!decision || decision !== "approved" && decision !== "changes_requested") {
+      return res.status(400).json({ error: "Decision must be either 'approved' or 'changes_requested'" });
+    }
+    if (!feedback || typeof feedback !== "string" || !feedback.trim()) {
+      return res.status(400).json({ error: "Written feedback is required for review decisions" });
+    }
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const authCheck = await canUserReviewTask(userId, String(id), task);
+    if (!authCheck.allowed) {
+      return res.status(403).json({ error: authCheck.reason || "Unauthorized to review this task" });
+    }
+    const reviewerRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
+    const reviewerName = reviewerRes.rows[0]?.full_name || reviewerRes.rows[0]?.username || "Team Leader";
+    const reviewId = `rev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const revInsert = await query(
+      `INSERT INTO task_reviews (id, task_id, reviewer_id, reviewer_name, progress_update_id, decision, feedback, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       RETURNING *`,
+      [reviewId, id, userId, reviewerName, progressUpdateId || null, decision, feedback.trim()]
+    );
+    let newStatus = task.status;
+    let completedAt = task.completed_at;
+    let progressPercent = task.progress_percent;
+    if (decision === "approved") {
+      newStatus = "completed";
+      completedAt = now;
+      progressPercent = 100;
+    } else {
+      newStatus = "in_progress";
+      completedAt = null;
+    }
+    const taskUpdateRes = await query(
+      `UPDATE tasks
+       SET status = $1, completed_at = $2, progress_percent = $3, updated_at = NOW()
+       WHERE id = $4
+       RETURNING *`,
+      [newStatus, completedAt, progressPercent, id]
+    );
+    await query(
+      `INSERT INTO activities (id, user_id, project_id, task_id, task_title, type, details, at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+      [
+        `act-${Date.now()}`,
+        userId,
+        task.project_id,
+        id,
+        task.title,
+        decision === "approved" ? "task_approved" : "changes_requested",
+        JSON.stringify({ decision, reviewerName, feedback: feedback.trim() })
+      ]
+    );
+    if (task.assignee_id && task.assignee_id !== userId) {
+      const notifTitle = decision === "approved" ? `Task Approved: ${task.identifier || task.title}` : `Changes Requested: ${task.identifier || task.title}`;
+      const notifMessage = decision === "approved" ? `${reviewerName} approved your work: "${feedback.trim().slice(0, 100)}"` : `${reviewerName} requested changes: "${feedback.trim().slice(0, 100)}"`;
+      await query(
+        `INSERT INTO notifications (id, user_id, actor_id, actor_name, type, title, message, entity_type, entity_id, is_read, created_at)
+         VALUES ($1, $2, $3, $4, 'review', $5, $6, 'task', $7, FALSE, NOW())`,
+        [`notif-${Date.now()}`, task.assignee_id, userId, reviewerName, notifTitle, notifMessage, id]
+      );
+    }
+    res.status(201).json({
+      success: true,
+      task: formatTask(taskUpdateRes.rows[0]),
+      review: {
+        id: revInsert.rows[0].id,
+        taskId: id,
+        reviewerId: userId,
+        reviewerName,
+        progressUpdateId: progressUpdateId || void 0,
+        decision,
+        feedback: feedback.trim(),
+        createdAt: new Date(revInsert.rows[0].created_at).toISOString()
+      }
+    });
+  } catch (err) {
+    console.error("Error submitting review:", err);
+    res.status(500).json({ error: "Failed to submit review: " + err.message });
+  }
+});
+router2.get("/:id/reviews", optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = getUserId(req);
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
+    }
+    const result = await query(
+      "SELECT * FROM task_reviews WHERE task_id = $1 ORDER BY created_at DESC",
+      [id]
+    );
+    res.json(
+      result.rows.map((r) => ({
+        id: r.id,
+        taskId: r.task_id,
+        reviewerId: r.reviewer_id,
+        reviewerName: r.reviewer_name,
+        progressUpdateId: r.progress_update_id || void 0,
+        decision: r.decision,
+        feedback: r.feedback,
+        createdAt: new Date(r.created_at).toISOString()
+      }))
+    );
+  } catch (err) {
+    console.error("Error fetching reviews:", err);
+    res.status(500).json({ error: "Failed to fetch reviews" });
+  }
+});
+router2.get("/:id/dependencies", optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = getUserId(req);
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
+    }
     const depsRes = await query(
       `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
        FROM task_dependencies td
@@ -35698,6 +36391,15 @@ router2.post("/:id/comments", requireAuth, async (req, res) => {
     if (!content || !content.trim()) {
       return res.status(400).json({ error: "Comment content is required" });
     }
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskRes.rows[0];
+    const canView = await canUserViewTask(userId, String(id), task);
+    if (!canView.allowed) {
+      return res.status(403).json({ error: canView.reason || "Forbidden: You do not have permission to access this task" });
+    }
     const mentionsMatch = content.match(/@(\w+)/g);
     const mentions = mentionsMatch ? mentionsMatch.map((m) => m.substring(1)) : [];
     const commentId = `comm-${Date.now()}`;
@@ -35734,8 +36436,8 @@ router2.post("/:id/comments", requireAuth, async (req, res) => {
       "SELECT * FROM task_comments WHERE task_id = $1 ORDER BY created_at ASC",
       [id]
     );
-    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
-    res.json(formatTask(taskRes.rows[0], commentsRes.rows));
+    const freshTaskRes = await query("SELECT * FROM tasks WHERE id = $1", [id]);
+    res.json(formatTask(freshTaskRes.rows[0] || task, commentsRes.rows));
   } catch (err) {
     console.error("Error adding comment:", err);
     res.status(500).json({ error: "Failed to add comment" });
@@ -35857,14 +36559,27 @@ var activity_default = router4;
 var import_express5 = __toESM(require_express2());
 var router5 = (0, import_express5.Router)();
 function getUserId4(req) {
+  if (req.user?.userId) return req.user.userId;
   if (req.userId) return req.userId;
-  return "user-om";
+  const token = extractToken(req);
+  if (token) {
+    const decoded = verifyToken(token);
+    if (decoded?.userId) return decoded.userId;
+  }
+  const custom = req.headers["x-user-id"];
+  return custom && custom.trim() ? custom.trim() : "user-om";
 }
 router5.get("/", optionalAuth, async (req, res) => {
   try {
+    const userId = getUserId4(req);
     const { status, search } = req.query;
+    const isLead = await isWorkspaceAdminOrLead(userId);
     let sql = "SELECT * FROM projects WHERE 1=1";
     const params = [];
+    if (!isLead) {
+      params.push(userId);
+      sql += ` AND (owner_id = $${params.length} OR id IN (SELECT project_id FROM project_members WHERE user_id = $${params.length}))`;
+    }
     if (status && status !== "all") {
       if (status === "archived") {
         params.push("archived");
@@ -35971,6 +36686,10 @@ router5.get("/", optionalAuth, async (req, res) => {
 router5.post("/", requireAuth, async (req, res) => {
   try {
     const userId = getUserId4(req);
+    const isLead = await isWorkspaceAdminOrLead(userId);
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only team leaders and administrators can create projects" });
+    }
     const {
       name: name2,
       key,
@@ -36059,11 +36778,18 @@ router5.post("/", requireAuth, async (req, res) => {
 router5.get("/:id", optionalAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = getUserId4(req);
     const projectRes = await query("SELECT * FROM projects WHERE id = $1", [id]);
     if (!projectRes.rowCount || projectRes.rowCount === 0) {
       return res.status(404).json({ error: "Project not found" });
     }
     const p = projectRes.rows[0];
+    const isGlobalLead = await isWorkspaceAdminOrLead(userId);
+    const isProjLead = isGlobalLead || await isProjectLeader(userId, String(id));
+    const isMember = isProjLead || await isProjectMember(userId, String(id));
+    if (!isMember) {
+      return res.status(403).json({ error: "Forbidden: You do not have access to this project" });
+    }
     const membersRes = await query(
       `SELECT pm.id as membership_id, pm.role as project_role, pm.joined_at,
               COALESCE(u.id, tm.id) as user_id,
@@ -36082,12 +36808,18 @@ router5.get("/:id", optionalAuth, async (req, res) => {
       `SELECT * FROM milestones WHERE project_id = $1 ORDER BY target_date ASC`,
       [id]
     );
-    const tasksRes = await query(
+    const tasksRes = isProjLead ? await query(
       `SELECT id, identifier, title, status, priority, due_date, assignee_id, assignee_name
-       FROM tasks
-       WHERE project_id = $1 AND is_trash = FALSE
-       ORDER BY created_at DESC`,
+           FROM tasks
+           WHERE project_id = $1 AND is_trash = FALSE
+           ORDER BY created_at DESC`,
       [id]
+    ) : await query(
+      `SELECT id, identifier, title, status, priority, due_date, assignee_id, assignee_name
+           FROM tasks
+           WHERE project_id = $1 AND is_trash = FALSE AND (assignee_id = $2 OR user_id = $2 OR reviewer_id = $2)
+           ORDER BY created_at DESC`,
+      [id, userId]
     );
     const activitiesRes = await query(
       `SELECT a.*, u.full_name as user_name
@@ -36269,6 +37001,11 @@ router5.get("/:id/members", async (req, res) => {
 router5.post("/:id/members", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const currentUserId = getUserId4(req);
+    const isLead = await isProjectLeader(currentUserId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can add members to a project" });
+    }
     const { userId, role = "member" } = req.body;
     if (!userId) {
       return res.status(400).json({ error: "User ID is required" });
@@ -36289,6 +37026,11 @@ router5.post("/:id/members", requireAuth, async (req, res) => {
 router5.delete("/:id/members/:userId", requireAuth, async (req, res) => {
   try {
     const { id, userId } = req.params;
+    const currentUserId = getUserId4(req);
+    const isLead = await isProjectLeader(currentUserId, String(id));
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only project leaders can remove project members" });
+    }
     await query("DELETE FROM project_members WHERE project_id = $1 AND user_id = $2", [id, userId]);
     res.json({ success: true });
   } catch (err) {
@@ -36384,8 +37126,21 @@ var projects_default = router5;
 // src/routes/team.ts
 var import_express6 = __toESM(require_express2());
 var router6 = (0, import_express6.Router)();
-router6.get("/", async (req, res) => {
+function getUserId5(req) {
+  if (req.user?.userId) return req.user.userId;
+  if (req.userId) return req.userId;
+  const token = extractToken(req);
+  if (token) {
+    const decoded = verifyToken(token);
+    if (decoded?.userId) return decoded.userId;
+  }
+  const custom = req.headers["x-user-id"];
+  return custom && custom.trim() ? custom.trim() : "user-om";
+}
+router6.get("/", optionalAuth, async (req, res) => {
   try {
+    const userId = getUserId5(req);
+    const isLead = await isWorkspaceAdminOrLead(userId);
     const membersRes = await query("SELECT * FROM team_members ORDER BY name ASC");
     const tasksRes = await query(
       `SELECT assignee_id, status, priority, due_date, estimated_hours
@@ -36436,7 +37191,16 @@ router6.get("/", async (req, res) => {
       });
     }
     const members = membersRes.rows.map((m) => {
-      const workload = workloadByAssignee[m.id] || {
+      const canSeeWorkload = isLead || m.id === userId;
+      const workload = canSeeWorkload ? workloadByAssignee[m.id] || {
+        active: 0,
+        inProgress: 0,
+        inReview: 0,
+        blocked: 0,
+        completed: 0,
+        overdue: 0,
+        totalHours: 0
+      } : {
         active: 0,
         inProgress: 0,
         inReview: 0,
@@ -36459,8 +37223,7 @@ router6.get("/", async (req, res) => {
           blockedTasks: workload.blocked,
           completedTasks: workload.completed,
           overdueTasks: workload.overdue,
-          capacityPercent: Math.min(Math.round(workload.active / 10 * 100), 120),
-          // 10 tasks = 100% capacity
+          capacityPercent: canSeeWorkload ? Math.min(Math.round(workload.active / 10 * 100), 120) : 0,
           totalEstimatedHours: Math.round(workload.totalHours)
         },
         projects: projectsByUser[m.id] || []
@@ -36474,6 +37237,11 @@ router6.get("/", async (req, res) => {
 });
 router6.post("/", requireAuth, async (req, res) => {
   try {
+    const userId = getUserId5(req);
+    const isLead = await isWorkspaceAdminOrLead(userId);
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only team leaders can add team members" });
+    }
     const { name: name2, email, role, initials, avatarUrl } = req.body;
     if (!name2 || !name2.trim()) {
       return res.status(400).json({ error: "Name is required" });
@@ -36500,13 +37268,13 @@ var team_default = router6;
 // src/routes/notifications.ts
 var import_express7 = __toESM(require_express2());
 var router7 = (0, import_express7.Router)();
-function getUserId5(req) {
+function getUserId6(req) {
   if (req.userId) return req.userId;
   return "user-om";
 }
 router7.get("/", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId5(req);
+    const userId = getUserId6(req);
     const { unreadOnly, type, limit = 50 } = req.query;
     let sql = "SELECT * FROM notifications WHERE user_id = $1";
     const params = [userId];
@@ -36550,7 +37318,7 @@ router7.get("/", requireAuth, async (req, res) => {
 });
 router7.post("/:id/read", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId5(req);
+    const userId = getUserId6(req);
     const { id } = req.params;
     const result = await query(
       "UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2 RETURNING id",
@@ -36567,7 +37335,7 @@ router7.post("/:id/read", requireAuth, async (req, res) => {
 });
 router7.post("/read-all", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId5(req);
+    const userId = getUserId6(req);
     await query("UPDATE notifications SET is_read = TRUE WHERE user_id = $1", [userId]);
     res.json({ success: true });
   } catch (err) {
@@ -36577,7 +37345,7 @@ router7.post("/read-all", requireAuth, async (req, res) => {
 });
 router7.delete("/:id", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId5(req);
+    const userId = getUserId6(req);
     const { id } = req.params;
     await query("DELETE FROM notifications WHERE id = $1 AND user_id = $2", [id, userId]);
     res.json({ success: true });
@@ -36588,7 +37356,7 @@ router7.delete("/:id", requireAuth, async (req, res) => {
 });
 router7.delete("/clear-all", requireAuth, async (req, res) => {
   try {
-    const userId = getUserId5(req);
+    const userId = getUserId6(req);
     await query("DELETE FROM notifications WHERE user_id = $1 AND is_read = TRUE", [userId]);
     res.json({ success: true });
   } catch (err) {
@@ -49725,7 +50493,14 @@ invitationsRouter.post(
     try {
       const projectId = String(req.params.projectId);
       const inviterId = req.userId;
-      const { email, role = "member", message = "" } = req.body;
+      const {
+        email,
+        role = "member",
+        message = "",
+        fullName = "",
+        skills = [],
+        designation = ""
+      } = req.body;
       if (!projectId || projectId === "undefined") {
         return res.status(400).json({ error: "Project ID is required" });
       }
@@ -49788,9 +50563,21 @@ invitationsRouter.post(
       const inviterName = inviterRes.rows[0]?.full_name || inviterRes.rows[0]?.username || "A team lead";
       await query(
         `INSERT INTO project_invitations
-         (id, project_id, inviter_id, recipient_email, role, token_hash, status, message, expires_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, NOW(), NOW())`,
-        [inviteId, projectId, inviterId, cleanEmail, cleanRole, tokenHash, message.trim(), expiresAt]
+         (id, project_id, inviter_id, recipient_email, role, token_hash, status, message, expires_at, recipient_name, skills, designation, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11, NOW(), NOW())`,
+        [
+          inviteId,
+          projectId,
+          inviterId,
+          cleanEmail,
+          cleanRole,
+          tokenHash,
+          message.trim(),
+          expiresAt,
+          fullName ? String(fullName).trim() : "",
+          JSON.stringify(Array.isArray(skills) ? skills : []),
+          designation ? String(designation).trim() : ""
+        ]
       );
       const invitationUrl = `${getAppBaseUrl()}/invitations/accept?token=${rawToken}`;
       const emailResult = await sendInvitationEmail({
@@ -50062,6 +50849,18 @@ invitationsRouter.post(
          VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
         [memberId, inv.project_id, user.id, inv.role]
+      );
+      const initials = (user.full_name || "TM").split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 3) || "TM";
+      const memberRole = inv.designation && inv.designation.trim() ? inv.designation.trim() : inv.role || "Team Member";
+      await client.query(
+        `INSERT INTO team_members (id, name, email, role, avatar_url, initials)
+         VALUES ($1, $2, $3, $4, '', $5)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name,
+           email = EXCLUDED.email,
+           role = EXCLUDED.role,
+           initials = EXCLUDED.initials`,
+        [user.id, user.full_name, user.email, memberRole, initials]
       );
       await client.query(
         `UPDATE project_invitations
@@ -51010,6 +51809,86 @@ async function seedDatabase(force = false) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        ON CONFLICT (id) DO NOTHING`,
       [a.id, a.userId, a.projectId, a.taskId, a.taskTitle, a.type, JSON.stringify(a.details)]
+    );
+  }
+  console.log("\u{1F4CA} Seeding progress updates & reviews...");
+  const sampleProgressUpdates = [
+    {
+      id: "prog-seed-1",
+      taskId: "task-3",
+      userId: "team-alex",
+      userName: "Alex Rivera",
+      status: "in_review",
+      progressPercent: 85,
+      workCompleted: "Implemented strict JWT token signature validation, httpOnly cookie rotation, and memory sliding-window rate limiters on all authentication endpoints.",
+      workRemaining: "Add automated integration tests simulating brute-force password attacks.",
+      blockers: "",
+      nextSteps: "Awaiting architectural sign-off and review from Om Thakkar.",
+      timeSpentHours: 6.5,
+      evidenceUrl: "https://github.com/taskflow/core/pull/204"
+    },
+    {
+      id: "prog-seed-2",
+      taskId: "task-5",
+      userId: "team-sarah",
+      userName: "Sarah Chen",
+      status: "in_progress",
+      progressPercent: 70,
+      workCompleted: "Built responsive TaskDrawer with Radix sheet, inline status switching, and acceptance criteria toggle state.",
+      workRemaining: "Polish keyboard navigation and ESC trap for accessibility.",
+      blockers: "",
+      nextSteps: "Add ARIA live regions for screen readers.",
+      timeSpentHours: 4,
+      evidenceUrl: ""
+    },
+    {
+      id: "prog-seed-3",
+      taskId: "task-2",
+      userId: defaultUserId,
+      userName: "Om Thakkar",
+      status: "completed",
+      progressPercent: 100,
+      workCompleted: "Configured PostgreSQL relational schema, indexes on foreign keys, and idempotency migrations.",
+      workRemaining: "None - all tables verified.",
+      blockers: "",
+      nextSteps: "Deploy to staging environment.",
+      timeSpentHours: 8,
+      evidenceUrl: "https://neon.tech/console/projects/taskflow"
+    }
+  ];
+  for (const p of sampleProgressUpdates) {
+    await query(
+      `INSERT INTO task_progress_updates
+       (id, task_id, user_id, user_name, status, progress_percent, work_completed, work_remaining, blockers, next_steps, time_spent_hours, evidence_url, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW() - INTERVAL '1 day')
+       ON CONFLICT (id) DO NOTHING`,
+      [p.id, p.taskId, p.userId, p.userName, p.status, p.progressPercent, p.workCompleted, p.workRemaining, p.blockers, p.nextSteps, p.timeSpentHours, p.evidenceUrl]
+    );
+    await query(
+      `UPDATE tasks
+       SET progress_percent = $1, last_progress_update_at = NOW() - INTERVAL '1 day'
+       WHERE id = $2`,
+      [p.progressPercent, p.taskId]
+    );
+  }
+  const sampleReviews = [
+    {
+      id: "rev-seed-1",
+      taskId: "task-2",
+      reviewerId: "team-alex",
+      reviewerName: "Alex Rivera",
+      progressUpdateId: "prog-seed-3",
+      decision: "approved",
+      feedback: "PostgreSQL schema structure is enterprise grade. Foreign keys, indexes, and CASCADE constraints are spot on."
+    }
+  ];
+  for (const r of sampleReviews) {
+    await query(
+      `INSERT INTO task_reviews
+       (id, task_id, reviewer_id, reviewer_name, progress_update_id, decision, feedback, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() - INTERVAL '12 hours')
+       ON CONFLICT (id) DO NOTHING`,
+      [r.id, r.taskId, r.reviewerId, r.reviewerName, r.progressUpdateId, r.decision, r.feedback]
     );
   }
   console.log("\u2705 TaskFlow Nexus Enterprise database ready!");

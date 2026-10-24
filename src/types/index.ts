@@ -98,6 +98,53 @@ export interface ProjectInvitationInput {
   email: string;
   role: string;
   message?: string;
+  fullName?: string;
+  skills?: string[];
+  designation?: string;
+}
+
+export interface TaskProgressUpdate {
+  id: string;
+  taskId: string;
+  userId: string;
+  userName: string;
+  status: TaskStatus;
+  progressPercent: number;
+  workCompleted: string;
+  workRemaining?: string;
+  blockers?: string;
+  nextSteps?: string;
+  timeSpentHours?: number;
+  evidenceUrl?: string;
+  createdAt: string;
+}
+
+export interface TaskProgressUpdateInput {
+  status: TaskStatus;
+  progressPercent: number;
+  workCompleted: string;
+  workRemaining?: string;
+  blockers?: string;
+  nextSteps?: string;
+  timeSpentHours?: number;
+  evidenceUrl?: string;
+}
+
+export interface TaskReview {
+  id: string;
+  taskId: string;
+  reviewerId: string;
+  reviewerName: string;
+  progressUpdateId?: string;
+  decision: "approved" | "changes_requested";
+  feedback: string;
+  createdAt: string;
+}
+
+export interface TaskReviewInput {
+  decision: "approved" | "changes_requested";
+  feedback: string;
+  progressUpdateId?: string;
 }
 
 export interface CreateInvitationResponse {
@@ -199,6 +246,11 @@ export interface Task {
   recurrence?: RecurrencePattern | undefined;
   focusTimeSeconds?: number | undefined;
   completedAt?: string | null | undefined;
+  progressPercent?: number | undefined;
+  lastProgressUpdateAt?: string | null | undefined;
+  progressUpdates?: TaskProgressUpdate[] | undefined;
+  reviews?: TaskReview[] | undefined;
+  latestProgress?: TaskProgressUpdate | null | undefined;
   comments?: TaskComment[] | undefined;
   createdAt: string;
   updatedAt: string;

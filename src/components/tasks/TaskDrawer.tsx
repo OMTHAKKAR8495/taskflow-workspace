@@ -24,6 +24,7 @@ import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
 import { taskService } from "@/services";
 import { StatusBadge, PriorityBadge } from "./badges";
+import { TaskProgressTimeline } from "./TaskProgressTimeline";
 import { toast } from "sonner";
 import type { Task, TaskPriority, TaskStatus, TaskType } from "@/types";
 
@@ -513,8 +514,13 @@ export function TaskDrawer({ task, open, onClose }: TaskDrawerProps) {
             </div>
           )}
 
+          {/* Daily Progress & Reviews */}
+          <div className="pt-2 border-t border-border/60">
+            <TaskProgressTimeline task={task} />
+          </div>
+
           {/* Comments & Discussion */}
-          <div className="space-y-3 pt-2">
+          <div className="space-y-3 pt-2 border-t border-border/60">
             <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Comments & Activity
             </label>

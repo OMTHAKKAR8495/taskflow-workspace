@@ -1,12 +1,27 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Response } from "express";
 import { query } from "../db.js";
-import { requireAuth, type AuthenticatedRequest } from "../auth.js";
+import { requireAuth, optionalAuth, extractToken, verifyToken, type AuthenticatedRequest } from "../auth.js";
+import { isWorkspaceAdminOrLead } from "../permissions.js";
 
 const router = Router();
 
+function getUserId(req: AuthenticatedRequest): string {
+  if (req.user?.userId) return req.user.userId;
+  if (req.userId) return req.userId;
+  const token = extractToken(req);
+  if (token) {
+    const decoded = verifyToken(token);
+    if (decoded?.userId) return decoded.userId;
+  }
+  const custom = req.headers["x-user-id"] as string;
+  return custom && custom.trim() ? custom.trim() : "user-om";
+}
+
 // GET /api/team - Team directory with workload metrics & active projects
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    const isLead = await isWorkspaceAdminOrLead(userId);
     // 1. Fetch team members
     const membersRes = await query("SELECT * FROM team_members ORDER BY name ASC");
 
@@ -69,7 +84,17 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     const members = membersRes.rows.map((m) => {
-      const workload = workloadByAssignee[m.id] || {
+      // Members must not see other members' workload breakdown
+      const canSeeWorkload = isLead || m.id === userId;
+      const workload = canSeeWorkload ? (workloadByAssignee[m.id] || {
+        active: 0,
+        inProgress: 0,
+        inReview: 0,
+        blocked: 0,
+        completed: 0,
+        overdue: 0,
+        totalHours: 0,
+      }) : {
         active: 0,
         inProgress: 0,
         inReview: 0,
@@ -93,7 +118,7 @@ router.get("/", async (req: Request, res: Response) => {
           blockedTasks: workload.blocked,
           completedTasks: workload.completed,
           overdueTasks: workload.overdue,
-          capacityPercent: Math.min(Math.round((workload.active / 10) * 100), 120), // 10 tasks = 100% capacity
+          capacityPercent: canSeeWorkload ? Math.min(Math.round((workload.active / 10) * 100), 120) : 0,
           totalEstimatedHours: Math.round(workload.totalHours),
         },
         projects: projectsByUser[m.id] || [],
@@ -110,6 +135,12 @@ router.get("/", async (req: Request, res: Response) => {
 // POST /api/team - Add new team member
 router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    const isLead = await isWorkspaceAdminOrLead(userId);
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only team leaders can add team members" });
+    }
+
     const { name, email, role, initials, avatarUrl } = req.body;
 
     if (!name || !name.trim()) {

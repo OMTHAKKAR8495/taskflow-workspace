@@ -111,7 +111,14 @@ invitationsRouter.post(
     try {
       const projectId = String(req.params.projectId);
       const inviterId = req.userId!;
-      const { email, role = "member", message = "" } = req.body;
+      const {
+        email,
+        role = "member",
+        message = "",
+        fullName = "",
+        skills = [],
+        designation = "",
+      } = req.body;
 
       if (!projectId || projectId === "undefined") {
         return res.status(400).json({ error: "Project ID is required" });
@@ -195,9 +202,21 @@ invitationsRouter.post(
       // 8. Insert invitation (storing only tokenHash in DB)
       await query(
         `INSERT INTO project_invitations
-         (id, project_id, inviter_id, recipient_email, role, token_hash, status, message, expires_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, NOW(), NOW())`,
-        [inviteId, projectId, inviterId, cleanEmail, cleanRole, tokenHash, message.trim(), expiresAt],
+         (id, project_id, inviter_id, recipient_email, role, token_hash, status, message, expires_at, recipient_name, skills, designation, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11, NOW(), NOW())`,
+        [
+          inviteId,
+          projectId,
+          inviterId,
+          cleanEmail,
+          cleanRole,
+          tokenHash,
+          message.trim(),
+          expiresAt,
+          fullName ? String(fullName).trim() : "",
+          JSON.stringify(Array.isArray(skills) ? skills : []),
+          designation ? String(designation).trim() : "",
+        ],
       );
 
       // Formulate acceptance URL
@@ -536,6 +555,25 @@ invitationsRouter.post(
          VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
         [memberId, inv.project_id, user.id, inv.role],
+      );
+
+      // Ensure team_members has entry for user so they appear in assignees and team directory
+      const initials = (user.full_name || "TM")
+        .split(" ")
+        .map((n: string) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 3) || "TM";
+      const memberRole = inv.designation && inv.designation.trim() ? inv.designation.trim() : (inv.role || "Team Member");
+      await client.query(
+        `INSERT INTO team_members (id, name, email, role, avatar_url, initials)
+         VALUES ($1, $2, $3, $4, '', $5)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name,
+           email = EXCLUDED.email,
+           role = EXCLUDED.role,
+           initials = EXCLUDED.initials`,
+        [user.id, user.full_name, user.email, memberRole, initials],
       );
 
       // 5. Mark invitation accepted atomically (single-use token consumed)

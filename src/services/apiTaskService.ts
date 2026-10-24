@@ -109,6 +109,21 @@ export const apiTaskService: TaskService = {
   toggleSubtask: (taskId, subtaskId) =>
     request(`/tasks/${taskId}/subtasks/${subtaskId}/toggle`, { method: "POST" }),
 
+  // Progress updates & Reviews
+  submitProgressUpdate: (taskId, data) =>
+    request(`/tasks/${taskId}/progress`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getTaskProgressUpdates: (taskId) => request(`/tasks/${taskId}/progress`),
+  submitTaskReview: (taskId, data) =>
+    request(`/tasks/${taskId}/review`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getTaskReviews: (taskId) => request(`/tasks/${taskId}/reviews`),
+  getReviewQueue: () => request("/tasks/review-queue"),
+
   // Projects
   getProjects: (params) => {
     const sp = new URLSearchParams();
