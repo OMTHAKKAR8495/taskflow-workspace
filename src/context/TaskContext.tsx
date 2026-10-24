@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -91,19 +92,97 @@ interface TaskContextValue {
 
 const TaskContext = createContext<TaskContextValue | null>(null);
 
+function getInitialCache<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(`taskflow:cache:${key}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed !== null && parsed !== undefined) return parsed;
+    }
+  } catch {}
+  return fallback;
+}
+
+function setLocalCache(key: string, value: any): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(`taskflow:cache:${key}`, JSON.stringify(value));
+  } catch {}
+}
+
 export function TaskProvider({ children }: { children: ReactNode }) {
   const { user, updateCurrentUser } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [team, setTeam] = useState<TeamMember[]>([]);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [activity, setActivity] = useState<Activity[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [tasks, setTasksState] = useState<Task[]>(() => getInitialCache("tasks", []));
+  const [projects, setProjectsState] = useState<Project[]>(() => getInitialCache("projects", []));
+  const [team, setTeamState] = useState<TeamMember[]>(() => getInitialCache("team", []));
+  const [profile, setProfileState] = useState<Profile | null>(() => getInitialCache("profile", null));
+  const [activity, setActivityState] = useState<Activity[]>(() => getInitialCache("activity", []));
+  const [notifications, setNotificationsState] = useState<NotificationItem[]>(() => getInitialCache("notifications", []));
   const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0);
   const [reviewQueue, setReviewQueue] = useState<Task[]>([]);
-  const [state, setState] = useState<LoadState>("loading");
+
+  // Instant render: If cached tasks exist, start in "ready" state immediately (0ms wait)
+  const [state, setState] = useState<LoadState>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem("taskflow:cache:tasks");
+        if (cached && JSON.parse(cached)?.length > 0) return "ready";
+      } catch {}
+    }
+    return "loading";
+  });
+
   const [selectedProjectId, setSelectedProjectIdState] = useState<string | "all">("all");
   const [activeFilter, setActiveFilter] = useState<string>("all");
+
+  const setTasks = useCallback((valOrFn: React.SetStateAction<Task[]>) => {
+    setTasksState((prev) => {
+      const next = typeof valOrFn === "function" ? (valOrFn as (prev: Task[]) => Task[])(prev) : valOrFn;
+      setLocalCache("tasks", next);
+      return next;
+    });
+  }, []);
+
+  const setProjects = useCallback((valOrFn: React.SetStateAction<Project[]>) => {
+    setProjectsState((prev) => {
+      const next = typeof valOrFn === "function" ? (valOrFn as (prev: Project[]) => Project[])(prev) : valOrFn;
+      setLocalCache("projects", next);
+      return next;
+    });
+  }, []);
+
+  const setTeam = useCallback((valOrFn: React.SetStateAction<TeamMember[]>) => {
+    setTeamState((prev) => {
+      const next = typeof valOrFn === "function" ? (valOrFn as (prev: TeamMember[]) => TeamMember[])(prev) : valOrFn;
+      setLocalCache("team", next);
+      return next;
+    });
+  }, []);
+
+  const setProfile = useCallback((valOrFn: React.SetStateAction<Profile | null>) => {
+    setProfileState((prev) => {
+      const next = typeof valOrFn === "function" ? (valOrFn as (prev: Profile | null) => Profile | null)(prev) : valOrFn;
+      setLocalCache("profile", next);
+      return next;
+    });
+  }, []);
+
+  const setActivity = useCallback((valOrFn: React.SetStateAction<Activity[]>) => {
+    setActivityState((prev) => {
+      const next = typeof valOrFn === "function" ? (valOrFn as (prev: Activity[]) => Activity[])(prev) : valOrFn;
+      setLocalCache("activity", next);
+      return next;
+    });
+  }, []);
+
+  const setNotifications = useCallback((valOrFn: React.SetStateAction<NotificationItem[]>) => {
+    setNotificationsState((prev) => {
+      const next = typeof valOrFn === "function" ? (valOrFn as (prev: NotificationItem[]) => NotificationItem[])(prev) : valOrFn;
+      setLocalCache("notifications", next);
+      return next;
+    });
+  }, []);
 
   const [lists, setLists] = useState<TaskList[]>(() => {
     if (typeof window !== "undefined") {
@@ -170,49 +249,83 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const inFlightReload = useRef<Promise<void> | null>(null);
+
   const reload = useCallback(async () => {
-    setState((prev) => (prev === "ready" ? "ready" : "loading"));
-    try {
-      const [t, p, a, projs, members] = await Promise.all([
-        taskService.getTasks(),
-        taskService.getProfile(),
-        taskService.getActivity(),
-        taskService.getProjects(),
-        taskService.getTeamMembers(),
-      ]);
-      setTasks(t);
-      setProfile(p);
-      setActivity(a);
-      setProjects(projs);
-      setTeam(members);
-
-      // Notifications
-      if (taskService.getNotifications) {
-        try {
-          const notifs = await taskService.getNotifications();
-          setNotifications(notifs.notifications || []);
-          setUnreadNotificationCount(notifs.unreadCount || 0);
-        } catch {}
-      }
-
-      // Review Queue
-      if (taskService.getReviewQueue) {
-        try {
-          const queue = await taskService.getReviewQueue();
-          setReviewQueue(queue);
-        } catch {}
-      }
-
-      setState("ready");
-    } catch (err) {
-      console.error("TaskContext reload error:", err);
-      setState("error");
+    if (inFlightReload.current) {
+      return inFlightReload.current;
     }
-  }, []);
+
+    // Never flip back to loading state if data is already visible
+    setState((prev) => (tasks.length > 0 || projects.length > 0 ? "ready" : prev));
+
+    const promise = (async () => {
+      try {
+        // Parallelize all 7 initial queries concurrently
+        const [
+          tasksRes,
+          profileRes,
+          actRes,
+          projsRes,
+          teamRes,
+          notifsRes,
+          reviewRes,
+        ] = await Promise.allSettled([
+          taskService.getTasks(),
+          taskService.getProfile(),
+          taskService.getActivity(),
+          taskService.getProjects(),
+          taskService.getTeamMembers(),
+          taskService.getNotifications ? taskService.getNotifications() : Promise.resolve(null),
+          taskService.getReviewQueue ? taskService.getReviewQueue() : Promise.resolve([]),
+        ]);
+
+        if (tasksRes.status === "fulfilled" && Array.isArray(tasksRes.value)) {
+          setTasks(tasksRes.value);
+        }
+        if (profileRes.status === "fulfilled" && profileRes.value) {
+          setProfile(profileRes.value);
+        }
+        if (actRes.status === "fulfilled" && Array.isArray(actRes.value)) {
+          setActivity(actRes.value);
+        }
+        if (projsRes.status === "fulfilled" && Array.isArray(projsRes.value)) {
+          setProjects(projsRes.value);
+        }
+        if (teamRes.status === "fulfilled" && Array.isArray(teamRes.value)) {
+          setTeam(teamRes.value);
+        }
+
+        if (notifsRes.status === "fulfilled" && notifsRes.value) {
+          setNotifications(notifsRes.value.notifications || []);
+          setUnreadNotificationCount(notifsRes.value.unreadCount || 0);
+        }
+
+        if (reviewRes.status === "fulfilled" && Array.isArray(reviewRes.value)) {
+          setReviewQueue(reviewRes.value);
+        }
+
+        setState("ready");
+      } catch (err) {
+        console.error("TaskContext reload error:", err);
+        setState((prev) => (tasks.length > 0 || projects.length > 0 ? "ready" : "error"));
+      } finally {
+        inFlightReload.current = null;
+      }
+    })();
+
+    inFlightReload.current = promise;
+    return promise;
+  }, [tasks.length, projects.length, setTasks, setProfile, setActivity, setProjects, setTeam, setNotifications]);
+
+  const lastLoadedUserId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    void reload();
-  }, [reload, user?.id]);
+    if (lastLoadedUserId.current !== user?.id) {
+      lastLoadedUserId.current = user?.id;
+      void reload();
+    }
+  }, [user?.id, reload]);
 
   const refreshActivity = useCallback(async () => {
     try {

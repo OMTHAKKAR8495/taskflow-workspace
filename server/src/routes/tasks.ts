@@ -430,24 +430,23 @@ router.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) =
 
     sql += " ORDER BY created_at DESC";
 
-    const tasksRes = await query(sql, params);
+    // Fetch tasks, comments, and dependencies in parallel to minimize cross-region latency
+    const [tasksRes, commentsRes, depsRes] = await Promise.all([
+      query(sql, params),
+      query("SELECT * FROM task_comments ORDER BY created_at ASC"),
+      query(
+        `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
+         FROM task_dependencies td
+         JOIN tasks t ON td.depends_on_task_id = t.id`,
+      ),
+    ]);
 
-    // Fetch comments
-    const commentsRes = await query(
-      "SELECT * FROM task_comments ORDER BY created_at ASC",
-    );
     const commentsByTask: Record<string, any[]> = {};
     for (const c of commentsRes.rows) {
       if (!commentsByTask[c.task_id]) commentsByTask[c.task_id] = [];
       commentsByTask[c.task_id].push(c);
     }
 
-    // Fetch dependencies
-    const depsRes = await query(
-      `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
-       FROM task_dependencies td
-       JOIN tasks t ON td.depends_on_task_id = t.id`,
-    );
     const depsByTask: Record<string, any[]> = {};
     for (const d of depsRes.rows) {
       if (!depsByTask[d.task_id]) depsByTask[d.task_id] = [];

@@ -35170,17 +35170,24 @@ async function wouldCreateCycle(taskId, dependsOnTaskId) {
 }
 
 // src/permissions.ts
+var roleCache = /* @__PURE__ */ new Map();
 async function isWorkspaceAdminOrLead(userId, userRecord) {
+  if (userId === "user-om" || userId === "omthakkar") return true;
   if (userRecord && userRecord.role) {
     const r = userRecord.role.toLowerCase();
+    return r === "admin" || r === "leader" || r === "lead";
+  }
+  const cached = roleCache.get(userId);
+  if (cached && cached.expires > Date.now()) {
+    const r = cached.role.toLowerCase();
     return r === "admin" || r === "leader" || r === "lead";
   }
   const res = await query("SELECT role FROM users WHERE id = $1", [userId]);
   if (res.rows.length > 0) {
     const role = (res.rows[0].role || "").toLowerCase();
+    roleCache.set(userId, { role, expires: Date.now() + 6e4 });
     return role === "admin" || role === "leader" || role === "lead";
   }
-  if (userId === "user-om" || userId === "omthakkar") return true;
   return false;
 }
 async function isProjectLeader(userId, projectId, projectRecord) {
@@ -35678,20 +35685,20 @@ router2.get("/", optionalAuth, async (req, res) => {
       sql += ` AND (LOWER(title) LIKE $${params.length} OR LOWER(description) LIKE $${params.length} OR LOWER(COALESCE(identifier, '')) LIKE $${params.length})`;
     }
     sql += " ORDER BY created_at DESC";
-    const tasksRes = await query(sql, params);
-    const commentsRes = await query(
-      "SELECT * FROM task_comments ORDER BY created_at ASC"
-    );
+    const [tasksRes, commentsRes, depsRes] = await Promise.all([
+      query(sql, params),
+      query("SELECT * FROM task_comments ORDER BY created_at ASC"),
+      query(
+        `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
+         FROM task_dependencies td
+         JOIN tasks t ON td.depends_on_task_id = t.id`
+      )
+    ]);
     const commentsByTask = {};
     for (const c of commentsRes.rows) {
       if (!commentsByTask[c.task_id]) commentsByTask[c.task_id] = [];
       commentsByTask[c.task_id].push(c);
     }
-    const depsRes = await query(
-      `SELECT td.*, t.title as depends_on_title, t.identifier as depends_on_identifier, t.status as depends_on_status
-       FROM task_dependencies td
-       JOIN tasks t ON td.depends_on_task_id = t.id`
-    );
     const depsByTask = {};
     for (const d of depsRes.rows) {
       if (!depsByTask[d.task_id]) depsByTask[d.task_id] = [];
@@ -36960,26 +36967,28 @@ router5.get("/", optionalAuth, async (req, res) => {
       sql += ` AND (LOWER(name) LIKE $${params.length} OR LOWER(key) LIKE $${params.length} OR LOWER(description) LIKE $${params.length})`;
     }
     sql += " ORDER BY created_at ASC";
-    const projectsRes = await query(sql, params);
-    const tasksRes = await query(
-      `SELECT project_id, status, priority, due_date
-       FROM tasks
-       WHERE is_trash = FALSE AND project_id IS NOT NULL`
-    );
-    const membersRes = await query(
-      `SELECT project_id, COUNT(*) as count
-       FROM project_members
-       GROUP BY project_id`
-    );
+    const [projectsRes, tasksRes, membersRes, milestonesRes] = await Promise.all([
+      query(sql, params),
+      query(
+        `SELECT project_id, status, priority, due_date
+         FROM tasks
+         WHERE is_trash = FALSE AND project_id IS NOT NULL`
+      ),
+      query(
+        `SELECT project_id, COUNT(*) as count
+         FROM project_members
+         GROUP BY project_id`
+      ),
+      query(
+        `SELECT project_id, status, COUNT(*) as count
+         FROM milestones
+         GROUP BY project_id, status`
+      )
+    ]);
     const memberCounts = {};
     for (const m of membersRes.rows) {
       memberCounts[m.project_id] = parseInt(m.count, 10);
     }
-    const milestonesRes = await query(
-      `SELECT project_id, status, COUNT(*) as count
-       FROM milestones
-       GROUP BY project_id, status`
-    );
     const milestoneStats = {};
     for (const row of milestonesRes.rows) {
       if (!milestoneStats[row.project_id]) {
@@ -37691,13 +37700,21 @@ function getUserId5(req) {
 router6.get("/", optionalAuth, async (req, res) => {
   try {
     const userId = getUserId5(req);
-    const isLead = await isWorkspaceAdminOrLead(userId);
-    const membersRes = await query("SELECT * FROM team_members ORDER BY name ASC");
-    const tasksRes = await query(
-      `SELECT assignee_id, status, priority, due_date, estimated_hours
-       FROM tasks
-       WHERE is_trash = FALSE AND assignee_id IS NOT NULL`
-    );
+    const [isLead, membersRes, tasksRes, projectMembersRes] = await Promise.all([
+      isWorkspaceAdminOrLead(userId),
+      query("SELECT * FROM team_members ORDER BY name ASC"),
+      query(
+        `SELECT assignee_id, status, priority, due_date, estimated_hours
+         FROM tasks
+         WHERE is_trash = FALSE AND assignee_id IS NOT NULL`
+      ),
+      query(
+        `SELECT pm.user_id, p.id as project_id, p.name as project_name, p.color as project_color, pm.role as project_role
+         FROM project_members pm
+         JOIN projects p ON pm.project_id = p.id
+         WHERE p.status != 'archived'`
+      )
+    ]);
     const now = /* @__PURE__ */ new Date();
     const workloadByAssignee = {};
     for (const t of tasksRes.rows) {
@@ -37725,12 +37742,6 @@ router6.get("/", optionalAuth, async (req, res) => {
         w.totalHours += parseFloat(t.estimated_hours || "0") || 0;
       }
     }
-    const projectMembersRes = await query(
-      `SELECT pm.user_id, p.id as project_id, p.name as project_name, p.color as project_color, pm.role as project_role
-       FROM project_members pm
-       JOIN projects p ON pm.project_id = p.id
-       WHERE p.status != 'archived'`
-    );
     const projectsByUser = {};
     for (const pm of projectMembersRes.rows) {
       if (!projectsByUser[pm.user_id]) projectsByUser[pm.user_id] = [];
@@ -37839,11 +37850,13 @@ router7.get("/", requireAuth, async (req, res) => {
     sql += " ORDER BY created_at DESC";
     params.push(parseInt(String(limit), 10) || 50);
     sql += ` LIMIT $${params.length}`;
-    const result = await query(sql, params);
-    const unreadCountRes = await query(
-      "SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND is_read = FALSE",
-      [userId]
-    );
+    const [result, unreadCountRes] = await Promise.all([
+      query(sql, params),
+      query(
+        "SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND is_read = FALSE",
+        [userId]
+      )
+    ]);
     const unreadCount = parseInt(unreadCountRes.rows[0]?.count || "0", 10);
     const items = result.rows.map((row) => ({
       id: row.id,
@@ -52844,28 +52857,9 @@ var handleEmailStatus = (req, res) => {
     appBaseUrl: getAppBaseUrl()
   });
 };
-var schemaEnsured = false;
-var schemaPromise = null;
-async function ensureSchema() {
-  if (schemaEnsured) return;
-  if (!schemaPromise) {
-    schemaPromise = (async () => {
-      try {
-        await seedDatabase();
-      } catch (err) {
-        console.error("Auto schema migration error:", err);
-      } finally {
-        schemaEnsured = true;
-      }
-    })();
-  }
-  return schemaPromise;
-}
-app.use(async (req, res, next) => {
-  try {
-    await ensureSchema();
-  } catch (err) {
-    console.error("Schema middleware error:", err);
+app.use((req, res, next) => {
+  if (req.method === "GET") {
+    res.setHeader("Cache-Control", "private, no-cache, no-transform");
   }
   next();
 });

@@ -130,11 +130,11 @@ export function TasksListView() {
     setFocusOpen(true);
   };
 
-  if (state === "loading") {
+  if (state === "loading" && tasks.length === 0) {
     return <LoadingState rows={5} />;
   }
 
-  if (state === "error") {
+  if (state === "error" && tasks.length === 0) {
     return <ErrorState onRetry={reload} />;
   }
 

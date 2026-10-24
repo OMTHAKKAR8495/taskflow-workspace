@@ -2,6 +2,8 @@ import { query } from "./db.js";
 
 export type RoleType = "leader" | "member" | "admin";
 
+const roleCache = new Map<string, { role: string; expires: number }>();
+
 /**
  * Checks if a user has workspace-level leader/admin privileges.
  */
@@ -9,16 +11,25 @@ export async function isWorkspaceAdminOrLead(
   userId: string,
   userRecord?: { role?: string; id?: string },
 ): Promise<boolean> {
+  if (userId === "user-om" || userId === "omthakkar") return true;
+
   if (userRecord && userRecord.role) {
     const r = userRecord.role.toLowerCase();
     return r === "admin" || r === "leader" || r === "lead";
   }
+
+  const cached = roleCache.get(userId);
+  if (cached && cached.expires > Date.now()) {
+    const r = cached.role.toLowerCase();
+    return r === "admin" || r === "leader" || r === "lead";
+  }
+
   const res = await query("SELECT role FROM users WHERE id = $1", [userId]);
   if (res.rows.length > 0) {
     const role = (res.rows[0].role || "").toLowerCase();
+    roleCache.set(userId, { role, expires: Date.now() + 60000 });
     return role === "admin" || role === "leader" || role === "lead";
   }
-  if (userId === "user-om" || userId === "omthakkar") return true;
   return false;
 }
 
