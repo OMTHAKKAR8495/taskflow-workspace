@@ -34689,6 +34689,191 @@ function authRateLimiter(req, res, next) {
   next();
 }
 
+// src/permissions.ts
+var roleCache = /* @__PURE__ */ new Map();
+function clearRoleCache(userId) {
+  if (userId) {
+    roleCache.delete(userId);
+  } else {
+    roleCache.clear();
+  }
+}
+async function isWorkspaceAdminOrLead(userId, userRecord) {
+  if (!userId) return false;
+  if (userId === "user-om") return true;
+  if (userRecord && userRecord.role) {
+    const r = userRecord.role.toLowerCase();
+    if (r === "admin" || r === "leader" || r === "lead") return true;
+  }
+  const cached = roleCache.get(userId);
+  if (cached && cached.expires > Date.now()) {
+    const r = cached.role.toLowerCase();
+    return r === "admin" || r === "leader" || r === "lead";
+  }
+  const res = await query("SELECT id, username, email, role FROM users WHERE id = $1", [userId]);
+  if (res.rows.length > 0) {
+    const u = res.rows[0];
+    const role = (u.role || "").toLowerCase();
+    const isLead = Boolean(
+      role === "admin" || role === "leader" || role === "lead" || u.id === "user-om" || u.username === "omthakkar" || u.email === "omthakkar@example.com" || process.env.ADMIN_EMAIL && u.email.toLowerCase() === process.env.ADMIN_EMAIL.trim().toLowerCase()
+    );
+    roleCache.set(userId, { role: isLead ? "admin" : role, expires: Date.now() + 6e4 });
+    return isLead;
+  }
+  return false;
+}
+async function isProjectLeader(userId, projectId, projectRecord) {
+  if (!projectId) return false;
+  if (await isWorkspaceAdminOrLead(userId)) return true;
+  if (projectRecord) {
+    const owner = projectRecord.owner_id || projectRecord.ownerId;
+    if (owner === userId) return true;
+    if (projectRecord.members) {
+      const m = projectRecord.members.find((x) => x.id === userId || x.userId === userId);
+      if (m && m.role) {
+        const r = m.role.toLowerCase();
+        if (r === "owner" || r === "lead" || r === "admin") return true;
+      }
+    }
+  }
+  const projRes = await query("SELECT owner_id, lead FROM projects WHERE id = $1", [projectId]);
+  if (projRes.rows.length > 0) {
+    const row = projRes.rows[0];
+    if (row.owner_id === userId) return true;
+    if (row.lead) {
+      const uRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
+      if (uRes.rows.length > 0) {
+        const u = uRes.rows[0];
+        if (row.lead.toLowerCase() === u.full_name?.toLowerCase() || row.lead.toLowerCase() === u.username?.toLowerCase()) {
+          return true;
+        }
+      }
+    }
+  }
+  const pmRes = await query(
+    `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
+    [projectId, userId]
+  );
+  if (pmRes.rows.length > 0) {
+    const r = (pmRes.rows[0].role || "").toLowerCase();
+    return r === "owner" || r === "lead" || r === "admin";
+  }
+  return false;
+}
+async function isProjectMember(userId, projectId, projectRecord) {
+  if (!projectId) return false;
+  if (await isWorkspaceAdminOrLead(userId)) return true;
+  if (projectRecord) {
+    const owner = projectRecord.owner_id || projectRecord.ownerId;
+    if (owner === userId) return true;
+    if (projectRecord.members) {
+      const isM = projectRecord.members.some((x) => x.id === userId || x.userId === userId);
+      if (isM) return true;
+    }
+  }
+  const projRes = await query("SELECT owner_id FROM projects WHERE id = $1", [projectId]);
+  if (projRes.rows.length > 0 && projRes.rows[0].owner_id === userId) {
+    return true;
+  }
+  const pmRes = await query(
+    `SELECT id FROM project_members WHERE project_id = $1 AND user_id = $2`,
+    [projectId, userId]
+  );
+  return pmRes.rows.length > 0;
+}
+async function canUserEditTask(userId, taskId, taskRecord, projectRecord) {
+  let task = taskRecord;
+  if (!task) {
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    if (taskRes.rows.length === 0) {
+      return { allowed: false, isLeader: false, reason: "Task not found" };
+    }
+    task = taskRes.rows[0];
+  }
+  const projectId = task.project_id || task.projectId;
+  const taskUserId = task.user_id || task.userId;
+  const assigneeId = task.assignee_id || task.assigneeId || task.assignee?.id;
+  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer?.id;
+  if (!projectId) {
+    const allowed = taskUserId === userId || await isWorkspaceAdminOrLead(userId);
+    return { allowed, isLeader: allowed, reason: allowed ? void 0 : "Personal task owned by another user" };
+  }
+  const isLead = await isProjectLeader(userId, projectId, projectRecord);
+  if (isLead) {
+    return { allowed: true, isLeader: true };
+  }
+  const isAssignee = assigneeId === userId;
+  const isCreator = taskUserId === userId;
+  const isReviewer = reviewerId === userId;
+  if (isAssignee || isCreator || isReviewer) {
+    return { allowed: true, isLeader: false };
+  }
+  return {
+    allowed: false,
+    isLeader: false,
+    reason: "Unauthorized: Members cannot edit tasks assigned to other team members"
+  };
+}
+async function canUserReviewTask(userId, taskId, taskRecord, projectRecord) {
+  let task = taskRecord;
+  if (!task) {
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    if (taskRes.rows.length === 0) {
+      return { allowed: false, reason: "Task not found" };
+    }
+    task = taskRes.rows[0];
+  }
+  const projectId = task.project_id || task.projectId;
+  const assigneeId = task.assignee_id || task.assigneeId || task.assignee?.id;
+  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer?.id;
+  const isLead = projectId ? await isProjectLeader(userId, projectId, projectRecord) : await isWorkspaceAdminOrLead(userId);
+  const isReviewer = reviewerId === userId;
+  if (assigneeId === userId && !isLead) {
+    return {
+      allowed: false,
+      reason: "Self-review forbidden: Team members cannot approve their own work"
+    };
+  }
+  if (isLead || isReviewer) {
+    return { allowed: true };
+  }
+  return {
+    allowed: false,
+    reason: "Unauthorized: Only project leaders or designated reviewers can review task submissions"
+  };
+}
+async function canUserViewTask(userId, taskId, taskRecord, projectRecord) {
+  let task = taskRecord;
+  if (!task) {
+    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    if (taskRes.rows.length === 0) {
+      return { allowed: false, isLeader: false, reason: "Task not found" };
+    }
+    task = taskRes.rows[0];
+  }
+  const projectId = task.project_id || task.projectId;
+  const taskUserId = task.user_id || task.userId;
+  const assigneeId = task.assignee_id || task.assigneeId || task.assignee && task.assignee.id;
+  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer && task.reviewer.id;
+  if (await isWorkspaceAdminOrLead(userId)) {
+    return { allowed: true, isLeader: true };
+  }
+  if (projectId) {
+    const isLead = await isProjectLeader(userId, projectId, projectRecord);
+    if (isLead) {
+      return { allowed: true, isLeader: true };
+    }
+  }
+  if (assigneeId === userId || taskUserId === userId || reviewerId === userId) {
+    return { allowed: true, isLeader: false };
+  }
+  return {
+    allowed: false,
+    isLeader: false,
+    reason: "Forbidden: You do not have permission to access this task"
+  };
+}
+
 // src/routes/auth.ts
 var router = (0, import_express.Router)();
 router.post("/register", authRateLimiter, async (req, res) => {
@@ -34815,13 +35000,26 @@ router.get("/me", requireAuth, async (req, res) => {
     }
     const u = result.rows[0];
     const effectiveRole = u.role || "member";
+    const freshToken = generateToken({
+      userId: u.id,
+      username: u.username,
+      role: effectiveRole
+    });
+    res.cookie("taskflow_token", freshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1e3
+    });
     res.json({
       id: u.id,
       username: u.username,
       fullName: u.full_name,
       email: u.email,
       role: effectiveRole,
-      avatarUrl: u.avatar_url || ""
+      avatarUrl: u.avatar_url || "",
+      createdAt: u.created_at,
+      token: freshToken
     });
   } catch (err) {
     console.error("Auth me error:", err);
@@ -34836,12 +35034,15 @@ router.patch("/role", requireAuth, async (req, res) => {
     }
     const { role } = req.body;
     const targetRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
-    const userDbRes = await query("SELECT role FROM users WHERE id = $1", [userId]);
+    const userDbRes = await query("SELECT id, username, email, role FROM users WHERE id = $1", [userId]);
     if (!userDbRes.rowCount || userDbRes.rowCount === 0) {
       return res.status(404).json({ error: "User not found" });
     }
-    const currentBaseRole = (userDbRes.rows[0].role || "member").toLowerCase();
-    if (targetRole === "leader" && currentBaseRole !== "leader" && currentBaseRole !== "admin" && currentBaseRole !== "lead") {
+    const uRow = userDbRes.rows[0];
+    const currentBaseRole = (uRow.role || "member").toLowerCase();
+    const isPermanentAdmin = uRow.id === "user-om" || uRow.username === "omthakkar" || uRow.email === "omthakkar@example.com" || process.env.ADMIN_EMAIL && uRow.email.toLowerCase() === process.env.ADMIN_EMAIL.trim().toLowerCase();
+    const isPrivileged = isPermanentAdmin || currentBaseRole === "leader" || currentBaseRole === "admin" || currentBaseRole === "lead";
+    if (targetRole === "leader" && !isPrivileged) {
       return res.status(403).json({
         error: "Unauthorized: Only users with leader or administrator privileges can switch to leader role"
       });
@@ -34854,6 +35055,7 @@ router.patch("/role", requireAuth, async (req, res) => {
     if (updateRes.rowCount === 0) {
       return res.status(404).json({ error: "User not found" });
     }
+    clearRoleCache(userId);
     const u = updateRes.rows[0];
     const token = generateToken({ userId: u.id, username: u.username, role: targetRole });
     res.cookie("taskflow_token", token, {
@@ -35151,169 +35353,6 @@ async function wouldCreateCycle(taskId, dependsOnTaskId) {
     currentBatch = nextBatch;
   }
   return false;
-}
-
-// src/permissions.ts
-var roleCache = /* @__PURE__ */ new Map();
-async function isWorkspaceAdminOrLead(userId, userRecord) {
-  if (!userId) return false;
-  if (userRecord && userRecord.role) {
-    const r = userRecord.role.toLowerCase();
-    return r === "admin" || r === "leader" || r === "lead";
-  }
-  const cached = roleCache.get(userId);
-  if (cached && cached.expires > Date.now()) {
-    const r = cached.role.toLowerCase();
-    return r === "admin" || r === "leader" || r === "lead";
-  }
-  const res = await query("SELECT role FROM users WHERE id = $1", [userId]);
-  if (res.rows.length > 0) {
-    const role = (res.rows[0].role || "").toLowerCase();
-    roleCache.set(userId, { role, expires: Date.now() + 6e4 });
-    return role === "admin" || role === "leader" || role === "lead";
-  }
-  return false;
-}
-async function isProjectLeader(userId, projectId, projectRecord) {
-  if (!projectId) return false;
-  if (await isWorkspaceAdminOrLead(userId)) return true;
-  if (projectRecord) {
-    const owner = projectRecord.owner_id || projectRecord.ownerId;
-    if (owner === userId) return true;
-    if (projectRecord.members) {
-      const m = projectRecord.members.find((x) => x.id === userId || x.userId === userId);
-      if (m && m.role) {
-        const r = m.role.toLowerCase();
-        if (r === "owner" || r === "lead" || r === "admin") return true;
-      }
-    }
-  }
-  const projRes = await query("SELECT owner_id FROM projects WHERE id = $1", [projectId]);
-  if (projRes.rows.length > 0 && projRes.rows[0].owner_id === userId) {
-    return true;
-  }
-  const pmRes = await query(
-    `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
-    [projectId, userId]
-  );
-  if (pmRes.rows.length > 0) {
-    const r = (pmRes.rows[0].role || "").toLowerCase();
-    return r === "owner" || r === "lead" || r === "admin";
-  }
-  return false;
-}
-async function isProjectMember(userId, projectId, projectRecord) {
-  if (!projectId) return false;
-  if (await isWorkspaceAdminOrLead(userId)) return true;
-  if (projectRecord) {
-    const owner = projectRecord.owner_id || projectRecord.ownerId;
-    if (owner === userId) return true;
-    if (projectRecord.members) {
-      const isM = projectRecord.members.some((x) => x.id === userId || x.userId === userId);
-      if (isM) return true;
-    }
-  }
-  const projRes = await query("SELECT owner_id FROM projects WHERE id = $1", [projectId]);
-  if (projRes.rows.length > 0 && projRes.rows[0].owner_id === userId) {
-    return true;
-  }
-  const pmRes = await query(
-    `SELECT id FROM project_members WHERE project_id = $1 AND user_id = $2`,
-    [projectId, userId]
-  );
-  return pmRes.rows.length > 0;
-}
-async function canUserEditTask(userId, taskId, taskRecord, projectRecord) {
-  let task = taskRecord;
-  if (!task) {
-    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
-    if (taskRes.rows.length === 0) {
-      return { allowed: false, isLeader: false, reason: "Task not found" };
-    }
-    task = taskRes.rows[0];
-  }
-  const projectId = task.project_id || task.projectId;
-  const taskUserId = task.user_id || task.userId;
-  const assigneeId = task.assignee_id || task.assigneeId || task.assignee?.id;
-  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer?.id;
-  if (!projectId) {
-    const allowed = taskUserId === userId || await isWorkspaceAdminOrLead(userId);
-    return { allowed, isLeader: allowed, reason: allowed ? void 0 : "Personal task owned by another user" };
-  }
-  const isLead = await isProjectLeader(userId, projectId, projectRecord);
-  if (isLead) {
-    return { allowed: true, isLeader: true };
-  }
-  const isAssignee = assigneeId === userId;
-  const isCreator = taskUserId === userId;
-  const isReviewer = reviewerId === userId;
-  if (isAssignee || isCreator || isReviewer) {
-    return { allowed: true, isLeader: false };
-  }
-  return {
-    allowed: false,
-    isLeader: false,
-    reason: "Unauthorized: Members cannot edit tasks assigned to other team members"
-  };
-}
-async function canUserReviewTask(userId, taskId, taskRecord, projectRecord) {
-  let task = taskRecord;
-  if (!task) {
-    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
-    if (taskRes.rows.length === 0) {
-      return { allowed: false, reason: "Task not found" };
-    }
-    task = taskRes.rows[0];
-  }
-  const projectId = task.project_id || task.projectId;
-  const assigneeId = task.assignee_id || task.assigneeId || task.assignee?.id;
-  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer?.id;
-  const isLead = projectId ? await isProjectLeader(userId, projectId, projectRecord) : await isWorkspaceAdminOrLead(userId);
-  const isReviewer = reviewerId === userId;
-  if (assigneeId === userId && !isLead) {
-    return {
-      allowed: false,
-      reason: "Self-review forbidden: Team members cannot approve their own work"
-    };
-  }
-  if (isLead || isReviewer) {
-    return { allowed: true };
-  }
-  return {
-    allowed: false,
-    reason: "Unauthorized: Only project leaders or designated reviewers can review task submissions"
-  };
-}
-async function canUserViewTask(userId, taskId, taskRecord, projectRecord) {
-  let task = taskRecord;
-  if (!task) {
-    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
-    if (taskRes.rows.length === 0) {
-      return { allowed: false, isLeader: false, reason: "Task not found" };
-    }
-    task = taskRes.rows[0];
-  }
-  const projectId = task.project_id || task.projectId;
-  const taskUserId = task.user_id || task.userId;
-  const assigneeId = task.assignee_id || task.assigneeId || task.assignee && task.assignee.id;
-  const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer && task.reviewer.id;
-  if (await isWorkspaceAdminOrLead(userId)) {
-    return { allowed: true, isLeader: true };
-  }
-  if (projectId) {
-    const isLead = await isProjectLeader(userId, projectId, projectRecord);
-    if (isLead) {
-      return { allowed: true, isLeader: true };
-    }
-  }
-  if (assigneeId === userId || taskUserId === userId || reviewerId === userId) {
-    return { allowed: true, isLeader: false };
-  }
-  return {
-    allowed: false,
-    isLeader: false,
-    reason: "Forbidden: You do not have permission to access this task"
-  };
 }
 
 // src/routes/tasks.ts
@@ -52641,7 +52680,10 @@ async function seedDatabase(force = false) {
   await query(
     `INSERT INTO users (id, username, full_name, email, avatar_url, password_hash, role)
      VALUES ($1, $2, $3, $4, $5, $6, 'admin')
-     ON CONFLICT (username) DO NOTHING;`,
+     ON CONFLICT (username) DO UPDATE SET
+       role = 'admin',
+       full_name = EXCLUDED.full_name,
+       email = EXCLUDED.email;`,
     [defaultUserId, "omthakkar", "Om Thakkar", "omthakkar@example.com", "", defaultPasswordHash]
   );
   for (const m of SEED_TEAM_MEMBERS) {
@@ -52680,6 +52722,7 @@ async function seedDatabase(force = false) {
          priority = EXCLUDED.priority,
          health = EXCLUDED.health,
          lead = EXCLUDED.lead,
+         owner_id = COALESCE(projects.owner_id, EXCLUDED.owner_id),
          start_date = EXCLUDED.start_date,
          deadline = EXCLUDED.deadline,
          progress = EXCLUDED.progress;`,

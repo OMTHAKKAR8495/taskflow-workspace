@@ -505,7 +505,10 @@ export async function seedDatabase(force = false) {
   await query(
     `INSERT INTO users (id, username, full_name, email, avatar_url, password_hash, role)
      VALUES ($1, $2, $3, $4, $5, $6, 'admin')
-     ON CONFLICT (username) DO NOTHING;`,
+     ON CONFLICT (username) DO UPDATE SET
+       role = 'admin',
+       full_name = EXCLUDED.full_name,
+       email = EXCLUDED.email;`,
     [defaultUserId, "omthakkar", "Om Thakkar", "omthakkar@example.com", "", defaultPasswordHash],
   );
 
@@ -552,6 +555,7 @@ export async function seedDatabase(force = false) {
          priority = EXCLUDED.priority,
          health = EXCLUDED.health,
          lead = EXCLUDED.lead,
+         owner_id = COALESCE(projects.owner_id, EXCLUDED.owner_id),
          start_date = EXCLUDED.start_date,
          deadline = EXCLUDED.deadline,
          progress = EXCLUDED.progress;`,

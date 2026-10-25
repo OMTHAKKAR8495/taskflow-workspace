@@ -681,9 +681,13 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
             <div className="flex items-center rounded-lg border bg-muted/40 p-0.5 text-xs shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  void switchRole("leader");
-                  toast.success("Switched to Team Leader View");
+                onClick={async () => {
+                  try {
+                    await switchRole("leader");
+                    toast.success("Switched to Team Leader View");
+                  } catch (e: any) {
+                    toast.error(e?.message || "Failed to switch to leader role");
+                  }
                 }}
                 className={cn(
                   "px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
@@ -698,9 +702,13 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  void switchRole("member");
-                  toast.success("Switched to Team Member View");
+                onClick={async () => {
+                  try {
+                    await switchRole("member");
+                    toast.success("Switched to Team Member View");
+                  } catch (e: any) {
+                    toast.error(e?.message || "Failed to switch to member role");
+                  }
                 }}
                 className={cn(
                   "px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",

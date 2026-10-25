@@ -104,6 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
             if (res.ok) {
               const u = await res.json();
+              if (u.token) {
+                localStorage.setItem(TOKEN_STORAGE_KEY, u.token);
+              }
               setUser(u);
               localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
               return;
@@ -446,11 +449,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
           return;
         }
+      } else {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || `Failed to switch role to ${targetRole}`);
       }
-    } catch {}
-
-    // Offline / fallback role switch
-    updateCurrentUser({ role: targetRole });
+    } catch (err: any) {
+      if (err?.message && !err.message.includes("Failed to fetch")) {
+        throw err;
+      }
+      // Offline fallback only if network completely unreachable
+      updateCurrentUser({ role: targetRole });
+    }
   };
 
   const logout = async () => {

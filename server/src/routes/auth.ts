@@ -9,6 +9,7 @@ import {
   generateId,
   type AuthenticatedRequest,
 } from "../auth.js";
+import { clearRoleCache } from "../permissions.js";
 
 const router = Router();
 
@@ -166,6 +167,21 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
 
     const u = result.rows[0];
     const effectiveRole = u.role || "member";
+
+    // Generate fresh token containing current effective role from database
+    const freshToken = generateToken({
+      userId: u.id,
+      username: u.username,
+      role: effectiveRole,
+    });
+
+    res.cookie("taskflow_token", freshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     res.json({
       id: u.id,
       username: u.username,
@@ -173,6 +189,8 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
       email: u.email,
       role: effectiveRole,
       avatarUrl: u.avatar_url || "",
+      createdAt: u.created_at,
+      token: freshToken,
     });
   } catch (err: unknown) {
     console.error("Auth me error:", err);
@@ -191,19 +209,28 @@ router.patch("/role", requireAuth, async (req: AuthenticatedRequest, res: Respon
     const targetRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
 
     // Verify user's actual base role in database
-    const userDbRes = await query("SELECT role FROM users WHERE id = $1", [userId]);
+    const userDbRes = await query("SELECT id, username, email, role FROM users WHERE id = $1", [userId]);
     if (!userDbRes.rowCount || userDbRes.rowCount === 0) {
       return res.status(404).json({ error: "User not found" });
     }
-    const currentBaseRole = (userDbRes.rows[0].role || "member").toLowerCase();
+    const uRow = userDbRes.rows[0];
+    const currentBaseRole = (uRow.role || "member").toLowerCase();
+
+    // Check if the user is a permanent admin/leader (e.g. Om Thakkar or configured admin)
+    const isPermanentAdmin =
+      uRow.id === "user-om" ||
+      uRow.username === "omthakkar" ||
+      uRow.email === "omthakkar@example.com" ||
+      (process.env.ADMIN_EMAIL && uRow.email.toLowerCase() === process.env.ADMIN_EMAIL.trim().toLowerCase());
+
+    const isPrivileged =
+      isPermanentAdmin ||
+      currentBaseRole === "leader" ||
+      currentBaseRole === "admin" ||
+      currentBaseRole === "lead";
 
     // Prevent privilege escalation: only users already possessing admin/leader roles can activate leader view
-    if (
-      targetRole === "leader" &&
-      currentBaseRole !== "leader" &&
-      currentBaseRole !== "admin" &&
-      currentBaseRole !== "lead"
-    ) {
+    if (targetRole === "leader" && !isPrivileged) {
       return res.status(403).json({
         error: "Unauthorized: Only users with leader or administrator privileges can switch to leader role",
       });
@@ -218,6 +245,8 @@ router.patch("/role", requireAuth, async (req: AuthenticatedRequest, res: Respon
     if (updateRes.rowCount === 0) {
       return res.status(404).json({ error: "User not found" });
     }
+
+    clearRoleCache(userId);
 
     const u = updateRes.rows[0];
     const token = generateToken({ userId: u.id, username: u.username, role: targetRole });
