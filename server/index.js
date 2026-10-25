@@ -35093,9 +35093,10 @@ router.get("/google/url", (req, res) => {
       error: "Google OAuth is not configured on this deployment. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your Vercel Environment Variables."
     });
   }
-  const host = req.get("host") || "localhost:4000";
+  const host = req.get("x-forwarded-host") || req.get("host") || "localhost:4000";
   const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
-  const defaultRedirectUri = `${protocol}://${host}/api/auth/google/callback`;
+  const appBase = process.env.APP_BASE_URL ? process.env.APP_BASE_URL.replace(/\/$/, "") : `${protocol}://${host}`;
+  const defaultRedirectUri = `${appBase}/api/auth/google/callback`;
   const redirectUri = req.query.redirect_uri || defaultRedirectUri;
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -35259,14 +35260,14 @@ router.post("/google", async (req, res) => {
 router.get("/google/callback", async (req, res) => {
   try {
     const { code, error: error2 } = req.query;
-    const host = req.get("host") || "localhost:4000";
+    const host = req.get("x-forwarded-host") || req.get("host") || "localhost:4000";
     const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
-    const appBase = process.env.APP_BASE_URL || `${protocol}://${host}`;
+    const appBase = process.env.APP_BASE_URL ? process.env.APP_BASE_URL.replace(/\/$/, "") : `${protocol}://${host}`;
     if (error2 || !code) {
       console.warn("Google OAuth callback error:", error2);
       return res.redirect(`${appBase}/?error=google_cancelled`);
     }
-    const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+    const redirectUri = `${appBase}/api/auth/google/callback`;
     const tokenUrl = "https://oauth2.googleapis.com/token";
     const params = new URLSearchParams({
       code: String(code),
@@ -35304,10 +35305,12 @@ router.get("/google/callback", async (req, res) => {
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1e3
     });
-    return res.redirect(`${appBase}/dashboard?login=google_success`);
+    return res.redirect(`${appBase}/dashboard?login=google_success#token=${token}`);
   } catch (err) {
     console.error("Google callback exception:", err);
-    const appBase = process.env.APP_BASE_URL || "/";
+    const host = req.get("x-forwarded-host") || req.get("host") || "localhost:4000";
+    const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
+    const appBase = process.env.APP_BASE_URL ? process.env.APP_BASE_URL.replace(/\/$/, "") : `${protocol}://${host}`;
     return res.redirect(`${appBase}/?error=google_auth_error`);
   }
 });

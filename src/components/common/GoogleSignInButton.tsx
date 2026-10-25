@@ -100,22 +100,11 @@ export function GoogleSignInButton({ label = "Continue with Google" }: { label?:
   const handleManualClick = async () => {
     setLoading(true);
     try {
-      if (window.google?.accounts?.id && activeClientId) {
-        window.google.accounts.id.prompt((notification: any) => {
-          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            getGoogleLoginUrl()
-              .then((url) => {
-                window.location.href = url;
-              })
-              .catch((err) => {
-                toast.error(err?.message || "Google Sign-In is not configured yet.");
-                setLoading(false);
-              });
-          }
-        });
-      } else {
-        const url = await getGoogleLoginUrl();
+      const url = await getGoogleLoginUrl();
+      if (url) {
         window.location.href = url;
+      } else {
+        throw new Error("Unable to construct Google authorization URL.");
       }
     } catch (e: any) {
       console.error("Google sign in trigger error:", e);
