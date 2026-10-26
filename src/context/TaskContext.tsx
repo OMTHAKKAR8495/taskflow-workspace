@@ -87,6 +87,7 @@ interface TaskContextValue {
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
   addTeamMember: (data: { name: string; email: string; role: string; avatarUrl?: string }) => Promise<TeamMember>;
+  updateTeamMember: (id: string, data: Partial<TeamMember>) => Promise<TeamMember>;
   updateProfile: (data: ProfileInput) => Promise<Profile>;
 }
 
@@ -319,13 +320,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   }, [tasks.length, projects.length, setTasks, setProfile, setActivity, setProjects, setTeam, setNotifications]);
 
   const lastLoadedUserId = useRef<string | undefined>(undefined);
+  const lastLoadedRole = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (lastLoadedUserId.current !== user?.id) {
+    if (lastLoadedUserId.current !== user?.id || lastLoadedRole.current !== user?.role) {
       lastLoadedUserId.current = user?.id;
+      lastLoadedRole.current = user?.role;
       void reload();
     }
-  }, [user?.id, reload]);
+  }, [user?.id, user?.role, reload]);
 
   const refreshActivity = useCallback(async () => {
     try {
@@ -516,6 +519,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const updateTeamMember = useCallback(
+    async (id: string, data: Partial<TeamMember>) => {
+      if (!taskService.updateTeamMember) {
+        throw new Error("Update team member is not supported");
+      }
+      const updated = await taskService.updateTeamMember(id, data);
+      setTeam((prev) => prev.map((m) => (m.id === id ? { ...m, ...updated } : m)));
+      toast.success(`Team member role updated!`);
+      return updated;
+    },
+    [],
+  );
+
   const submitProgressUpdate = useCallback(
     async (taskId: string, data: TaskProgressUpdateInput) => {
       if (!taskService.submitProgressUpdate) throw new Error("Progress updates not supported");
@@ -658,6 +674,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       markNotificationRead,
       markAllNotificationsRead,
       addTeamMember,
+      updateTeamMember,
       updateProfile: async (data) => {
         const p = await taskService.updateProfile(data);
         setProfile(p);
@@ -707,6 +724,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       markNotificationRead,
       markAllNotificationsRead,
       addTeamMember,
+      updateTeamMember,
       refreshActivity,
       updateCurrentUser,
     ],

@@ -159,4 +159,70 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
+// PATCH /api/team/:id - Update team member role or details
+router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only team leaders can update team members" });
+    }
+
+    const { id } = req.params;
+    const { role, name, email } = req.body;
+
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (role !== undefined) {
+      values.push(role);
+      updates.push(`role = $${values.length}`);
+    }
+    if (name !== undefined) {
+      values.push(name.trim());
+      updates.push(`name = $${values.length}`);
+    }
+    if (email !== undefined) {
+      values.push(email.trim());
+      updates.push(`email = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+
+    values.push(id);
+    const updateRes = await query(
+      `UPDATE team_members SET ${updates.join(", ")} WHERE id = $${values.length} RETURNING *`,
+      values,
+    );
+
+    if (updateRes.rowCount === 0) {
+      return res.status(404).json({ error: "Team member not found" });
+    }
+
+    const updatedMember = updateRes.rows[0];
+    if (role !== undefined) {
+      const lower = role.toLowerCase();
+      const normalizedUserRole =
+        lower.includes("lead") || lower.includes("admin") || lower.includes("owner")
+          ? "leader"
+          : "member";
+      await query(
+        `UPDATE users SET role = $1 WHERE id = $2 OR LOWER(email) = LOWER($3)`,
+        [normalizedUserRole, id, updatedMember.email],
+      );
+      clearRoleCache(id);
+    }
+
+    res.json(updatedMember);
+  } catch (err: any) {
+    console.error("Error updating team member:", err);
+    res.status(500).json({ error: "Failed to update team member" });
+  }
+});
+
 export default router;

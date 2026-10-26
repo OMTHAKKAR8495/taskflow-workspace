@@ -361,6 +361,16 @@ class ResilientTaskService implements TaskService {
     );
   }
 
+  updateTeamMember(id: string, data: Partial<TeamMember>) {
+    return this.execute(
+      () =>
+        apiTaskService.updateTeamMember
+          ? apiTaskService.updateTeamMember(id, data)
+          : mockTaskService.updateTeamMember!(id, data),
+      () => mockTaskService.updateTeamMember!(id, data),
+    );
+  }
+
   getMyWorkTasks() {
     return this.execute(
       () => apiTaskService.getMyWorkTasks!(),

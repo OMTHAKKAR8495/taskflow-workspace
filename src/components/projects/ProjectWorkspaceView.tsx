@@ -902,9 +902,40 @@ export function ProjectWorkspaceView({ projectId }: ProjectWorkspaceViewProps) {
                         <div>
                           <div className="flex items-center gap-2">
                             <h4 className="text-xs font-bold text-foreground">{mem.name}</h4>
-                            <Badge variant="outline" className="text-[10px] capitalize font-medium">
-                              {mem.role}
-                            </Badge>
+                            {isLeader && mem.role !== "owner" ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const nextRole = (mem.role || "").toLowerCase() === "lead" ? "developer" : "lead";
+                                  try {
+                                    if (taskService.addProjectMember) {
+                                      await taskService.addProjectMember(projectId, [mem.id], nextRole);
+                                      void loadProjectDetail();
+                                      toast.success(`Role updated to ${nextRole === "lead" ? "Project Lead" : "Team Member"}`);
+                                    }
+                                  } catch (e: any) {
+                                    toast.error(e?.message || "Failed to update project role");
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 cursor-pointer hover:opacity-85 transition-opacity"
+                                title="Click to toggle between Lead and Member"
+                              >
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] capitalize font-semibold cursor-pointer ${
+                                    (mem.role || "").toLowerCase() === "lead"
+                                      ? "bg-amber-500/10 text-amber-500 border-amber-500/30"
+                                      : "bg-indigo-500/10 text-indigo-400 border-indigo-500/30"
+                                  }`}
+                                >
+                                  {mem.role === "lead" ? "👑 Project Lead" : `👤 ${mem.role}`}
+                                </Badge>
+                              </button>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] capitalize font-medium">
+                                {mem.role === "owner" ? "👑 Project Owner" : mem.role}
+                              </Badge>
+                            )}
                           </div>
                           <span className="text-[11px] text-muted-foreground">{mem.email}</span>
                           <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">

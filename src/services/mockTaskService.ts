@@ -285,6 +285,22 @@ export const mockTaskService: TaskService = {
     return newMember;
   },
 
+  async updateTeamMember(id: string, data: Partial<TeamMember>) {
+    await wait();
+    const store = load();
+    const idx = store.team.findIndex((m) => m.id === id);
+    if (idx === -1) {
+      throw new Error(`Team member ${id} not found`);
+    }
+    const updated = {
+      ...store.team[idx],
+      ...data,
+    };
+    store.team[idx] = updated;
+    save(store);
+    return updated;
+  },
+
   async createTask(data: TaskInput) {
     await wait();
     const store = load();

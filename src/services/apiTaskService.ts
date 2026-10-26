@@ -56,7 +56,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const userRole = getActiveUserRole();
   const token = getStoredToken();
   const base = getApiBaseUrl();
-  const cacheKey = isGet ? `${userId}:${path}` : null;
+  const cacheKey = isGet ? `${userId}:${userRole}:${path}` : null;
 
   // On any mutation (POST, PUT, DELETE, PATCH), immediately invalidate cache
   if (!isGet) {
@@ -265,6 +265,11 @@ export const apiTaskService: TaskService = {
   addTeamMember: (data) =>
     request("/team", {
       method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateTeamMember: (id, data) =>
+    request(`/team/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(data),
     }),
   getMyWorkTasks: () => request("/tasks/my-work"),

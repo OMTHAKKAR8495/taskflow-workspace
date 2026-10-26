@@ -678,9 +678,10 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
             </DropdownMenu>
 
             {/* Role Switcher Toggle */}
-            <div className="flex items-center rounded-lg border bg-muted/40 p-0.5 text-xs shrink-0">
+            <div className="flex items-center rounded-lg border bg-muted/40 p-0.5 text-xs shrink-0 shadow-2xs">
               <button
                 type="button"
+                id="role-switch-leader-btn"
                 onClick={async () => {
                   try {
                     await switchRole("leader");
@@ -690,36 +691,40 @@ export function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
                   }
                 }}
                 className={cn(
-                  "px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
+                  "px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5",
                   user?.role !== "member"
-                    ? "bg-indigo-600 text-white shadow-xs"
-                    : "text-muted-foreground hover:text-foreground",
+                    ? "bg-indigo-600 text-white shadow-xs font-bold"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
                 )}
                 title="Switch view & permissions to Team Leader"
               >
                 <span>👑</span>
-                <span className="hidden sm:inline">Leader</span>
+                <span>Leader</span>
               </button>
               <button
                 type="button"
+                id="role-switch-member-btn"
                 onClick={async () => {
                   try {
                     await switchRole("member");
                     toast.success("Switched to Team Member View");
+                    if (["/team", "/reports", "/tasks"].some((p) => pathname.startsWith(p))) {
+                      navigate({ to: "/dashboard" });
+                    }
                   } catch (e: any) {
                     toast.error(e?.message || "Failed to switch to member role");
                   }
                 }}
                 className={cn(
-                  "px-1.5 sm:px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1",
+                  "px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5",
                   user?.role === "member"
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "text-muted-foreground hover:text-foreground",
+                    ? "bg-blue-600 text-white shadow-xs font-bold"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
                 )}
                 title="Switch view & permissions to Team Member"
               >
                 <span>👤</span>
-                <span className="hidden sm:inline">Member</span>
+                <span>Member</span>
               </button>
             </div>
 

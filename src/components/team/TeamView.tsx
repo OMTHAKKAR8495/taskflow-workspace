@@ -26,6 +26,7 @@ import {
   MessageCircle,
   Plus,
   ArrowRight,
+  ShieldCheck,
 } from "lucide-react";
 import { useTasks } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
@@ -56,7 +57,7 @@ import { parseSafeDate } from "@/lib/utils";
 import type { Task, TeamMember, ProjectInvitation, CreateInvitationResponse, TaskPriority } from "@/types";
 
 export function TeamView() {
-  const { team, tasks, projects, addTeamMember, createProject } = useTasks();
+  const { team, tasks, projects, addTeamMember, updateTeamMember, createProject } = useTasks();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -387,6 +388,17 @@ export function TeamView() {
     }
   };
 
+  const handleToggleMemberRole = async (member: TeamMember, newRole: string) => {
+    try {
+      await updateTeamMember(member.id, { role: newRole });
+      if (inspectingMember && inspectingMember.id === member.id) {
+        setInspectingMember({ ...inspectingMember, role: newRole });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update member role");
+    }
+  };
+
   // Secondary Direct Add Member (without sending an invite link)
   const handleAddDirectMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -563,6 +575,27 @@ export function TeamView() {
                         <DropdownMenuSeparator />
                         {canInvite && (
                           <>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                handleToggleMemberRole(
+                                  member,
+                                  (member.role || "").toLowerCase().includes("lead")
+                                    ? "Team Member"
+                                    : "Team Leader",
+                                )
+                              }
+                              className="cursor-pointer gap-2 font-medium"
+                            >
+                              {(member.role || "").toLowerCase().includes("lead") ? (
+                                <>
+                                  <Shield className="size-3.5 text-blue-500" /> Switch to Team Member
+                                </>
+                              ) : (
+                                <>
+                                  <ShieldCheck className="size-3.5 text-amber-500" /> Promote to Team Leader
+                                </>
+                              )}
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => handleInviteSpecificMember(member.email)}
                               className="cursor-pointer gap-2"
@@ -874,6 +907,7 @@ export function TeamView() {
           setAssignTaskAssigneeId(m.id);
           setAssignTaskModalOpen(true);
         }}
+        onToggleRole={handleToggleMemberRole}
       />
 
       {/* Assign Task Modal */}

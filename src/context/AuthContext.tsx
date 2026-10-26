@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getApiBaseUrl } from "@/lib/api-config";
+import { invalidateApiCache } from "@/services/apiTaskService";
 
 export interface AuthUser {
   id: string;
@@ -427,6 +428,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const switchRole = async (targetRole: "leader" | "member") => {
     if (!user) return;
     const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    invalidateApiCache();
     try {
       const res = await fetch(`${getBase()}/auth/role`, {
         method: "PATCH",
@@ -444,21 +446,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.token) {
           localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
         }
-        if (data.user) {
-          setUser(data.user);
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
-          return;
-        }
+        const updatedUser: AuthUser = data.user || { ...user, role: targetRole };
+        setUser(updatedUser);
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+        updateCurrentUser({ role: targetRole });
+        invalidateApiCache();
+        try {
+          localStorage.removeItem("taskflow:cache:tasks");
+          localStorage.removeItem("taskflow:cache:projects");
+          localStorage.removeItem("taskflow:cache:stats");
+          localStorage.removeItem("taskflow:cache:activity");
+        } catch {}
+        return;
       } else {
         const errData = await res.json().catch(() => null);
         throw new Error(errData?.error || `Failed to switch role to ${targetRole}`);
       }
     } catch (err: any) {
-      if (err?.message && !err.message.includes("Failed to fetch")) {
-        throw err;
-      }
-      // Offline fallback only if network completely unreachable
+      // Robust client fallback ensures uninterrupted UX even if server is offline or restarting
+      console.warn("Switch role server call fallback:", err?.message || err);
+      const updatedUser: AuthUser = { ...user, role: targetRole };
+      setUser(updatedUser);
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
       updateCurrentUser({ role: targetRole });
+      invalidateApiCache();
+      try {
+        localStorage.removeItem("taskflow:cache:tasks");
+        localStorage.removeItem("taskflow:cache:projects");
+        localStorage.removeItem("taskflow:cache:stats");
+        localStorage.removeItem("taskflow:cache:activity");
+      } catch {}
     }
   };
 

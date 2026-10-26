@@ -35,6 +35,7 @@ interface MemberProfileDrawerProps {
   onClose: () => void;
   onOpenTask: (task: Task) => void;
   onAssignTask?: (member: TeamMember) => void;
+  onToggleRole?: (member: TeamMember, newRole: string) => void;
 }
 
 type TabType = "all" | "in_progress" | "in_review" | "completed" | "overdue";
@@ -46,6 +47,7 @@ export function MemberProfileDrawer({
   onClose,
   onOpenTask,
   onAssignTask,
+  onToggleRole,
 }: MemberProfileDrawerProps) {
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [copiedEmail, setCopiedEmail] = useState(false);
@@ -163,6 +165,24 @@ export function MemberProfileDrawer({
                   <Badge variant="outline" className="bg-indigo-500/10 text-indigo-400 border-indigo-500/30 text-xs">
                     {member.role || "Team Member"}
                   </Badge>
+                  {onToggleRole && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        onToggleRole(
+                          member,
+                          (member.role || "").toLowerCase().includes("lead")
+                            ? "Team Member"
+                            : "Team Leader",
+                        )
+                      }
+                      className="h-6 px-2 text-[11px] gap-1 cursor-pointer border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 font-semibold"
+                      title="Switch role between Leader and Member"
+                    >
+                      <span>{(member.role || "").toLowerCase().includes("lead") ? "👤 Make Member" : "👑 Make Leader"}</span>
+                    </Button>
+                  )}
                 </div>
                 <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                   <button

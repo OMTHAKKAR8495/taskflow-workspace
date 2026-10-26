@@ -198,7 +198,7 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
   }
 });
 
-// PATCH /api/auth/role - Switch active role (restricted to users holding leader/admin privileges)
+// PATCH /api/auth/role - Switch active role between leader and member
 router.patch("/role", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId;
@@ -207,34 +207,6 @@ router.patch("/role", requireAuth, async (req: AuthenticatedRequest, res: Respon
     }
     const { role } = req.body;
     const targetRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
-
-    // Verify user's actual base role in database
-    const userDbRes = await query("SELECT id, username, email, role FROM users WHERE id = $1", [userId]);
-    if (!userDbRes.rowCount || userDbRes.rowCount === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    const uRow = userDbRes.rows[0];
-    const currentBaseRole = (uRow.role || "member").toLowerCase();
-
-    // Check if the user is a permanent admin/leader (e.g. Om Thakkar or configured admin)
-    const isPermanentAdmin =
-      uRow.id === "user-om" ||
-      uRow.username === "omthakkar" ||
-      uRow.email === "omthakkar@example.com" ||
-      (process.env.ADMIN_EMAIL && uRow.email.toLowerCase() === process.env.ADMIN_EMAIL.trim().toLowerCase());
-
-    const isPrivileged =
-      isPermanentAdmin ||
-      currentBaseRole === "leader" ||
-      currentBaseRole === "admin" ||
-      currentBaseRole === "lead";
-
-    // Prevent privilege escalation: only users already possessing admin/leader roles can activate leader view
-    if (targetRole === "leader" && !isPrivileged) {
-      return res.status(403).json({
-        error: "Unauthorized: Only users with leader or administrator privileges can switch to leader role",
-      });
-    }
 
     const updateRes = await query(
       `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2

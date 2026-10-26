@@ -65,6 +65,10 @@ export function DashboardView() {
     user?.role === "member" ? "member" : "leader",
   );
 
+  useEffect(() => {
+    setViewPerspective(user?.role === "member" ? "member" : "leader");
+  }, [user?.role]);
+
   const displayName = user?.fullName || profile?.fullName || "Om Thakkar";
 
   const nonTrashTasks = useMemo(() => tasks.filter((t) => !t.isTrash), [tasks]);

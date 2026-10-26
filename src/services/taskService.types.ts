@@ -105,9 +105,9 @@ export interface TaskService {
   getTaskReviews?(taskId: string): Promise<TaskReview[]>;
   getReviewQueue?(): Promise<Task[]>;
 
-  // Team & Personal Cockpit
   getTeamMembers(): Promise<TeamMember[]>;
   addTeamMember?(data: { name: string; email: string; role: string; avatarUrl?: string }): Promise<TeamMember>;
+  updateTeamMember?(id: string, data: Partial<TeamMember>): Promise<TeamMember>;
   getMyWorkTasks?(): Promise<{
     stats?: {
       totalAssigned: number;
