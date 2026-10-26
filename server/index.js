@@ -34698,33 +34698,54 @@ function clearRoleCache(userId) {
     roleCache.clear();
   }
 }
+async function safeQuery(text, params, timeoutMs = 800) {
+  try {
+    const queryPromise = query(text, params);
+    const timeoutPromise = new Promise(
+      (_, reject) => setTimeout(() => reject(new Error("DB query timeout")), timeoutMs)
+    );
+    return await Promise.race([queryPromise, timeoutPromise]);
+  } catch {
+    return { rows: [], rowCount: 0 };
+  }
+}
 async function isWorkspaceAdminOrLead(userId, userRecord) {
   if (!userId) return false;
-  if (userId === "user-om") return true;
   if (userRecord && userRecord.role) {
     const r = userRecord.role.toLowerCase();
+    if (r === "member") return false;
     if (r === "admin" || r === "leader" || r === "lead") return true;
   }
   const cached = roleCache.get(userId);
   if (cached && cached.expires > Date.now()) {
     const r = cached.role.toLowerCase();
+    if (r === "member") return false;
     return r === "admin" || r === "leader" || r === "lead";
   }
-  const res = await query("SELECT id, username, email, role FROM users WHERE id = $1", [userId]);
-  if (res.rows.length > 0) {
-    const u = res.rows[0];
-    const role = (u.role || "").toLowerCase();
-    const isLead = Boolean(
-      role === "admin" || role === "leader" || role === "lead" || u.id === "user-om" || u.username === "omthakkar" || u.email === "omthakkar@example.com" || process.env.ADMIN_EMAIL && u.email.toLowerCase() === process.env.ADMIN_EMAIL.trim().toLowerCase()
-    );
-    roleCache.set(userId, { role: isLead ? "admin" : role, expires: Date.now() + 6e4 });
-    return isLead;
+  try {
+    const res = await safeQuery("SELECT id, username, email, role FROM users WHERE id = $1", [userId]);
+    if (res.rows.length > 0) {
+      const u = res.rows[0];
+      const role = (u.role || "").toLowerCase();
+      if (role === "member") {
+        roleCache.set(userId, { role: "member", expires: Date.now() + 6e4 });
+        return false;
+      }
+      const isLead = Boolean(
+        role === "admin" || role === "leader" || role === "lead" || u.id === "user-om" || u.username === "omthakkar" || u.email === "omthakkar@example.com" || process.env.ADMIN_EMAIL && u.email.toLowerCase() === process.env.ADMIN_EMAIL.trim().toLowerCase()
+      );
+      roleCache.set(userId, { role: isLead ? "admin" : role, expires: Date.now() + 6e4 });
+      return isLead;
+    }
+  } catch {
+    if (userId === "user-om") return true;
+    return false;
   }
+  if (userId === "user-om") return true;
   return false;
 }
 async function isProjectLeader(userId, projectId, projectRecord) {
   if (!projectId) return false;
-  if (await isWorkspaceAdminOrLead(userId)) return true;
   if (projectRecord) {
     const owner = projectRecord.owner_id || projectRecord.ownerId;
     if (owner === userId) return true;
@@ -34732,37 +34753,42 @@ async function isProjectLeader(userId, projectId, projectRecord) {
       const m = projectRecord.members.find((x) => x.id === userId || x.userId === userId);
       if (m && m.role) {
         const r = m.role.toLowerCase();
-        if (r === "owner" || r === "lead" || r === "admin") return true;
+        if (r === "owner" || r === "lead" || r === "admin" || r === "leader") return true;
+        if (r === "developer" || r === "designer" || r === "member") return false;
       }
     }
   }
-  const projRes = await query("SELECT owner_id, lead FROM projects WHERE id = $1", [projectId]);
-  if (projRes.rows.length > 0) {
-    const row = projRes.rows[0];
-    if (row.owner_id === userId) return true;
-    if (row.lead) {
-      const uRes = await query("SELECT full_name, username FROM users WHERE id = $1", [userId]);
-      if (uRes.rows.length > 0) {
-        const u = uRes.rows[0];
-        if (row.lead.toLowerCase() === u.full_name?.toLowerCase() || row.lead.toLowerCase() === u.username?.toLowerCase()) {
-          return true;
+  if (await isWorkspaceAdminOrLead(userId)) return true;
+  try {
+    const projRes = await safeQuery("SELECT owner_id, lead FROM projects WHERE id = $1", [projectId]);
+    if (projRes.rows.length > 0) {
+      const row = projRes.rows[0];
+      if (row.owner_id === userId) return true;
+      if (row.lead) {
+        const uRes = await safeQuery("SELECT full_name, username FROM users WHERE id = $1", [userId]);
+        if (uRes.rows.length > 0) {
+          const u = uRes.rows[0];
+          if (row.lead.toLowerCase() === u.full_name?.toLowerCase() || row.lead.toLowerCase() === u.username?.toLowerCase()) {
+            return true;
+          }
         }
       }
     }
-  }
-  const pmRes = await query(
-    `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
-    [projectId, userId]
-  );
-  if (pmRes.rows.length > 0) {
-    const r = (pmRes.rows[0].role || "").toLowerCase();
-    return r === "owner" || r === "lead" || r === "admin";
+    const pmRes = await safeQuery(
+      `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
+      [projectId, userId]
+    );
+    if (pmRes.rows.length > 0) {
+      const r = (pmRes.rows[0].role || "").toLowerCase();
+      return r === "owner" || r === "lead" || r === "admin" || r === "leader";
+    }
+  } catch {
+    return false;
   }
   return false;
 }
 async function isProjectMember(userId, projectId, projectRecord) {
   if (!projectId) return false;
-  if (await isWorkspaceAdminOrLead(userId)) return true;
   if (projectRecord) {
     const owner = projectRecord.owner_id || projectRecord.ownerId;
     if (owner === userId) return true;
@@ -34771,20 +34797,25 @@ async function isProjectMember(userId, projectId, projectRecord) {
       if (isM) return true;
     }
   }
-  const projRes = await query("SELECT owner_id FROM projects WHERE id = $1", [projectId]);
-  if (projRes.rows.length > 0 && projRes.rows[0].owner_id === userId) {
-    return true;
+  if (await isWorkspaceAdminOrLead(userId)) return true;
+  try {
+    const projRes = await safeQuery("SELECT owner_id FROM projects WHERE id = $1", [projectId]);
+    if (projRes.rows.length > 0 && projRes.rows[0].owner_id === userId) {
+      return true;
+    }
+    const pmRes = await safeQuery(
+      `SELECT id FROM project_members WHERE project_id = $1 AND user_id = $2`,
+      [projectId, userId]
+    );
+    return pmRes.rows.length > 0;
+  } catch {
+    return false;
   }
-  const pmRes = await query(
-    `SELECT id FROM project_members WHERE project_id = $1 AND user_id = $2`,
-    [projectId, userId]
-  );
-  return pmRes.rows.length > 0;
 }
 async function canUserEditTask(userId, taskId, taskRecord, projectRecord) {
   let task = taskRecord;
   if (!task) {
-    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    const taskRes = await safeQuery("SELECT * FROM tasks WHERE id = $1", [taskId]);
     if (taskRes.rows.length === 0) {
       return { allowed: false, isLeader: false, reason: "Task not found" };
     }
@@ -34794,11 +34825,7 @@ async function canUserEditTask(userId, taskId, taskRecord, projectRecord) {
   const taskUserId = task.user_id || task.userId;
   const assigneeId = task.assignee_id || task.assigneeId || task.assignee?.id;
   const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer?.id;
-  if (!projectId) {
-    const allowed = taskUserId === userId || await isWorkspaceAdminOrLead(userId);
-    return { allowed, isLeader: allowed, reason: allowed ? void 0 : "Personal task owned by another user" };
-  }
-  const isLead = await isProjectLeader(userId, projectId, projectRecord);
+  const isLead = projectId ? await isProjectLeader(userId, projectId, projectRecord) : await isWorkspaceAdminOrLead(userId);
   if (isLead) {
     return { allowed: true, isLeader: true };
   }
@@ -34817,7 +34844,7 @@ async function canUserEditTask(userId, taskId, taskRecord, projectRecord) {
 async function canUserReviewTask(userId, taskId, taskRecord, projectRecord) {
   let task = taskRecord;
   if (!task) {
-    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    const taskRes = await safeQuery("SELECT * FROM tasks WHERE id = $1", [taskId]);
     if (taskRes.rows.length === 0) {
       return { allowed: false, reason: "Task not found" };
     }
@@ -34845,7 +34872,7 @@ async function canUserReviewTask(userId, taskId, taskRecord, projectRecord) {
 async function canUserViewTask(userId, taskId, taskRecord, projectRecord) {
   let task = taskRecord;
   if (!task) {
-    const taskRes = await query("SELECT * FROM tasks WHERE id = $1", [taskId]);
+    const taskRes = await safeQuery("SELECT * FROM tasks WHERE id = $1", [taskId]);
     if (taskRes.rows.length === 0) {
       return { allowed: false, isLeader: false, reason: "Task not found" };
     }
@@ -34855,14 +34882,9 @@ async function canUserViewTask(userId, taskId, taskRecord, projectRecord) {
   const taskUserId = task.user_id || task.userId;
   const assigneeId = task.assignee_id || task.assigneeId || task.assignee && task.assignee.id;
   const reviewerId = task.reviewer_id || task.reviewerId || task.reviewer && task.reviewer.id;
-  if (await isWorkspaceAdminOrLead(userId)) {
+  const isLead = await isWorkspaceAdminOrLead(userId) || (projectId ? await isProjectLeader(userId, projectId, projectRecord) : false);
+  if (isLead) {
     return { allowed: true, isLeader: true };
-  }
-  if (projectId) {
-    const isLead = await isProjectLeader(userId, projectId, projectRecord);
-    if (isLead) {
-      return { allowed: true, isLeader: true };
-    }
   }
   if (assigneeId === userId || taskUserId === userId || reviewerId === userId) {
     return { allowed: true, isLeader: false };
@@ -35034,19 +35056,6 @@ router.patch("/role", requireAuth, async (req, res) => {
     }
     const { role } = req.body;
     const targetRole = String(role).toLowerCase() === "leader" ? "leader" : "member";
-    const userDbRes = await query("SELECT id, username, email, role FROM users WHERE id = $1", [userId]);
-    if (!userDbRes.rowCount || userDbRes.rowCount === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    const uRow = userDbRes.rows[0];
-    const currentBaseRole = (uRow.role || "member").toLowerCase();
-    const isPermanentAdmin = uRow.id === "user-om" || uRow.username === "omthakkar" || uRow.email === "omthakkar@example.com" || process.env.ADMIN_EMAIL && uRow.email.toLowerCase() === process.env.ADMIN_EMAIL.trim().toLowerCase();
-    const isPrivileged = isPermanentAdmin || currentBaseRole === "leader" || currentBaseRole === "admin" || currentBaseRole === "lead";
-    if (targetRole === "leader" && !isPrivileged) {
-      return res.status(403).json({
-        error: "Unauthorized: Only users with leader or administrator privileges can switch to leader role"
-      });
-    }
     const updateRes = await query(
       `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2
        RETURNING id, username, full_name, email, avatar_url, role`,
@@ -38058,6 +38067,59 @@ router6.post("/", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("Error adding team member:", err);
     res.status(500).json({ error: "Failed to add team member" });
+  }
+});
+router6.patch("/:id", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const isLead = await isWorkspaceAdminOrLead(userId, req.user);
+    if (!isLead) {
+      return res.status(403).json({ error: "Unauthorized: Only team leaders can update team members" });
+    }
+    const { id } = req.params;
+    const { role, name: name2, email } = req.body;
+    const updates = [];
+    const values = [];
+    if (role !== void 0) {
+      values.push(role);
+      updates.push(`role = $${values.length}`);
+    }
+    if (name2 !== void 0) {
+      values.push(name2.trim());
+      updates.push(`name = $${values.length}`);
+    }
+    if (email !== void 0) {
+      values.push(email.trim());
+      updates.push(`email = $${values.length}`);
+    }
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+    values.push(id);
+    const updateRes = await query(
+      `UPDATE team_members SET ${updates.join(", ")} WHERE id = $${values.length} RETURNING *`,
+      values
+    );
+    if (updateRes.rowCount === 0) {
+      return res.status(404).json({ error: "Team member not found" });
+    }
+    const updatedMember = updateRes.rows[0];
+    if (role !== void 0) {
+      const lower = role.toLowerCase();
+      const normalizedUserRole = lower.includes("lead") || lower.includes("admin") || lower.includes("owner") ? "leader" : "member";
+      await query(
+        `UPDATE users SET role = $1 WHERE id = $2 OR LOWER(email) = LOWER($3)`,
+        [normalizedUserRole, id, updatedMember.email]
+      );
+      clearRoleCache(String(id));
+    }
+    res.json(updatedMember);
+  } catch (err) {
+    console.error("Error updating team member:", err);
+    res.status(500).json({ error: "Failed to update team member" });
   }
 });
 var team_default = router6;

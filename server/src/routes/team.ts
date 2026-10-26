@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { query } from "../db.js";
 import { requireAuth, generateId, type AuthenticatedRequest } from "../auth.js";
-import { isWorkspaceAdminOrLead } from "../permissions.js";
+import { isWorkspaceAdminOrLead, clearRoleCache } from "../permissions.js";
 
 const router = Router();
 
@@ -215,7 +215,7 @@ router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respons
         `UPDATE users SET role = $1 WHERE id = $2 OR LOWER(email) = LOWER($3)`,
         [normalizedUserRole, id, updatedMember.email],
       );
-      clearRoleCache(id);
+      clearRoleCache(String(id));
     }
 
     res.json(updatedMember);
